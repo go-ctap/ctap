@@ -89,6 +89,7 @@ const (
 	ConfigSubCommandEnableEnterpriseAttestation ConfigSubCommand = iota + 1
 	ConfigSubCommandToggleAlwaysUv
 	ConfigSubCommandSetMinPINLength
+	ConfigSubCommandEnableLongTouchForReset
 	ConfigSubCommandVendorPrototype = 0xff
 )
 

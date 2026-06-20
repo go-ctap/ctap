@@ -183,11 +183,12 @@ func _() {
 	_ = x[ConfigSubCommandEnableEnterpriseAttestation-1]
 	_ = x[ConfigSubCommandToggleAlwaysUv-2]
 	_ = x[ConfigSubCommandSetMinPINLength-3]
+	_ = x[ConfigSubCommandEnableLongTouchForReset-4]
 }
 
-const _ConfigSubCommand_name = "ConfigSubCommandEnableEnterpriseAttestationConfigSubCommandToggleAlwaysUvConfigSubCommandSetMinPINLength"
+const _ConfigSubCommand_name = "ConfigSubCommandEnableEnterpriseAttestationConfigSubCommandToggleAlwaysUvConfigSubCommandSetMinPINLengthConfigSubCommandEnableLongTouchForReset"
 
-var _ConfigSubCommand_index = [...]uint8{0, 43, 73, 104}
+var _ConfigSubCommand_index = [...]uint8{0, 43, 73, 104, 143}
 
 func (i ConfigSubCommand) String() string {
 	i -= 1
