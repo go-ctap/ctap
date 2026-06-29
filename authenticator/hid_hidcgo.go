@@ -1,4 +1,4 @@
-//go:build hid_cgo || darwin
+//go:build hid_cgo
 
 package authenticator
 

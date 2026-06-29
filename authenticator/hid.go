@@ -1,4 +1,4 @@
-//go:build linux && (!hid_cgo || !darwin)
+//go:build (linux || darwin) && !hid_cgo
 
 package authenticator
 
@@ -20,11 +20,10 @@ func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 			}
 		}
 
-		fidoFilter := ghid.WithDeviceInfoFilter(func(info *ghid.DeviceInfo) bool {
-			return info.UsagePage == 0xf1d0 && info.Usage == 0x01
-		})
-
-		for devInfo, err := range ghid.Enumerate(fidoFilter) {
+		for devInfo, err := range ghid.Enumerate(
+			ghid.WithUsagePage(0xf1d0),
+			ghid.WithUsage(0x01),
+		) {
 			if !yield(devInfo, err) {
 				return
 			}
