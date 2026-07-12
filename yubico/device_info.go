@@ -1,6 +1,4 @@
 // Package yubico implements Yubico-specific commands and data formats.
-//
-//go:generate go run golang.org/x/tools/cmd/stringer@v0.47.0 -type=Capability -output=capability_string.go
 package yubico
 
 import (
@@ -11,6 +9,8 @@ import (
 
 	"github.com/go-ctap/ctap/transport/ctaphid"
 )
+
+//go:generate go run golang.org/x/tools/cmd/stringer@v0.47.0 -type=Capability -output=capability_string.go
 
 // Capability is a bitmap of applications exposed by a YubiKey interface.
 type Capability uint16
@@ -32,13 +32,31 @@ type FirmwareVersion struct {
 	Build byte
 }
 
+//go:generate go run golang.org/x/tools/cmd/stringer@v0.47.0 -type=FormFactor -output=form_factor_string.go
+
+// FormFactor describes the physical shape and connector type of a YubiKey.
+type FormFactor byte
+
+const (
+	FormFactorUnknown               FormFactor = 0
+	FormFactorUSBAKeychain          FormFactor = 1
+	FormFactorUSBANano              FormFactor = 2
+	FormFactorUSBCKeychain          FormFactor = 3
+	FormFactorUSBCNano              FormFactor = 4
+	FormFactorUSBCLightning         FormFactor = 5
+	FormFactorUSBABiometricKeychain FormFactor = 6
+	FormFactorUSBCBiometricKeychain FormFactor = 7
+)
+
 // DeviceInfo is returned by Yubico's GET DEVICE INFORMATION command.
 // UnknownFields preserves tags introduced by newer firmware.
 type DeviceInfo struct {
 	SupportedUSBCapabilities Capability
 	Serial                   *uint32
 	EnabledUSBCapabilities   Capability
-	FormFactor               byte
+	FormFactor               FormFactor
+	IsFIPS                   bool
+	IsSecurityKey            bool
 	FirmwareVersion          FirmwareVersion
 	AutoEjectTimeout         uint16
 	ChallengeResponseTimeout byte
@@ -104,8 +122,9 @@ func ParseDeviceInfo(data []byte) (DeviceInfo, error) {
 			if len(value) != 1 {
 				return DeviceInfo{}, fieldLengthError(tag, 1, len(value))
 			}
-			v := value[0]
-			info.FormFactor = v
+			info.FormFactor = FormFactor(value[0] & 0x0f)
+			info.IsFIPS = value[0]&0x80 != 0
+			info.IsSecurityKey = value[0]&0x40 != 0
 		case 0x05:
 			if len(value) != 3 {
 				return DeviceInfo{}, fieldLengthError(tag, 3, len(value))

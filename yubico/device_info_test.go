@@ -32,6 +32,9 @@ func TestGetDeviceInfo(t *testing.T) {
 	assert.Equal(t, uint32(0x00123456), *info.Serial)
 	assert.Equal(t, Capability(0x023f), info.SupportedUSBCapabilities)
 	assert.Equal(t, FirmwareVersion{Major: 5, Minor: 7, Build: 1}, info.FirmwareVersion)
+	assert.Equal(t, FormFactorUSBCKeychain, info.FormFactor)
+	assert.True(t, info.IsSecurityKey)
+	assert.False(t, info.IsFIPS)
 	assert.True(t, info.Locked)
 	assert.Equal(t, uint16(10), info.AutoEjectTimeout)
 	assert.Equal(t, byte(15), info.ChallengeResponseTimeout)
@@ -64,6 +67,6 @@ func TestParseDeviceInfoAllowsOmittedAndRepeatedFields(t *testing.T) {
 		0x20, 0,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, byte(0x03), info.FormFactor)
+	assert.Equal(t, FormFactorUSBCKeychain, info.FormFactor)
 	assert.Zero(t, info.FirmwareVersion)
 }
