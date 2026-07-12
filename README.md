@@ -16,8 +16,8 @@ It also includes selected CTAP 2.2 and CTAP 2.3 features and extensions, such as
 The `hmac-secret-mc` implementation has not yet been tested against a physical authenticator with support for it, and
 the dedicated `largeBlob` extension is still pending.
 
-My current priorities are to write better tests and completely replace [sstallion/go-hid](https://github.com/sstallion/go-hid)
-with the [go-ctap/hid](https://github.com/go-ctap/hid) `cgo`-free alternative.
+My current priorities are to ensure complete FIDO2/CTAP 2.1 support, prepare the library for FIDO2/CTAP 2.3,
+and fix bugs.
 
 ## Key Features and Architecture
 
@@ -72,7 +72,7 @@ The library exposes several abstraction levels, allowing you to choose the API t
 - YubiKey Device Information, including firmware version, serial number, form factor, USB/NFC capabilities,
   configuration-lock state, and device timeouts.
 - Modern Go design, making use of language features like iterators.
-- `cgo` is currently used only for the macOS HID backend, but CTAP protocol logic is pure Go.
+- HID access uses the [`go-ctap/hid`](https://github.com/go-ctap/hid) `cgo`-free backend.
 
 ## Feature Matrix
 
@@ -224,5 +224,3 @@ The implementation uses Yubico's vendor-specific CTAPHID command `0xc2`. Lower-l
 ## Planned Improvements
 
 - [ ] CTAP 2.2/2.3 support
-- [ ] Better tests (using virtual authenticator?)
-- [ ] `cgo`-free version for macOS. See [go-hid](https://github.com/go-ctap/hid).

@@ -1,4 +1,4 @@
-//go:build (linux || darwin) && !hid_cgo
+//go:build linux || darwin
 
 package authenticator
 

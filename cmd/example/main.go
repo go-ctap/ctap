@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 
 	"github.com/go-ctap/ctap/discover"
 	"github.com/go-ctap/ctap/options"
 	"github.com/go-ctap/ctap/protocol"
-	"github.com/goforj/godump"
 )
 
 func main() {
@@ -34,7 +34,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	godump.Dump(devInfo)
+	log.Printf("%+v", devInfo)
 
 	retries, powerCycleRequired, err := dev.GetPINRetries()
 	if err != nil {
