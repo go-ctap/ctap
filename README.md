@@ -59,11 +59,18 @@ The library exposes several abstraction levels, allowing you to choose the API t
    Shared public-key credential primitives, attestation statement formats, extension identifiers/policies, and
    WebAuthn-shaped extension input/output structures used across the lower-level and higher-level APIs.
 
+8. **Vendor Extensions (`yubico`)**
+
+   Yubico-specific commands and response types, including YubiKey Device Information over the vendor CTAPHID
+   command `0xc2`.
+
 ## Highlights
 
 - Implements major FIDO2 commands: MakeCredential, GetAssertion, ClientPIN (with both PIN/UV methods),
   Reset, CredentialManagement, and more.
 - Both low-level access and ergonomic, high-level APIs.
+- YubiKey Device Information, including firmware version, serial number, form factor, USB/NFC capabilities,
+  configuration-lock state, and device timeouts.
 - Modern Go design, making use of language features like iterators.
 - `cgo` is currently used only for the macOS HID backend, but CTAP protocol logic is pure Go.
 
@@ -192,6 +199,27 @@ The library exposes several abstraction levels, allowing you to choose the API t
 - [ ] persistent PIN/UV auth token support
 - [ ] Decrypt `GetInfo.encIdentifier`
 - [ ] Decrypt `GetInfo.encCredStoreState`
+
+### Yubico Device Information
+
+YubiKey 5 Series devices and Security Keys by Yubico expose firmware, serial number, form factor, capabilities, and
+other device information through `GetYubiKeyDeviceInfo`:
+
+```go
+info, err := device.GetYubiKeyDeviceInfo()
+if err != nil {
+	return err
+}
+
+if info.Serial != nil {
+	fmt.Printf("YubiKey serial: %d\n", *info.Serial)
+}
+version := info.FirmwareVersion
+fmt.Printf("Firmware: %d.%d.%d\n", version.Major, version.Minor, version.Build)
+```
+
+The implementation uses Yubico's vendor-specific CTAPHID command `0xc2`. Lower-level callers can use
+`yubico.GetDeviceInfo` with an `io.ReadWriter` and channel ID directly.
 
 ## Planned Improvements
 

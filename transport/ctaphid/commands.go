@@ -200,6 +200,55 @@ read:
 	}
 }
 
+// Vendor sends a command from the CTAPHID vendor-specific range (0x40-0x7f).
+// Command values do not include INIT_PACKET_BIT; NewMessage adds that bit when
+// encoding the initial HID packet.
+func Vendor(dev io.ReadWriter, cid ChannelID, command Command, data []byte) (VendorResponse, error) {
+	if command < CTAPHID_VENDOR_FIRST || command > CTAPHID_VENDOR_LAST {
+		return VendorResponse{}, ErrInvalidRequestMessage
+	}
+
+	msg, err := NewMessage(cid, command, data)
+	if err != nil {
+		return VendorResponse{}, err
+	}
+	if _, err := msg.WriteTo(dev); err != nil {
+		return VendorResponse{}, err
+	}
+
+read:
+	for {
+		respMsg := make(Message, 0)
+		if _, err := respMsg.ReadFrom(dev); err != nil {
+			return VendorResponse{}, err
+		}
+		if err := ensureResponseCID(respMsg, cid); err != nil {
+			return VendorResponse{}, err
+		}
+
+		var response []byte
+		for i, p := range respMsg {
+			if i == 0 {
+				switch p.command {
+				case command:
+				case CTAPHID_ERROR:
+					if err := ensureDataLen(p.data, 1); err != nil {
+						return VendorResponse{}, err
+					}
+					return VendorResponse{}, errors.New(Error(p.data[0]).String())
+				case CTAPHID_KEEPALIVE:
+					continue read
+				default:
+					return VendorResponse{}, ErrUnexpectedCommand
+				}
+			}
+			response = append(response, p.data...)
+		}
+
+		return VendorResponse{Data: response}, nil
+	}
+}
+
 func Cancel(dev io.ReadWriter, cid ChannelID) error {
 	msg, err := NewMessage(cid, CTAPHID_CANCEL, nil)
 	if err != nil {

@@ -17,6 +17,8 @@ func _() {
 	_ = x[CTAPHID_KEEPALIVE-59]
 	_ = x[CTAPHID_WINK-8]
 	_ = x[CTAPHID_LOCK-4]
+	_ = x[CTAPHID_VENDOR_FIRST-64]
+	_ = x[CTAPHID_VENDOR_LAST-127]
 }
 
 const (
@@ -26,12 +28,14 @@ const (
 	_Command_name_3 = "CTAPHID_WINK"
 	_Command_name_4 = "CTAPHID_CBORCTAPHID_CANCEL"
 	_Command_name_5 = "CTAPHID_KEEPALIVE"
-	_Command_name_6 = "CTAPHID_ERROR"
+	_Command_name_6 = "CTAPHID_ERRORCTAPHID_VENDOR_FIRST"
+	_Command_name_7 = "CTAPHID_VENDOR_LAST"
 )
 
 var (
 	_Command_index_1 = [...]uint8{0, 11, 23}
 	_Command_index_4 = [...]uint8{0, 12, 26}
+	_Command_index_6 = [...]uint8{0, 13, 33}
 )
 
 func (i Command) String() string {
@@ -50,8 +54,11 @@ func (i Command) String() string {
 		return _Command_name_4[_Command_index_4[i]:_Command_index_4[i+1]]
 	case i == 59:
 		return _Command_name_5
-	case i == 63:
-		return _Command_name_6
+	case 63 <= i && i <= 64:
+		i -= 63
+		return _Command_name_6[_Command_index_6[i]:_Command_index_6[i+1]]
+	case i == 127:
+		return _Command_name_7
 	default:
 		return "Command(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
@@ -257,9 +264,9 @@ const _KeepaliveStatusCode_name = "STATUS_PROCESSINGSTATUS_UPNEEDED"
 var _KeepaliveStatusCode_index = [...]uint8{0, 17, 32}
 
 func (i KeepaliveStatusCode) String() string {
-	i -= 1
-	if i >= KeepaliveStatusCode(len(_KeepaliveStatusCode_index)-1) {
-		return "KeepaliveStatusCode(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_KeepaliveStatusCode_index)-1 {
+		return "KeepaliveStatusCode(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _KeepaliveStatusCode_name[_KeepaliveStatusCode_index[i]:_KeepaliveStatusCode_index[i+1]]
+	return _KeepaliveStatusCode_name[_KeepaliveStatusCode_index[idx]:_KeepaliveStatusCode_index[idx+1]]
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/go-ctap/ctap/discover"
 	"github.com/go-ctap/ctap/options"
 	"github.com/go-ctap/ctap/protocol"
+	"github.com/goforj/godump"
 )
 
 func main() {
@@ -29,6 +30,12 @@ func main() {
 		_ = dev.Close()
 	}()
 
+	devInfo, err := dev.GetYubiKeyDeviceInfo()
+	if err != nil {
+		panic(err)
+	}
+	godump.Dump(devInfo)
+
 	retries, powerCycleRequired, err := dev.GetPINRetries()
 	if err != nil {
 		panic(err)
@@ -39,7 +46,7 @@ func main() {
 	}
 
 	token, err := dev.GetPinUvAuthTokenUsingPIN(
-		"12345678",
+		"79237486",
 		protocol.PermissionCredentialManagement,
 		"",
 	)

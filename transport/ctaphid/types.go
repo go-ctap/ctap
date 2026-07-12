@@ -69,3 +69,9 @@ type PingResponse struct {
 type ErrorResponse struct {
 	ErrorCode Error
 }
+
+// VendorResponse contains the opaque response payload of a CTAPHID vendor
+// command.
+type VendorResponse struct {
+	Data []byte
+}

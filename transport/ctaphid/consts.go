@@ -1,19 +1,21 @@
-//go:generate stringer -type=Command,StatusCode,CapabilityFlag,Error,KeepaliveStatusCode -output=consts_string.go
+//go:generate go run golang.org/x/tools/cmd/stringer@v0.47.0 -type=Command,StatusCode,CapabilityFlag,Error,KeepaliveStatusCode -output=consts_string.go
 package ctaphid
 
 // Command represents CTAP command.
 type Command byte
 
 const (
-	CTAPHID_MSG       Command = 0x03
-	CTAPHID_CBOR      Command = 0x10
-	CTAPHID_INIT      Command = 0x06
-	CTAPHID_PING      Command = 0x01
-	CTAPHID_CANCEL    Command = 0x11
-	CTAPHID_ERROR     Command = 0x3f
-	CTAPHID_KEEPALIVE Command = 0x3b
-	CTAPHID_WINK      Command = 0x08
-	CTAPHID_LOCK      Command = 0x04
+	CTAPHID_MSG          Command = 0x03
+	CTAPHID_CBOR         Command = 0x10
+	CTAPHID_INIT         Command = 0x06
+	CTAPHID_PING         Command = 0x01
+	CTAPHID_CANCEL       Command = 0x11
+	CTAPHID_ERROR        Command = 0x3f
+	CTAPHID_KEEPALIVE    Command = 0x3b
+	CTAPHID_WINK         Command = 0x08
+	CTAPHID_LOCK         Command = 0x04
+	CTAPHID_VENDOR_FIRST Command = 0x40
+	CTAPHID_VENDOR_LAST  Command = 0x7f
 )
 
 type StatusCode byte

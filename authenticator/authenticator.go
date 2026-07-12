@@ -23,6 +23,7 @@ import (
 	"github.com/go-ctap/ctap/protocol"
 	"github.com/go-ctap/ctap/transport/ctaphid"
 	"github.com/go-ctap/ctap/webauthn"
+	"github.com/go-ctap/ctap/yubico"
 	"github.com/ldclabs/cose/key"
 	"github.com/samber/lo"
 )
@@ -831,6 +832,16 @@ func (d *Device) GetAssertion(
 // GetInfo returns the struct containing metadata and capabilities of the device.
 func (d *Device) GetInfo() protocol.AuthenticatorGetInfoResponse {
 	return d.info
+}
+
+// GetYubiKeyDeviceInfo returns Yubico-specific device metadata using the
+// vendor HID command 0xc2. Non-Yubico authenticators will normally return a
+// CTAPHID invalid-command error.
+func (d *Device) GetYubiKeyDeviceInfo() (yubico.DeviceInfo, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return yubico.GetDeviceInfo(d.device, d.cid)
 }
 
 // GetPINRetries retrieves the number of PIN retries remaining for the device, and if it requires a power cycle
