@@ -121,12 +121,12 @@ func TestNewUsesConfiguredTransport(t *testing.T) {
 	assert.True(t, transport.closed)
 }
 
-func TestNewClosesConfiguredTransportAfterGetInfoFailure(t *testing.T) {
+func TestNewLeavesConfiguredTransportOpenAfterGetInfoFailure(t *testing.T) {
 	transport := &optionTransport{err: errors.New("get info failed")}
 
 	_, err := New(testContext, transport)
 	require.Error(t, err)
-	assert.True(t, transport.closed)
+	assert.False(t, transport.closed)
 }
 
 func TestHIDCapabilitiesPreserveDeviceCommands(t *testing.T) {

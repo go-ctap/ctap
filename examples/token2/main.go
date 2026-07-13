@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -29,7 +30,7 @@ func main() {
 
 	device, err := authenticator.New(ctx, transport)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Join(err, transport.Close()))
 	}
 	defer device.Close()
 

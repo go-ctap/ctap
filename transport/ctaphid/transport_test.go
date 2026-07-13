@@ -27,6 +27,26 @@ func TestOpenAllocatesChannelAndTransfersDevice(t *testing.T) {
 	assert.True(t, dev.closed)
 }
 
+func TestOpenCanceledLeavesDeviceOpen(t *testing.T) {
+	dev := &failedOpenDevice{}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := Open(ctx, dev)
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.False(t, dev.closed)
+}
+
+func TestOpenInitFailureLeavesDeviceOpen(t *testing.T) {
+	dev := &failedOpenDevice{readErr: io.ErrUnexpectedEOF}
+
+	_, err := Open(t.Context(), dev)
+
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	assert.False(t, dev.closed)
+}
+
 func TestTransportCBORPreCanceledWritesNothing(t *testing.T) {
 	dev := newOrderedDevice(t)
 	transport := NewTransport(dev, transportTestCID)
@@ -206,6 +226,24 @@ type initOpenDevice struct {
 	cid      ChannelID
 	response *bytes.Reader
 	closed   bool
+}
+
+type failedOpenDevice struct {
+	readErr error
+	closed  bool
+}
+
+func (d *failedOpenDevice) Read(_ context.Context, _ []byte) (int, error) {
+	return 0, d.readErr
+}
+
+func (d *failedOpenDevice) Write(_ context.Context, p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (d *failedOpenDevice) Close() error {
+	d.closed = true
+	return nil
 }
 
 func (d *initOpenDevice) Write(_ context.Context, p []byte) (int, error) {
