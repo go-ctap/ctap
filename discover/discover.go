@@ -46,7 +46,7 @@ func SelectDevice(opts ...options.Option) (*authenticator.Device, error) {
 	}
 
 	if len(oo.Paths) == 1 {
-		return authenticator.New(oo.Paths[0], opts...)
+		return authenticator.OpenHID(oo.Paths[0], opts...)
 	}
 
 	devices := make([]*authenticator.Device, 0)
@@ -64,7 +64,7 @@ func SelectDevice(opts ...options.Option) (*authenticator.Device, error) {
 	defer cancel()
 
 	for _, p := range oo.Paths {
-		dev, err := authenticator.New(p, opts...)
+		dev, err := authenticator.OpenHID(p, opts...)
 		if err != nil {
 			return nil, err
 		}

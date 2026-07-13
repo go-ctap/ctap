@@ -9,6 +9,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/protocol"
+	ctaptransport "github.com/go-ctap/ctap/transport"
 	"github.com/go-ctap/ctap/transport/ctaphid"
 )
 
@@ -33,10 +34,10 @@ func Message(cid ctaphid.ChannelID, command ctaphid.Command, data []byte) Respon
 }
 
 func CBOROK(cid ctaphid.ChannelID, data []byte) Response {
-	return Message(cid, ctaphid.CTAPHID_CBOR, append([]byte{byte(ctaphid.CTAP2_OK)}, data...))
+	return Message(cid, ctaphid.CTAPHID_CBOR, append([]byte{byte(ctaptransport.CTAP2_OK)}, data...))
 }
 
-func CBORStatus(cid ctaphid.ChannelID, status ctaphid.StatusCode) Response {
+func CBORStatus(cid ctaphid.ChannelID, status ctaptransport.StatusCode) Response {
 	return Message(cid, ctaphid.CTAPHID_CBOR, []byte{byte(status)})
 }
 
@@ -44,7 +45,7 @@ func CTAPHIDError(cid ctaphid.ChannelID, err ctaphid.Error) Response {
 	return Message(cid, ctaphid.CTAPHID_ERROR, []byte{byte(err)})
 }
 
-func Keepalive(cid ctaphid.ChannelID, status ctaphid.StatusCode) Response {
+func Keepalive(cid ctaphid.ChannelID, status ctaphid.KeepaliveStatusCode) Response {
 	return Message(cid, ctaphid.CTAPHID_KEEPALIVE, []byte{byte(status)})
 }
 

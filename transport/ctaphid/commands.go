@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/go-ctap/ctap/protocol"
+	"github.com/go-ctap/ctap/transport"
 )
 
 func ensureDataLen(data []byte, min int) error {
@@ -27,29 +28,29 @@ func ensureResponseCID(msg Message, cid ChannelID) error {
 	return nil
 }
 
-func CBOR(dev io.ReadWriter, cid ChannelID, data []byte) (CBORResponse, error) {
+func CBOR(dev io.ReadWriter, cid ChannelID, data []byte) (transport.CBORResponse, error) {
 	if len(data) < 1 {
-		return CBORResponse{}, ErrInvalidRequestMessage
+		return transport.CBORResponse{}, ErrInvalidRequestMessage
 	}
 
 	msg, err := NewMessage(cid, CTAPHID_CBOR, data)
 	if err != nil {
-		return CBORResponse{}, err
+		return transport.CBORResponse{}, err
 	}
 
 	if _, err := msg.WriteTo(dev); err != nil {
-		return CBORResponse{}, err
+		return transport.CBORResponse{}, err
 	}
 
 read:
 	for {
 		respMsg := make(Message, 0)
 		if _, err := respMsg.ReadFrom(dev); err != nil {
-			return CBORResponse{}, err
+			return transport.CBORResponse{}, err
 		}
 
 		if err := ensureResponseCID(respMsg, cid); err != nil {
-			return CBORResponse{}, err
+			return transport.CBORResponse{}, err
 		}
 
 		var respData []byte
@@ -58,37 +59,32 @@ read:
 				switch p.command {
 				case CTAPHID_CBOR:
 					if err := ensureDataLen(p.data, 1); err != nil {
-						return CBORResponse{}, err
-					}
-					command := protocol.Command(data[0])
-					code := StatusCode(p.data[0])
-					if code != CTAP2_OK {
-						return CBORResponse{}, newCTAPError(command, code)
+						return transport.CBORResponse{}, err
 					}
 				case CTAPHID_ERROR:
 					if err := ensureDataLen(p.data, 1); err != nil {
-						return CBORResponse{}, err
+						return transport.CBORResponse{}, err
 					}
-					return CBORResponse{}, errors.New(Error(p.data[0]).String())
+					return transport.CBORResponse{}, errors.New(Error(p.data[0]).String())
 				case CTAPHID_KEEPALIVE:
 					continue read
 				default:
-					return CBORResponse{}, ErrUnexpectedCommand
+					return transport.CBORResponse{}, ErrUnexpectedCommand
 				}
 			}
 
 			respData = slices.Concat(respData, p.data)
 		}
 		if err := ensureDataLen(respData, 1); err != nil {
-			return CBORResponse{}, err
+			return transport.CBORResponse{}, err
 		}
 
-		r := CBORResponse{
-			StatusCode: StatusCode(respData[0]),
+		response := transport.CBORResponse{
+			StatusCode: transport.StatusCode(respData[0]),
 			Data:       respData[1:],
 		}
 
-		return r, nil
+		return transport.ValidateCBORResponse(protocol.Command(data[0]), response)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	ctaptransport "github.com/go-ctap/ctap/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -61,7 +62,7 @@ func TestMessage_ReadFromRejectsInvalidContinuationCID(t *testing.T) {
 
 func TestCBORRejectsUnexpectedResponseCID(t *testing.T) {
 	responseCID := ChannelID{9, 9, 9, 9}
-	msg, err := NewMessage(responseCID, CTAPHID_CBOR, []byte{byte(CTAP2_OK)})
+	msg, err := NewMessage(responseCID, CTAPHID_CBOR, []byte{byte(ctaptransport.CTAP2_OK)})
 	require.NoError(t, err)
 
 	reads := bytes.NewBuffer(nil)

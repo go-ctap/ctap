@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"iter"
 	"log/slog"
 	"slices"
@@ -17,27 +16,41 @@ import (
 	"github.com/go-ctap/ctap/crypto"
 	"github.com/go-ctap/ctap/options"
 	"github.com/go-ctap/ctap/protocol"
-	"github.com/go-ctap/ctap/transport/ctaphid"
+	ctaptransport "github.com/go-ctap/ctap/transport"
 	"github.com/ldclabs/cose/key"
 )
 
 type Client struct {
-	logger  *slog.Logger
-	encMode cbor.EncMode
+	logger    *slog.Logger
+	encMode   cbor.EncMode
+	transport ctaptransport.CBOR
 }
 
-func NewClient(opts ...options.Option) *Client {
+// ErrTransportNotConfigured is returned by commands on an unbound client.
+var ErrTransportNotConfigured = errors.New("client: transport not configured")
+
+func (cl *Client) cbor(data []byte) (ctaptransport.CBORResponse, error) {
+	if cl.transport == nil {
+		return ctaptransport.CBORResponse{}, ErrTransportNotConfigured
+	}
+
+	return cl.transport.CBOR(data)
+}
+
+func NewClient(opts ...options.Option) (*Client, error) {
 	oo := options.NewOptions(opts...)
+	if oo.Transport == nil {
+		return nil, ErrTransportNotConfigured
+	}
 
 	return &Client{
-		logger:  oo.Logger,
-		encMode: oo.EncMode,
-	}
+		logger:    oo.Logger,
+		encMode:   oo.EncMode,
+		transport: oo.Transport,
+	}, nil
 }
 
 func (cl *Client) MakeCredential(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 	clientDataHash []byte,
@@ -83,7 +96,7 @@ func (cl *Client) MakeCredential(
 	}
 	cl.logger.Debug("MakeCredential CBOR request", "hex", hex.EncodeToString(b))
 
-	respRaw, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(protocol.AuthenticatorMakeCredential)}, b))
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorMakeCredential)}, b))
 	if err != nil {
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
@@ -103,8 +116,6 @@ func (cl *Client) MakeCredential(
 }
 
 func (cl *Client) GetAssertion(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 	rpID string,
@@ -145,7 +156,7 @@ func (cl *Client) GetAssertion(
 		}
 		cl.logger.Debug("GetAssertion CBOR request", "hex", hex.EncodeToString(bBegin))
 
-		respRawBegin, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(protocol.AuthenticatorGetAssertion)}, bBegin))
+		respRawBegin, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorGetAssertion)}, bBegin))
 		if err != nil {
 			yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 			return
@@ -173,7 +184,7 @@ func (cl *Client) GetAssertion(
 		}
 
 		for i := uint(1); i < *respBegin.NumberOfCredentials; i++ {
-			respRaw, err := ctaphid.CBOR(device, cid, []byte{byte(protocol.AuthenticatorGetNextAssertion)})
+			respRaw, err := cl.cbor([]byte{byte(protocol.AuthenticatorGetNextAssertion)})
 			if err != nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 				return
@@ -199,8 +210,8 @@ func (cl *Client) GetAssertion(
 	}
 }
 
-func (cl *Client) GetInfo(device io.ReadWriter, cid ctaphid.ChannelID) (protocol.AuthenticatorGetInfoResponse, error) {
-	respRaw, err := ctaphid.CBOR(device, cid, []byte{byte(protocol.AuthenticatorGetInfo)})
+func (cl *Client) GetInfo() (protocol.AuthenticatorGetInfoResponse, error) {
+	respRaw, err := cl.cbor([]byte{byte(protocol.AuthenticatorGetInfo)})
 	if err != nil {
 		return protocol.AuthenticatorGetInfoResponse{}, err
 	}
@@ -214,8 +225,6 @@ func (cl *Client) GetInfo(device io.ReadWriter, cid ctaphid.ChannelID) (protocol
 }
 
 func (cl *Client) GetPINRetries(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 ) (uint, *bool, error) {
 	req := &protocol.AuthenticatorClientPINRequest{
@@ -230,7 +239,7 @@ func (cl *Client) GetPINRetries(
 	}
 	cl.logger.Debug("getPINRetries CBOR request", "hex", hex.EncodeToString(b))
 
-	respRaw, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
 	if err != nil {
 		return 0, nil, err
 	}
@@ -249,8 +258,6 @@ func (cl *Client) GetPINRetries(
 }
 
 func (cl *Client) GetKeyAgreement(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 ) (key.Key, error) {
 	req := &protocol.AuthenticatorClientPINRequest{
@@ -264,7 +271,7 @@ func (cl *Client) GetKeyAgreement(
 	}
 	cl.logger.Debug("getKeyAgreement CBOR request", "hex", hex.EncodeToString(b))
 
-	respRaw, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
 	if err != nil {
 		return nil, fmt.Errorf("keyAgreement CBOR request failed: %w", err)
 	}
@@ -279,8 +286,6 @@ func (cl *Client) GetKeyAgreement(
 }
 
 func (cl *Client) SetPIN(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	keyAgreement key.Key,
 	pin string,
@@ -326,7 +331,7 @@ func (cl *Client) SetPIN(
 	}
 	cl.logger.Debug("setPIN CBOR request", "hex", hex.EncodeToString(b))
 
-	if _, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b)); err != nil {
+	if _, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b)); err != nil {
 		return err
 	}
 
@@ -334,8 +339,6 @@ func (cl *Client) SetPIN(
 }
 
 func (cl *Client) ChangePIN(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	keyAgreement key.Key,
 	currentPin string,
@@ -397,7 +400,7 @@ func (cl *Client) ChangePIN(
 	}
 	cl.logger.Debug("changePIN CBOR request", "hex", hex.EncodeToString(b))
 
-	if _, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b)); err != nil {
+	if _, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b)); err != nil {
 		return err
 	}
 
@@ -407,8 +410,6 @@ func (cl *Client) ChangePIN(
 // GetPinToken allows getting a PinUvAuthToken (superseded by GetPinUvAuthTokenUsingUvWithPermissions or
 // GetPinUvAuthTokenUsingPinWithPermissions, thus for backwards compatibility only).
 func (cl *Client) GetPinToken(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	keyAgreement key.Key,
 	pin string,
@@ -450,7 +451,7 @@ func (cl *Client) GetPinToken(
 	}
 	cl.logger.Debug("getPinToken CBOR request", "hex", hex.EncodeToString(b))
 
-	respRaw, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
 	if err != nil {
 		return nil, err
 	}
@@ -471,8 +472,6 @@ func (cl *Client) GetPinToken(
 
 // GetPinUvAuthTokenUsingUvWithPermissions allows getting a PinUvAuthToken with specific permissions using User Verification.
 func (cl *Client) GetPinUvAuthTokenUsingUvWithPermissions(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	keyAgreement key.Key,
 	permissions protocol.Permission,
@@ -502,7 +501,7 @@ func (cl *Client) GetPinUvAuthTokenUsingUvWithPermissions(
 	}
 	cl.logger.Debug("getPinUvAuthTokenUsingUvWithPermissions CBOR request", "hex", hex.EncodeToString(b))
 
-	respRaw, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
 	if err != nil {
 		return nil, err
 	}
@@ -521,10 +520,7 @@ func (cl *Client) GetPinUvAuthTokenUsingUvWithPermissions(
 	return pinUvAuthToken, nil
 }
 
-func (cl *Client) GetUVRetries(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
-) (uint, error) {
+func (cl *Client) GetUVRetries() (uint, error) {
 	req := &protocol.AuthenticatorClientPINRequest{
 		SubCommand: protocol.ClientPINSubCommandGetUVRetries,
 	}
@@ -535,7 +531,7 @@ func (cl *Client) GetUVRetries(
 	}
 	cl.logger.Debug("getUVRetries CBOR request", "hex", hex.EncodeToString(b))
 
-	respRaw, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
 	if err != nil {
 		return 0, err
 	}
@@ -555,8 +551,6 @@ func (cl *Client) GetUVRetries(
 
 // GetPinUvAuthTokenUsingPinWithPermissions allows getting a PinUvAuthToken with specific permissions using PIN.
 func (cl *Client) GetPinUvAuthTokenUsingPinWithPermissions(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	keyAgreement key.Key,
 	pin string,
@@ -602,7 +596,7 @@ func (cl *Client) GetPinUvAuthTokenUsingPinWithPermissions(
 	}
 	cl.logger.Debug("getPinUvAuthTokenUsingPinWithPermissions CBOR request", "hex", hex.EncodeToString(b))
 
-	respRaw, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
 	if err != nil {
 		return nil, err
 	}
@@ -621,17 +615,13 @@ func (cl *Client) GetPinUvAuthTokenUsingPinWithPermissions(
 	return pinUvAuthToken, nil
 }
 
-func Reset(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
-) error {
-	_, err := ctaphid.CBOR(device, cid, []byte{byte(protocol.AuthenticatorReset)})
+// Reset sends an authenticatorReset command through the configured transport.
+func (cl *Client) Reset() error {
+	_, err := cl.cbor([]byte{byte(protocol.AuthenticatorReset)})
 	return err
 }
 
 func (cl *Client) GetBioModality(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 ) (protocol.AuthenticatorBioEnrollmentResponse, error) {
 	req := &protocol.AuthenticatorBioEnrollmentRequest{GetModality: true}
@@ -647,11 +637,7 @@ func (cl *Client) GetBioModality(
 		command = protocol.PrototypeAuthenticatorBioEnrollment
 	}
 
-	respRaw, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	)
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(command)}, b))
 	if err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
@@ -666,8 +652,6 @@ func (cl *Client) GetBioModality(
 }
 
 func (cl *Client) GetFingerprintSensorInfo(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 ) (protocol.AuthenticatorBioEnrollmentResponse, error) {
 	req := &protocol.AuthenticatorBioEnrollmentRequest{
@@ -686,11 +670,7 @@ func (cl *Client) GetFingerprintSensorInfo(
 		command = protocol.PrototypeAuthenticatorBioEnrollment
 	}
 
-	respRaw, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	)
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(command)}, b))
 	if err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
@@ -705,8 +685,6 @@ func (cl *Client) GetFingerprintSensorInfo(
 }
 
 func (cl *Client) EnrollBegin(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
@@ -752,11 +730,7 @@ func (cl *Client) EnrollBegin(
 		command = protocol.PrototypeAuthenticatorBioEnrollment
 	}
 
-	respRaw, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	)
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(command)}, b))
 	if err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
@@ -770,8 +744,7 @@ func (cl *Client) EnrollBegin(
 	return resp, nil
 }
 
-func (cl *Client) EnrollCaptureNextSample(device io.ReadWriter,
-	cid ctaphid.ChannelID,
+func (cl *Client) EnrollCaptureNextSample(
 	preview bool,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
@@ -817,11 +790,7 @@ func (cl *Client) EnrollCaptureNextSample(device io.ReadWriter,
 		command = protocol.PrototypeAuthenticatorBioEnrollment
 	}
 
-	respRaw, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	)
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(command)}, b))
 	if err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
@@ -836,8 +805,6 @@ func (cl *Client) EnrollCaptureNextSample(device io.ReadWriter,
 }
 
 func (cl *Client) CancelCurrentEnrollment(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 ) error {
 	req := &protocol.AuthenticatorBioEnrollmentRequest{
@@ -856,11 +823,7 @@ func (cl *Client) CancelCurrentEnrollment(
 		command = protocol.PrototypeAuthenticatorBioEnrollment
 	}
 
-	if _, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	); err != nil {
+	if _, err := cl.cbor(slices.Concat([]byte{byte(command)}, b)); err != nil {
 		return err
 	}
 
@@ -868,8 +831,6 @@ func (cl *Client) CancelCurrentEnrollment(
 }
 
 func (cl *Client) EnumerateEnrollments(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
@@ -898,11 +859,7 @@ func (cl *Client) EnumerateEnrollments(
 		command = protocol.PrototypeAuthenticatorBioEnrollment
 	}
 
-	respRaw, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	)
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(command)}, b))
 	if err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
@@ -917,8 +874,6 @@ func (cl *Client) EnumerateEnrollments(
 }
 
 func (cl *Client) SetFriendlyName(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
@@ -964,11 +919,7 @@ func (cl *Client) SetFriendlyName(
 		command = protocol.PrototypeAuthenticatorBioEnrollment
 	}
 
-	if _, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	); err != nil {
+	if _, err := cl.cbor(slices.Concat([]byte{byte(command)}, b)); err != nil {
 		return err
 	}
 
@@ -976,8 +927,6 @@ func (cl *Client) SetFriendlyName(
 }
 
 func (cl *Client) RemoveEnrollment(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
@@ -1020,11 +969,7 @@ func (cl *Client) RemoveEnrollment(
 		command = protocol.PrototypeAuthenticatorBioEnrollment
 	}
 
-	if _, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	); err != nil {
+	if _, err := cl.cbor(slices.Concat([]byte{byte(command)}, b)); err != nil {
 		return err
 	}
 
@@ -1032,8 +977,6 @@ func (cl *Client) RemoveEnrollment(
 }
 
 func (cl *Client) GetCredsMetadata(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
@@ -1061,11 +1004,7 @@ func (cl *Client) GetCredsMetadata(
 		command = protocol.PrototypeAuthenticatorCredentialManagement
 	}
 
-	respRaw, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	)
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(command)}, b))
 	if err != nil {
 		return protocol.AuthenticatorCredentialManagementResponse{}, err
 	}
@@ -1079,9 +1018,12 @@ func (cl *Client) GetCredsMetadata(
 	return resp, nil
 }
 
+// EnumerateRPs yields all Relying Parties from one authenticator enumeration.
+//
+// IMPORTANT: Fully consume this iterator before invoking any other Client
+// method. Sending another command invalidates the authenticator's active
+// enumeration state. Collect all RPs before starting EnumerateCredentials.
 func (cl *Client) EnumerateRPs(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
@@ -1111,9 +1053,7 @@ func (cl *Client) EnumerateRPs(
 			command = protocol.PrototypeAuthenticatorCredentialManagement
 		}
 
-		respRawBegin, err := ctaphid.CBOR(
-			device,
-			cid,
+		respRawBegin, err := cl.cbor(
 			slices.Concat(
 				[]byte{byte(command)},
 				bBegin,
@@ -1151,7 +1091,7 @@ func (cl *Client) EnumerateRPs(
 			}
 			cl.logger.Debug("enumerateRPsGetNextRP CBOR request", "hex", hex.EncodeToString(bNext))
 
-			respRawNext, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(command)}, bNext))
+			respRawNext, err := cl.cbor(slices.Concat([]byte{byte(command)}, bNext))
 			if err != nil {
 				yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 				return
@@ -1171,9 +1111,12 @@ func (cl *Client) EnumerateRPs(
 	}
 }
 
+// EnumerateCredentials yields all credentials for one Relying Party.
+//
+// IMPORTANT: Fully consume this iterator before invoking any other Client
+// method. Sending another command invalidates the authenticator's active
+// enumeration state. Do not nest it inside EnumerateRPs.
 func (cl *Client) EnumerateCredentials(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
@@ -1214,9 +1157,7 @@ func (cl *Client) EnumerateCredentials(
 			command = protocol.PrototypeAuthenticatorCredentialManagement
 		}
 
-		respRawBegin, err := ctaphid.CBOR(
-			device,
-			cid,
+		respRawBegin, err := cl.cbor(
 			slices.Concat(
 				[]byte{byte(command)},
 				bBegin,
@@ -1254,7 +1195,7 @@ func (cl *Client) EnumerateCredentials(
 			}
 			cl.logger.Debug("enumerateCredentialsGetNextCredential CBOR request", "hex", hex.EncodeToString(bNext))
 
-			respRawNext, err := ctaphid.CBOR(device, cid, slices.Concat([]byte{byte(command)}, bNext))
+			respRawNext, err := cl.cbor(slices.Concat([]byte{byte(command)}, bNext))
 			if err != nil {
 				yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 				return
@@ -1275,8 +1216,6 @@ func (cl *Client) EnumerateCredentials(
 }
 
 func (cl *Client) DeleteCredential(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
@@ -1316,11 +1255,7 @@ func (cl *Client) DeleteCredential(
 		command = protocol.PrototypeAuthenticatorCredentialManagement
 	}
 
-	if _, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	); err != nil {
+	if _, err := cl.cbor(slices.Concat([]byte{byte(command)}, b)); err != nil {
 		return err
 	}
 
@@ -1328,8 +1263,6 @@ func (cl *Client) DeleteCredential(
 }
 
 func (cl *Client) UpdateUserInformation(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	preview bool,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
@@ -1374,11 +1307,7 @@ func (cl *Client) UpdateUserInformation(
 		command = protocol.PrototypeAuthenticatorCredentialManagement
 	}
 
-	if _, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(command)}, b),
-	); err != nil {
+	if _, err := cl.cbor(slices.Concat([]byte{byte(command)}, b)); err != nil {
 		return err
 	}
 
@@ -1386,8 +1315,6 @@ func (cl *Client) UpdateUserInformation(
 }
 
 func (cl *Client) LargeBlobs(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 	get uint,
@@ -1437,11 +1364,7 @@ func (cl *Client) LargeBlobs(
 	}
 	cl.logger.Debug("largeBlobs set CBOR request", "hex", hex.EncodeToString(b))
 
-	respRaw, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(protocol.AuthenticatorLargeBlobs)}, b),
-	)
+	respRaw, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorLargeBlobs)}, b))
 	if err != nil {
 		return protocol.AuthenticatorLargeBlobsResponse{}, err
 	}
@@ -1457,8 +1380,6 @@ func (cl *Client) LargeBlobs(
 }
 
 func (cl *Client) EnableEnterpriseAttestation(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 ) error {
@@ -1488,11 +1409,7 @@ func (cl *Client) EnableEnterpriseAttestation(
 	}
 	cl.logger.Debug("enableEnterpriseAttestation CBOR request", "hex", hex.EncodeToString(b))
 
-	if _, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(protocol.AuthenticatorConfig)}, b),
-	); err != nil {
+	if _, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorConfig)}, b)); err != nil {
 		return err
 	}
 
@@ -1500,8 +1417,6 @@ func (cl *Client) EnableEnterpriseAttestation(
 }
 
 func (cl *Client) ToggleAlwaysUV(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 ) error {
@@ -1531,11 +1446,7 @@ func (cl *Client) ToggleAlwaysUV(
 	}
 	cl.logger.Debug("toggleAlwaysUv CBOR request", "hex", hex.EncodeToString(b))
 
-	if _, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(protocol.AuthenticatorConfig)}, b),
-	); err != nil {
+	if _, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorConfig)}, b)); err != nil {
 		return err
 	}
 
@@ -1543,8 +1454,6 @@ func (cl *Client) ToggleAlwaysUV(
 }
 
 func (cl *Client) SetMinPINLength(
-	device io.ReadWriter,
-	cid ctaphid.ChannelID,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 	newMinPINLength uint,
@@ -1591,11 +1500,7 @@ func (cl *Client) SetMinPINLength(
 	}
 	cl.logger.Debug("SetMinPINLength CBOR request", "hex", hex.EncodeToString(b))
 
-	if _, err := ctaphid.CBOR(
-		device,
-		cid,
-		slices.Concat([]byte{byte(protocol.AuthenticatorConfig)}, b),
-	); err != nil {
+	if _, err := cl.cbor(slices.Concat([]byte{byte(protocol.AuthenticatorConfig)}, b)); err != nil {
 		return err
 	}
 
@@ -1603,11 +1508,11 @@ func (cl *Client) SetMinPINLength(
 }
 
 // Selection blocks execution until the user will confirm his presence or operation will be canceled.
-func (cl *Client) Selection(device io.ReadWriter, cid ctaphid.ChannelID) error {
-	_, err := ctaphid.CBOR(device, cid, []byte{byte(protocol.AuthenticatorSelection)})
+func (cl *Client) Selection() error {
+	_, err := cl.cbor([]byte{byte(protocol.AuthenticatorSelection)})
 	if err != nil {
-		var ctapError *ctaphid.CTAPError
-		if !errors.As(err, &ctapError) || ctapError.StatusCode != ctaphid.CTAP2_ERR_KEEPALIVE_CANCEL {
+		var ctapError *ctaptransport.CTAPError
+		if !errors.As(err, &ctapError) || ctapError.StatusCode != ctaptransport.CTAP2_ERR_KEEPALIVE_CANCEL {
 			return err
 		}
 	}

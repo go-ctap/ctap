@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/fxamacker/cbor/v2"
+	ctaptransport "github.com/go-ctap/ctap/transport"
 )
 
 type Options struct {
@@ -13,6 +14,7 @@ type Options struct {
 	Context      context.Context
 	Paths        []string
 	UseNamedPipe bool
+	Transport    ctaptransport.CBOR
 }
 
 type Option func(*Options)
@@ -44,6 +46,15 @@ func WithPaths(paths ...string) Option {
 func WithUseNamedPipes() Option {
 	return func(opts *Options) {
 		opts.UseNamedPipe = true
+	}
+}
+
+// WithTransport binds client commands to a transport-independent CBOR
+// connection. Higher-level authenticators receive their owned transport
+// directly through authenticator.New.
+func WithTransport(transport ctaptransport.CBOR) Option {
+	return func(opts *Options) {
+		opts.Transport = transport
 	}
 }
 

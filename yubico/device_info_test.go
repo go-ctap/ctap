@@ -26,7 +26,7 @@ func TestGetDeviceInfo(t *testing.T) {
 	}
 	fake := testhid.New(t, testhid.Message(cid, CommandGetDeviceInfo, payload))
 
-	info, err := GetDeviceInfo(fake, cid)
+	info, err := GetDeviceInfo(ctaphid.NewTransport(fake, cid))
 	require.NoError(t, err)
 	require.NotNil(t, info.Serial)
 	assert.Equal(t, uint32(0x00123456), *info.Serial)

@@ -11,7 +11,8 @@ It exposes several abstraction levels, from raw CTAPHID transport framing to erg
 
 ## Current Status
 
-The library implements the CTAP 2.1 core command set over CTAPHID, with NFC and BLE transports out of scope for now.
+The library implements the CTAP 2.1 core command set over CTAPHID and Token2's proprietary CTAP-over-APDU tunnel,
+accessed through a smart-card/PC/SC connection. Generic NFC and BLE transports remain out of scope for now.
 It also includes selected CTAP 2.2 and CTAP 2.3 features and extensions, such as `largeBlobKey` and `hmac-secret-mc`.
 The `hmac-secret-mc` implementation has not yet been tested against a physical authenticator with support for it, and
 the dedicated `largeBlob` extension is still pending.
@@ -23,20 +24,20 @@ and fix bugs.
 
 The library exposes several abstraction levels, allowing you to choose the API that best suits your needs:
 
-1. **Transport Layer (`transport/ctaphid`)**
+1. **Transport Layer (`transport/ctaphid`, `transport/token2`)**
 
-   Direct access to the raw CTAPHID transport protocol. If you need maximum control, you can communicate with devices
-   at the frame level.
+   Direct access to raw CTAPHID framing and Token2's proprietary CTAP-over-APDU applet tunnel. Both implement the
+   common `transport.CBOR` message boundary.
 
 2. **Client Layer (`client`)**
 
-   Implements CTAP command messaging atop the transport, letting you call authenticator commands while still managing
-   the device handle, channel ID, PIN/UV auth tokens, and command inputs yourself.
+   Implements CTAP command messaging over a transport configured with `options.WithTransport`, while callers manage
+   PIN/UV auth tokens and command inputs themselves.
 
 3. **Authenticator Layer (`authenticator`)**
 
-   Provides a convenient wrapper over the `client` package, managing the HID device descriptor, channel ID (CID),
-   cached authenticator info, and common CTAP flows.
+   Provides a convenient wrapper over the `client` package, managing transport initialization, cached authenticator
+   info, PIN/UV state, and common CTAP flows.
 
 4. **Discovery Helpers (`discover`)**
 
@@ -73,6 +74,75 @@ The library exposes several abstraction levels, allowing you to choose the API t
   configuration-lock state, and device timeouts.
 - Modern Go design, making use of language features like iterators.
 - HID access uses the [`go-ctap/hid`](https://github.com/go-ctap/hid) `cgo`-free backend.
+- Token2's proprietary APDU tunnel works with any compatible raw APDU card connection, including
+  [`go-ctap/pcsc`](https://github.com/go-ctap/pcsc).
+
+## Token2 Proprietary CTAP-over-APDU via PC/SC
+
+Token2 exposes a standard USB CCID smart-card interface, which is handled by the operating system's PC/SC stack.
+After selecting the Token2 applet, this library wraps each CTAP command byte and CBOR payload in Token2's proprietary
+`80 C5 03 00` APDU. The APDU response contains the CTAP status byte and response CBOR; ISO 7816 status words and
+`61xx`/GET RESPONSE chaining remain an outer layer. Open the card with `go-ctap/pcsc`, initialize the Token2 APDU
+tunnel, and pass ownership to the authenticator:
+
+```go
+card, err := pcsc.Open(readerName)
+if err != nil {
+	return err
+}
+
+tokenTransport, err := token2.New(card)
+if err != nil {
+	_ = card.Close()
+	return err
+}
+
+device, err := authenticator.New(tokenTransport)
+if err != nil {
+	return err // authenticator.New closes tokenTransport after initialization failure
+}
+defer device.Close()
+
+info := device.GetInfo()
+```
+
+HID discovery, opening, and CTAPHID channel allocation are available through a separate constructor:
+
+```go
+device, err := authenticator.OpenHID(path)
+```
+
+The Windows HID proxy can also be opened as an initialized transport and passed to the generic constructor:
+
+```go
+proxyTransport, err := hidproxy.Open(ctx, path)
+device, err := authenticator.New(proxyTransport)
+```
+
+## Examples
+
+Each example is an independent Go module, so its dependencies do not affect the library's root `go.mod`.
+
+- `examples/pin`: HID authenticator with PIN-based authorization.
+- `examples/uv`: biometric HID authenticator using built-in UV; prints enrolled fingerprints and credentials.
+- `examples/token2`: Token2's proprietary CTAP-over-APDU tunnel via PC/SC; `PCSC_READER` optionally selects a reader
+  by name substring.
+- `examples/namedpipe`: HID discovery, GetInfo, CTAPHID Ping, and PIN-authorized passkey listing through the Windows
+  named-pipe proxy. The `go-ctaphid-windows-proxy` process must already be running and its named pipe must be accessible.
+
+```sh
+cd examples/pin
+FIDO2_PIN=123456 go run .
+
+cd ../uv
+go run .
+
+cd ../token2
+FIDO2_PIN=123456 PCSC_READER=Token2 go run .
+
+cd ../namedpipe
+FIDO2_PIN=123456 go run .
+```
 
 ## Feature Matrix
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/go-ctap/ctap/protocol"
+	ctaptransport "github.com/go-ctap/ctap/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +15,7 @@ import (
 func TestCBORSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
 	cid := ChannelID{1, 2, 3, 4}
 	request := []byte{byte(protocol.AuthenticatorGetInfo)}
-	response := []byte{byte(CTAP2_OK), 0xa1, 0x01, 0x02}
+	response := []byte{byte(ctaptransport.CTAP2_OK), 0xa1, 0x01, 0x02}
 	reads := bytes.NewBuffer(nil)
 	reads.Write(rawResponseMessage(t, cid, CTAPHID_KEEPALIVE, []byte{byte(STATUS_PROCESSING)}))
 	reads.Write(rawResponseMessage(t, cid, CTAPHID_CBOR, response))
@@ -23,7 +24,7 @@ func TestCBORSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
 
 	resp, err := CBOR(dev, cid, request)
 	require.NoError(t, err)
-	assert.Equal(t, CTAP2_OK, resp.StatusCode)
+	assert.Equal(t, ctaptransport.CTAP2_OK, resp.StatusCode)
 	assert.Equal(t, response[1:], resp.Data)
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CBOR, request)
 }
@@ -31,7 +32,7 @@ func TestCBORSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
 func TestCBORReturnsTypedCTAPError(t *testing.T) {
 	cid := ChannelID{1, 2, 3, 4}
 	request := []byte{byte(protocol.AuthenticatorGetInfo)}
-	response := []byte{byte(CTAP2_ERR_INVALID_CBOR)}
+	response := []byte{byte(ctaptransport.CTAP2_ERR_INVALID_CBOR)}
 	dev := &scriptedDevice{
 		reads: bytes.NewReader(rawResponseMessage(t, cid, CTAPHID_CBOR, response)),
 	}
@@ -39,10 +40,10 @@ func TestCBORReturnsTypedCTAPError(t *testing.T) {
 	_, err := CBOR(dev, cid, request)
 	require.Error(t, err)
 
-	var ctapErr *CTAPError
+	var ctapErr *ctaptransport.CTAPError
 	require.True(t, errors.As(err, &ctapErr))
 	assert.Equal(t, protocol.AuthenticatorGetInfo, ctapErr.Command)
-	assert.Equal(t, CTAP2_ERR_INVALID_CBOR, ctapErr.StatusCode)
+	assert.Equal(t, ctaptransport.CTAP2_ERR_INVALID_CBOR, ctapErr.StatusCode)
 	assert.Contains(t, err.Error(), "AuthenticatorGetInfo failed")
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CBOR, request)
 }

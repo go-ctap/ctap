@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/go-ctap/ctap/transport/ctaphid"
 )
@@ -74,10 +73,14 @@ var ErrInvalidDeviceInfo = errors.New("invalid Yubico device information")
 // the on-wire command byte 0xc2.
 const CommandGetDeviceInfo ctaphid.Command = ctaphid.CTAPHID_VENDOR_FIRST + 2
 
+type VendorTransport interface {
+	Vendor(command ctaphid.Command, data []byte) (ctaphid.VendorResponse, error)
+}
+
 // GetDeviceInfo sends Yubico's CTAPHID command 0xc2 (0x42 without the INIT
 // packet bit) and parses its TLV response.
-func GetDeviceInfo(device io.ReadWriter, cid ctaphid.ChannelID) (DeviceInfo, error) {
-	response, err := ctaphid.Vendor(device, cid, CommandGetDeviceInfo, nil)
+func GetDeviceInfo(transport VendorTransport) (DeviceInfo, error) {
+	response, err := transport.Vendor(CommandGetDeviceInfo, nil)
 	if err != nil {
 		return DeviceInfo{}, err
 	}

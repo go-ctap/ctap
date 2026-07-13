@@ -7,17 +7,19 @@ import (
 	"io"
 	"iter"
 
+	"github.com/go-ctap/ctap/hidproxy"
 	ghid "github.com/go-ctap/hid"
 )
 
 func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 	return func(yield func(*ghid.DeviceInfo, error) bool) {
-		if v := ctx.Value(CtxKeyUseNamedPipe); v != nil {
-			useNamedPipe, ok := v.(bool)
-			if ok && useNamedPipe {
-				yield(nil, ErrNotSupported)
-				return
+		if useNamedPipe(ctx) {
+			for device, err := range hidproxy.Enumerate(ctx) {
+				if !yield(device, err) {
+					return
+				}
 			}
+			return
 		}
 
 		for devInfo, err := range ghid.Enumerate(
@@ -32,14 +34,9 @@ func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 }
 
 func OpenPath(ctx context.Context, path string) (dev io.ReadWriteCloser, err error) {
-	if v := ctx.Value(CtxKeyUseNamedPipe); v != nil {
-		useNamedPipe, ok := v.(bool)
-		if ok && useNamedPipe {
-			return nil, ErrNotSupported
-		}
+	if useNamedPipe(ctx) {
+		return hidproxy.OpenPath(ctx, path)
 	}
 
 	return ghid.OpenPath(path)
 }
-
-func hidExit() error { return nil }

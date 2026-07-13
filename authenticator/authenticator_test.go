@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -14,9 +15,12 @@ import (
 	"github.com/go-ctap/ctap/credential"
 	"github.com/go-ctap/ctap/extension"
 	"github.com/go-ctap/ctap/internal/testhid"
+	"github.com/go-ctap/ctap/options"
 	"github.com/go-ctap/ctap/protocol"
+	ctaptransport "github.com/go-ctap/ctap/transport"
 	"github.com/go-ctap/ctap/transport/ctaphid"
 	"github.com/go-ctap/ctap/webauthn"
+	"github.com/go-ctap/ctap/yubico"
 	"github.com/ldclabs/cose/iana"
 	"github.com/ldclabs/cose/key"
 	ecdhkey "github.com/ldclabs/cose/key/ecdh"
@@ -27,13 +31,63 @@ import (
 
 var testCID = ctaphid.ChannelID{1, 2, 3, 4}
 
+var (
+	_ pinger                 = (*ctaphid.Transport)(nil)
+	_ winker                 = (*ctaphid.Transport)(nil)
+	_ locker                 = (*ctaphid.Transport)(nil)
+	_ canceler               = (*ctaphid.Transport)(nil)
+	_ yubico.VendorTransport = (*ctaphid.Transport)(nil)
+)
+
+type optionTransport struct {
+	response []byte
+	err      error
+	requests [][]byte
+	closed   bool
+}
+
+type capabilityTransport struct {
+	optionTransport
+	pingResponse []byte
+	winked       bool
+	lockSeconds  uint8
+}
+
+func (t *capabilityTransport) Ping([]byte) ([]byte, error) {
+	return slices.Clone(t.pingResponse), nil
+}
+
+func (t *capabilityTransport) Wink() error {
+	t.winked = true
+	return nil
+}
+
+func (t *capabilityTransport) Lock(seconds uint8) error {
+	t.lockSeconds = seconds
+	return nil
+}
+
+func (t *optionTransport) CBOR(data []byte) (ctaptransport.CBORResponse, error) {
+	t.requests = append(t.requests, slices.Clone(data))
+	return ctaptransport.CBORResponse{Data: slices.Clone(t.response)}, t.err
+}
+
+func (t *optionTransport) Close() error {
+	t.closed = true
+	return nil
+}
+
 func newTestDevice(fake *testhid.Device, info protocol.AuthenticatorGetInfoResponse) *Device {
 	encMode, _ := cbor.CTAP2EncOptions().EncMode()
+	transport := ctaphid.NewTransport(fake, testCID)
+	ctapClient, err := client.NewClient(options.WithTransport(transport))
+	if err != nil {
+		panic(err)
+	}
 	d := &Device{
-		device:     fake,
-		cid:        testCID,
+		transport:  transport,
 		info:       info,
-		ctapClient: client.NewClient(),
+		ctapClient: ctapClient,
 		encMode:    encMode,
 	}
 	if len(info.PinUvAuthProtocols) > 0 {
@@ -49,6 +103,51 @@ func encodeCBOR(t *testing.T, v any) []byte {
 	b, err := cbor.Marshal(v)
 	require.NoError(t, err)
 	return b
+}
+
+func TestNewUsesConfiguredTransport(t *testing.T) {
+	transport := &optionTransport{response: encodeCBOR(t, protocol.AuthenticatorGetInfoResponse{
+		Versions:           protocol.Versions{protocol.FIDO_2_1},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
+	})}
+
+	device, err := New(transport)
+	require.NoError(t, err)
+	assert.Equal(t, protocol.Versions{protocol.FIDO_2_1}, device.GetInfo().Versions)
+	assert.Equal(t, [][]byte{{byte(protocol.AuthenticatorGetInfo)}}, transport.requests)
+
+	require.NoError(t, device.Close())
+	assert.True(t, transport.closed)
+}
+
+func TestNewClosesConfiguredTransportAfterGetInfoFailure(t *testing.T) {
+	transport := &optionTransport{err: errors.New("get info failed")}
+
+	_, err := New(transport)
+	require.Error(t, err)
+	assert.True(t, transport.closed)
+}
+
+func TestHIDCapabilitiesPreserveDeviceCommands(t *testing.T) {
+	transport := &capabilityTransport{pingResponse: []byte("hello")}
+	d := &Device{transport: transport}
+
+	require.NoError(t, d.Ping([]byte("hello")))
+	require.NoError(t, d.Wink())
+	require.NoError(t, d.Lock(7))
+	assert.True(t, transport.winked)
+	assert.Equal(t, uint8(7), transport.lockSeconds)
+
+	transport.pingResponse = []byte("different")
+	require.ErrorIs(t, d.Ping([]byte("hello")), ErrPingPongMismatch)
+}
+
+func TestUnsupportedTransportRejectsHIDCommands(t *testing.T) {
+	d := &Device{transport: &optionTransport{}}
+
+	require.ErrorIs(t, d.Ping(nil), ErrNotSupported)
+	require.ErrorIs(t, d.Wink(), ErrNotSupported)
+	require.ErrorIs(t, d.Lock(1), ErrNotSupported)
 }
 
 func testKeyAgreement(t *testing.T) key.Key {
