@@ -9,6 +9,7 @@ import (
 
 	"github.com/Microsoft/go-winio"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/go-ctap/ctap/transport/ctaphid"
 	ghid "github.com/go-ctap/hid"
 )
 
@@ -57,7 +58,7 @@ func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 	}
 }
 
-func openPath(ctx context.Context, path string) (io.ReadWriteCloser, error) {
+func openPath(ctx context.Context, path string) (ctaphid.Device, error) {
 	pipe, err := winio.DialPipeContext(ctx, NamedPipePath)
 	if err != nil {
 		return nil, err
@@ -76,5 +77,25 @@ func openPath(ctx context.Context, path string) (io.ReadWriteCloser, error) {
 		return nil, err
 	}
 
-	return pipe, nil
+	return &contextDevice{ReadWriteCloser: pipe}, nil
+}
+
+type contextDevice struct {
+	io.ReadWriteCloser
+}
+
+func (d *contextDevice) Read(ctx context.Context, p []byte) (n int, err error) {
+	err = withContextIO(ctx, d, func() error {
+		n, err = d.ReadWriteCloser.Read(p)
+		return err
+	})
+	return n, err
+}
+
+func (d *contextDevice) Write(ctx context.Context, p []byte) (n int, err error) {
+	err = withContextIO(ctx, d, func() error {
+		n, err = d.ReadWriteCloser.Write(p)
+		return err
+	})
+	return n, err
 }

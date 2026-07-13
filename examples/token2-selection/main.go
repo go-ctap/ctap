@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/go-ctap/ctap/authenticator"
-	"github.com/go-ctap/ctap/discover"
 	"github.com/go-ctap/ctap/transport/token2"
 	"github.com/go-ctap/pcsc"
 )
@@ -21,8 +20,6 @@ func main() {
 }
 
 func run(ctx context.Context) (err error) {
-	discover.SelectDevice()
-
 	readerName, err := findReader(os.Getenv("PCSC_READER"))
 	if err != nil {
 		return err
@@ -53,8 +50,6 @@ func run(ctx context.Context) (err error) {
 	fmt.Printf("PC/SC reader: %s\n", readerName)
 	fmt.Printf("CTAP versions: %v\n", device.GetInfo().Versions)
 	fmt.Println("Touch the Token2 now. Waiting for authenticatorSelection...")
-	fmt.Println("The Token2 APDU transport cannot interrupt an in-flight command with a context deadline.")
-
 	if err := device.Selection(ctx); err != nil {
 		return fmt.Errorf("authenticatorSelection: %w", err)
 	}

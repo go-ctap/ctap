@@ -27,7 +27,7 @@ type fakeCard struct {
 	closed    bool
 }
 
-func (c *fakeCard) Transmit(apdu []byte) ([]byte, error) {
+func (c *fakeCard) Transmit(_ context.Context, apdu []byte) ([]byte, error) {
 	c.t.Helper()
 	require.NotEmpty(c.t, c.exchanges, "unexpected APDU: %x", apdu)
 	next := c.exchanges[0]
@@ -191,10 +191,14 @@ func newBlockingCard() *blockingCard {
 	}
 }
 
-func (c *blockingCard) Transmit([]byte) ([]byte, error) {
+func (c *blockingCard) Transmit(ctx context.Context, _ []byte) ([]byte, error) {
 	c.once.Do(func() { close(c.started) })
-	<-c.closed
-	return nil, io.ErrClosedPipe
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-c.closed:
+		return nil, io.ErrClosedPipe
+	}
 }
 
 func (c *blockingCard) Close() error {

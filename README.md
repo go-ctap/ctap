@@ -93,7 +93,7 @@ Open the card, wrap it with `token2.New(ctx, card)`, then pass the result to `au
 after each constructor succeeds: close the card yourself if `token2.New` fails; `authenticator.New` owns the Token2
 transport even when authenticator initialization fails. See [`examples/token2`](examples/token2) for a complete flow.
 
-Token2 APDU calls cannot be interrupted once `Card.Transmit` has started. Context cancellation is checked between APDUs.
+Token2 APDU calls pass their context to `Card.Transmit`; cancellation is best-effort as provided by the PC/SC driver.
 
 ### Windows named-pipe proxy
 

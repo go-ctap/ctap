@@ -31,7 +31,7 @@ const (
 // Card is the raw APDU subset implemented by pcsc.Card.
 type Card interface {
 	io.Closer
-	Transmit(apdu []byte) ([]byte, error)
+	Transmit(ctx context.Context, apdu []byte) ([]byte, error)
 }
 
 // APDUError reports a non-success ISO 7816 status word.
@@ -72,9 +72,7 @@ func New(ctx context.Context, card Card) (*Transport, error) {
 }
 
 // CBOR sends a CTAP command byte and CBOR payload through INS C5/P1 03. The
-// context is checked before and after each APDU transmission, but an in-flight
-// Transmit cannot be interrupted through the Card interface. Close may be called
-// concurrently when the underlying card supports interrupting I/O that way.
+// context is passed to each APDU transmission.
 func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return ctaptransport.CBORResponse{}, err
@@ -119,7 +117,7 @@ func (t *Transport) exchange(ctx context.Context, apdu []byte) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	response, err := t.card.Transmit(apdu)
+	response, err := t.card.Transmit(ctx, apdu)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +145,7 @@ func (t *Transport) exchange(ctx context.Context, apdu []byte) ([]byte, error) {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			response, err = t.card.Transmit([]byte{claToken2, insGetResponse, 0x00, 0x00, sw2})
+			response, err = t.card.Transmit(ctx, []byte{claToken2, insGetResponse, 0x00, 0x00, sw2})
 			if err != nil {
 				return nil, err
 			}
@@ -160,8 +158,7 @@ func (t *Transport) exchange(ctx context.Context, apdu []byte) ([]byte, error) {
 	}
 }
 
-// Close closes the underlying card. It does not wait for an in-flight Transmit,
-// so callers can use it as an I/O escape hatch.
+// Close closes the underlying card.
 func (t *Transport) Close() error {
 	return t.card.Close()
 }

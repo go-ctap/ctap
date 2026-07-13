@@ -21,11 +21,11 @@ type scriptedDevice struct {
 	writes bytes.Buffer
 }
 
-func (d *scriptedDevice) Read(p []byte) (int, error) {
+func (d *scriptedDevice) Read(_ context.Context, p []byte) (int, error) {
 	return d.reads.Read(p)
 }
 
-func (d *scriptedDevice) Write(p []byte) (int, error) {
+func (d *scriptedDevice) Write(_ context.Context, p []byte) (int, error) {
 	return d.writes.Write(p)
 }
 

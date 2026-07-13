@@ -72,7 +72,7 @@ func TestInitAcceptsExtendedSuccessResponse(t *testing.T) {
 		reads: bytes.NewReader(rawResponseMessage(t, BROADCAST_CID, CTAPHID_INIT, responseData)),
 	}
 
-	resp, err := initChannel(dev, BROADCAST_CID, nonce)
+	resp, err := initChannel(context.Background(), dev, BROADCAST_CID, nonce)
 	require.NoError(t, err)
 	assert.Equal(t, nonce, resp.Nonce)
 	assert.Equal(t, allocatedCID, resp.CID)
@@ -93,7 +93,7 @@ func TestInitReturnsCTAPHIDError(t *testing.T) {
 		reads: bytes.NewReader(rawResponseMessage(t, BROADCAST_CID, CTAPHID_ERROR, []byte{byte(ERR_INVALID_CHANNEL)})),
 	}
 
-	_, err := initChannel(dev, BROADCAST_CID, nonce)
+	_, err := initChannel(context.Background(), dev, BROADCAST_CID, nonce)
 	require.Error(t, err)
 	assert.EqualError(t, err, ERR_INVALID_CHANNEL.String())
 	assertSingleReportRequest(t, dev.writes.Bytes(), BROADCAST_CID, CTAPHID_INIT, nonce)
@@ -102,7 +102,7 @@ func TestInitReturnsCTAPHIDError(t *testing.T) {
 func TestInitRejectsInvalidNonceLength(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
 
-	_, err := initChannel(dev, BROADCAST_CID, []byte{1, 2, 3, 4, 5, 6, 7})
+	_, err := initChannel(context.Background(), dev, BROADCAST_CID, []byte{1, 2, 3, 4, 5, 6, 7})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidRequestMessage))
 	assert.Empty(t, dev.writes.Bytes())
@@ -117,7 +117,7 @@ func TestPingSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
 
 	dev := &scriptedDevice{reads: bytes.NewReader(reads.Bytes())}
 
-	resp, err := ping(dev, cid, data)
+	resp, err := ping(context.Background(), dev, cid, data)
 	require.NoError(t, err)
 	assert.Equal(t, data, resp.Bytes)
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_PING, data)
@@ -130,7 +130,7 @@ func TestPingReturnsCTAPHIDError(t *testing.T) {
 		reads: bytes.NewReader(rawResponseMessage(t, cid, CTAPHID_ERROR, []byte{byte(ERR_INVALID_LEN)})),
 	}
 
-	_, err := ping(dev, cid, data)
+	_, err := ping(context.Background(), dev, cid, data)
 	require.Error(t, err)
 	assert.EqualError(t, err, ERR_INVALID_LEN.String())
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_PING, data)
@@ -140,7 +140,7 @@ func TestCancelWritesRequestAndDoesNotReadResponse(t *testing.T) {
 	cid := ChannelID{1, 2, 3, 4}
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
 
-	err := cancel(dev, cid)
+	err := cancel(context.Background(), dev, cid)
 	require.NoError(t, err)
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CANCEL, nil)
 }
@@ -151,7 +151,7 @@ func TestWinkWritesRequestAndAcceptsEmptySuccessResponse(t *testing.T) {
 		reads: bytes.NewReader(rawResponseMessage(t, cid, CTAPHID_WINK, nil)),
 	}
 
-	err := wink(dev, cid)
+	err := wink(context.Background(), dev, cid)
 	require.NoError(t, err)
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_WINK, nil)
 }
@@ -160,7 +160,7 @@ func TestLockRejectsInvalidDuration(t *testing.T) {
 	cid := ChannelID{1, 2, 3, 4}
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
 
-	err := lock(dev, cid, 11)
+	err := lock(context.Background(), dev, cid, 11)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidRequestMessage))
 	assert.Empty(t, dev.writes.Bytes())
@@ -172,7 +172,7 @@ func TestLockWritesDurationAndAcceptsEmptySuccessResponse(t *testing.T) {
 		reads: bytes.NewReader(rawResponseMessage(t, cid, CTAPHID_LOCK, nil)),
 	}
 
-	err := lock(dev, cid, 10)
+	err := lock(context.Background(), dev, cid, 10)
 	require.NoError(t, err)
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_LOCK, []byte{10})
 }

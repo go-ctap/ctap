@@ -115,12 +115,16 @@ func newOrderedDevice(t *testing.T) *orderedDevice {
 	}
 }
 
-func (d *orderedDevice) Read(p []byte) (int, error) {
-	<-d.cancelWritten
-	return d.response.Read(p)
+func (d *orderedDevice) Read(ctx context.Context, p []byte) (int, error) {
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-d.cancelWritten:
+		return d.response.Read(p)
+	}
 }
 
-func (d *orderedDevice) Write(p []byte) (int, error) {
+func (d *orderedDevice) Write(_ context.Context, p []byte) (int, error) {
 	d.writes <- bytes.Clone(p)
 	switch p[5] {
 	case byte(CTAPHID_CBOR) | INIT_PACKET_BIT:
@@ -146,12 +150,16 @@ func newBlockingDevice() *blockingDevice {
 	}
 }
 
-func (d *blockingDevice) Read([]byte) (int, error) {
-	<-d.closed
-	return 0, io.ErrClosedPipe
+func (d *blockingDevice) Read(ctx context.Context, _ []byte) (int, error) {
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-d.closed:
+		return 0, io.ErrClosedPipe
+	}
 }
 
-func (d *blockingDevice) Write(p []byte) (int, error) {
+func (d *blockingDevice) Write(_ context.Context, p []byte) (int, error) {
 	d.writes <- bytes.Clone(p)
 	return len(p), nil
 }
@@ -168,7 +176,7 @@ type initOpenDevice struct {
 	closed   bool
 }
 
-func (d *initOpenDevice) Write(p []byte) (int, error) {
+func (d *initOpenDevice) Write(_ context.Context, p []byte) (int, error) {
 	d.t.Helper()
 	require.Len(d.t, p, hidReportPacketSize)
 	assert.Equal(d.t, byte(CTAPHID_INIT)|INIT_PACKET_BIT, p[5])
@@ -179,7 +187,7 @@ func (d *initOpenDevice) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (d *initOpenDevice) Read(p []byte) (int, error) {
+func (d *initOpenDevice) Read(_ context.Context, p []byte) (int, error) {
 	return d.response.Read(p)
 }
 

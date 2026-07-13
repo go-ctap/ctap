@@ -1,9 +1,9 @@
 package ctaphid
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
-	"io"
 	"slices"
 
 	"github.com/go-ctap/ctap/protocol"
@@ -28,7 +28,7 @@ func ensureResponseCID(msg Message, cid ChannelID) error {
 	return nil
 }
 
-func writeCBOR(dev io.Writer, cid ChannelID, data []byte) (protocol.Command, error) {
+func writeCBOR(ctx context.Context, dev Device, cid ChannelID, data []byte) (protocol.Command, error) {
 	if len(data) < 1 {
 		return 0, ErrInvalidRequestMessage
 	}
@@ -37,17 +37,17 @@ func writeCBOR(dev io.Writer, cid ChannelID, data []byte) (protocol.Command, err
 	if err != nil {
 		return 0, err
 	}
-	if _, err := msg.WriteTo(dev); err != nil {
+	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
 		return 0, err
 	}
 	return protocol.Command(data[0]), nil
 }
 
-func readCBORResponse(dev io.Reader, cid ChannelID, command protocol.Command) (transport.CBORResponse, error) {
+func readCBORResponse(ctx context.Context, dev Device, cid ChannelID, command protocol.Command) (transport.CBORResponse, error) {
 read:
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
 			return transport.CBORResponse{}, err
 		}
 
@@ -90,7 +90,7 @@ read:
 	}
 }
 
-func initChannel(dev io.ReadWriter, cid ChannelID, nonce []byte) (InitResponse, error) {
+func initChannel(ctx context.Context, dev Device, cid ChannelID, nonce []byte) (InitResponse, error) {
 	if len(nonce) != 8 {
 		return InitResponse{}, ErrInvalidRequestMessage
 	}
@@ -100,13 +100,13 @@ func initChannel(dev io.ReadWriter, cid ChannelID, nonce []byte) (InitResponse, 
 		return InitResponse{}, err
 	}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
 		return InitResponse{}, err
 	}
 
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
 			return InitResponse{}, err
 		}
 
@@ -149,20 +149,20 @@ func initChannel(dev io.ReadWriter, cid ChannelID, nonce []byte) (InitResponse, 
 	}
 }
 
-func ping(dev io.ReadWriter, cid ChannelID, data []byte) (PingResponse, error) {
+func ping(ctx context.Context, dev Device, cid ChannelID, data []byte) (PingResponse, error) {
 	msg, err := NewMessage(cid, CTAPHID_PING, data)
 	if err != nil {
 		return PingResponse{}, err
 	}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
 		return PingResponse{}, err
 	}
 
 read:
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
 			return PingResponse{}, err
 		}
 
@@ -201,7 +201,7 @@ read:
 // vendor sends a command from the CTAPHID vendor-specific range (0x40-0x7f).
 // Command values do not include INIT_PACKET_BIT; NewMessage adds that bit when
 // encoding the initial HID packet.
-func vendor(dev io.ReadWriter, cid ChannelID, command Command, data []byte) (VendorResponse, error) {
+func vendor(ctx context.Context, dev Device, cid ChannelID, command Command, data []byte) (VendorResponse, error) {
 	if command < CTAPHID_VENDOR_FIRST || command > CTAPHID_VENDOR_LAST {
 		return VendorResponse{}, ErrInvalidRequestMessage
 	}
@@ -210,14 +210,14 @@ func vendor(dev io.ReadWriter, cid ChannelID, command Command, data []byte) (Ven
 	if err != nil {
 		return VendorResponse{}, err
 	}
-	if _, err := msg.WriteTo(dev); err != nil {
+	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
 		return VendorResponse{}, err
 	}
 
 read:
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
 			return VendorResponse{}, err
 		}
 		if err := ensureResponseCID(respMsg, cid); err != nil {
@@ -247,32 +247,32 @@ read:
 	}
 }
 
-func cancel(dev io.Writer, cid ChannelID) error {
+func cancel(ctx context.Context, dev Device, cid ChannelID) error {
 	msg, err := NewMessage(cid, CTAPHID_CANCEL, nil)
 	if err != nil {
 		return err
 	}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func wink(dev io.ReadWriter, cid ChannelID) error {
+func wink(ctx context.Context, dev Device, cid ChannelID) error {
 	msg, err := NewMessage(cid, CTAPHID_WINK, nil)
 	if err != nil {
 		return err
 	}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
 		return err
 	}
 
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
 			return err
 		}
 
@@ -298,7 +298,7 @@ func wink(dev io.ReadWriter, cid ChannelID) error {
 	}
 }
 
-func lock(dev io.ReadWriter, cid ChannelID, seconds uint8) error {
+func lock(ctx context.Context, dev Device, cid ChannelID, seconds uint8) error {
 	if seconds > 10 {
 		return ErrInvalidRequestMessage
 	}
@@ -308,13 +308,13 @@ func lock(dev io.ReadWriter, cid ChannelID, seconds uint8) error {
 		return err
 	}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
 		return err
 	}
 
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
 			return err
 		}
 
@@ -339,3 +339,17 @@ func lock(dev io.ReadWriter, cid ChannelID, seconds uint8) error {
 		}
 	}
 }
+
+type contextReader struct {
+	ctx context.Context
+	dev Device
+}
+
+func (r contextReader) Read(p []byte) (int, error) { return r.dev.Read(r.ctx, p) }
+
+type contextWriter struct {
+	ctx context.Context
+	dev Device
+}
+
+func (w contextWriter) Write(p []byte) (int, error) { return w.dev.Write(w.ctx, p) }

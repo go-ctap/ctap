@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
-	"io"
 	"sync"
 
 	"github.com/go-ctap/ctap/protocol"
@@ -12,15 +11,21 @@ import (
 )
 
 // Transport adapts a CTAPHID channel to the transport-independent CBOR API.
-// CBOR uses CTAPHID_CANCEL when its context is canceled. Other commands check
-// their context before and after synchronous I/O because CTAPHID has no
-// cancellation command for them. Close may be called concurrently to interrupt
-// blocked device I/O.
+// CBOR uses CTAPHID_CANCEL when its context is canceled. Device I/O receives
+// the command context directly.
 type Transport struct {
-	device  io.ReadWriteCloser
+	device  Device
 	cid     ChannelID
 	mu      sync.Mutex
 	writeMu sync.Mutex // serializes CTAPHID_CBOR and CTAPHID_CANCEL writes
+}
+
+// Device is the contextual I/O subset implemented by hid.Device and proxy
+// connections.
+type Device interface {
+	Read(context.Context, []byte) (int, error)
+	Write(context.Context, []byte) (int, error)
+	Close() error
 }
 
 var _ ctaptransport.Device = (*Transport)(nil)
@@ -28,7 +33,7 @@ var _ ctaptransport.Device = (*Transport)(nil)
 // Open allocates a CTAPHID channel on device. It takes ownership of device and
 // closes it if channel allocation fails. The returned Transport owns device on
 // success.
-func Open(ctx context.Context, device io.ReadWriteCloser) (*Transport, error) {
+func Open(ctx context.Context, device Device) (*Transport, error) {
 	if device == nil {
 		return nil, errors.New("ctaphid: nil device")
 	}
@@ -43,12 +48,7 @@ func Open(ctx context.Context, device io.ReadWriteCloser) (*Transport, error) {
 		return nil, err
 	}
 
-	var response InitResponse
-	err := withContextIO(ctx, device, func() error {
-		var err error
-		response, err = initChannel(device, BROADCAST_CID, nonce)
-		return err
-	})
+	response, err := initChannel(ctx, device, BROADCAST_CID, nonce)
 	if err != nil {
 		_ = device.Close()
 		return nil, err
@@ -59,13 +59,12 @@ func Open(ctx context.Context, device io.ReadWriteCloser) (*Transport, error) {
 
 // NewTransport wraps an already allocated CTAPHID channel and takes ownership
 // of device.
-func NewTransport(device io.ReadWriteCloser, cid ChannelID) *Transport {
+func NewTransport(device Device, cid ChannelID) *Transport {
 	return &Transport{device: device, cid: cid}
 }
 
-// CBOR exchanges a CBOR command and cancels it when ctx is done. A canceled
-// context sends nothing if the request has not started. Once an exchange
-// starts, cancellation is observed only after the complete request is written.
+// CBOR exchanges a CBOR command and sends CTAPHID_CANCEL when contextual device
+// I/O reports that ctx is done.
 func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return ctaptransport.CBORResponse{}, err
@@ -82,36 +81,12 @@ func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORRe
 		return ctaptransport.CBORResponse{}, err
 	}
 
-	resultc := make(chan cborResult, 1)
-	go func() {
-		response, err := readCBORResponse(t.device, t.cid, command)
-		resultc <- cborResult{response: response, err: err}
-	}()
-
-	select {
-	case result := <-resultc:
-		return result.response, result.err
-	case <-ctx.Done():
-		// Prefer a response that completed at the same time as cancellation; it
-		// no longer has an active operation to cancel.
-		select {
-		case result := <-resultc:
-			return result.response, result.err
-		default:
-		}
-
-		cancelErr := t.cancel()
-		result := <-resultc // drain the response to keep the channel usable
-		if cancelErr != nil {
-			return result.response, cancelErr
-		}
-		return result.response, ctx.Err()
+	response, err := readCBORResponse(ctx, t.device, t.cid, command)
+	if err != nil && ctx.Err() != nil {
+		_ = t.cancel(context.WithoutCancel(ctx))
+		return response, ctx.Err()
 	}
-}
-
-type cborResult struct {
-	response ctaptransport.CBORResponse
-	err      error
+	return response, err
 }
 
 func (t *Transport) writeCBOR(ctx context.Context, data []byte) (protocol.Command, error) {
@@ -120,7 +95,7 @@ func (t *Transport) writeCBOR(ctx context.Context, data []byte) (protocol.Comman
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	return writeCBOR(t.device, t.cid, data)
+	return writeCBOR(ctx, t.device, t.cid, data)
 }
 
 func (t *Transport) Ping(ctx context.Context, data []byte) ([]byte, error) {
@@ -134,7 +109,7 @@ func (t *Transport) Ping(ctx context.Context, data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	response, err := ping(t.device, t.cid, data)
+	response, err := ping(ctx, t.device, t.cid, data)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +129,7 @@ func (t *Transport) Wink(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := wink(t.device, t.cid); err != nil {
+	if err := wink(ctx, t.device, t.cid); err != nil {
 		return err
 	}
 	return ctx.Err()
@@ -170,7 +145,7 @@ func (t *Transport) Lock(ctx context.Context, seconds uint8) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := lock(t.device, t.cid, seconds); err != nil {
+	if err := lock(ctx, t.device, t.cid, seconds); err != nil {
 		return err
 	}
 	return ctx.Err()
@@ -186,16 +161,16 @@ func (t *Transport) Cancel(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := cancel(t.device, t.cid); err != nil {
+	if err := cancel(ctx, t.device, t.cid); err != nil {
 		return err
 	}
 	return ctx.Err()
 }
 
-func (t *Transport) cancel() error {
+func (t *Transport) cancel(ctx context.Context) error {
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
-	return cancel(t.device, t.cid)
+	return cancel(ctx, t.device, t.cid)
 }
 
 func (t *Transport) Vendor(ctx context.Context, command Command, data []byte) (VendorResponse, error) {
@@ -208,7 +183,7 @@ func (t *Transport) Vendor(ctx context.Context, command Command, data []byte) (V
 	if err := ctx.Err(); err != nil {
 		return VendorResponse{}, err
 	}
-	response, err := vendor(t.device, t.cid, command, data)
+	response, err := vendor(ctx, t.device, t.cid, command, data)
 	if err != nil {
 		return VendorResponse{}, err
 	}
@@ -220,20 +195,4 @@ func (t *Transport) Vendor(ctx context.Context, command Command, data []byte) (V
 
 func (t *Transport) Close() error {
 	return t.device.Close()
-}
-
-func withContextIO(ctx context.Context, device io.Closer, operation func() error) error {
-	done := make(chan struct{})
-	stop := context.AfterFunc(ctx, func() {
-		_ = device.Close()
-		close(done)
-	})
-
-	err := operation()
-	if stop() {
-		return err
-	}
-
-	<-done
-	return ctx.Err()
 }

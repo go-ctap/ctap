@@ -2,11 +2,11 @@ package authenticator
 
 import (
 	"context"
-	"io"
 	"iter"
 
 	"github.com/go-ctap/ctap/hidproxy"
 	"github.com/go-ctap/ctap/options"
+	"github.com/go-ctap/ctap/transport/ctaphid"
 	ghid "github.com/go-ctap/hid"
 )
 
@@ -38,7 +38,7 @@ func Enumerate(ctx context.Context, opts ...options.Option) iter.Seq2[*ghid.Devi
 	}
 }
 
-func OpenPath(ctx context.Context, path string, opts ...options.Option) (dev io.ReadWriteCloser, err error) {
+func OpenPath(ctx context.Context, path string, opts ...options.Option) (dev ctaphid.Device, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

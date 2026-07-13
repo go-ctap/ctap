@@ -3,7 +3,6 @@ package hidproxy
 import (
 	"context"
 	"errors"
-	"io"
 
 	"github.com/go-ctap/ctap/transport/ctaphid"
 )
@@ -11,7 +10,7 @@ import (
 var ErrNotSupported = errors.New("hidproxy: not supported on this platform")
 
 // OpenPath starts a raw CTAPHID proxy session.
-func OpenPath(ctx context.Context, path string) (io.ReadWriteCloser, error) {
+func OpenPath(ctx context.Context, path string) (ctaphid.Device, error) {
 	return openPath(ctx, path)
 }
 
