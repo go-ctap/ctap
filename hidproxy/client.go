@@ -4,9 +4,9 @@ package hidproxy
 
 import (
 	"context"
-	"io"
 	"iter"
 
+	"github.com/go-ctap/ctap/transport/ctaphid"
 	ghid "github.com/go-ctap/hid"
 )
 
@@ -16,6 +16,6 @@ func Enumerate(context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 	}
 }
 
-func openPath(context.Context, string) (io.ReadWriteCloser, error) {
+func openPath(context.Context, string) (ctaphid.Device, error) {
 	return nil, ErrNotSupported
 }

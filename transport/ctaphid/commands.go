@@ -1,13 +1,14 @@
 package ctaphid
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
-	"io"
 	"slices"
 
 	"github.com/go-ctap/ctap/protocol"
 	"github.com/go-ctap/ctap/transport"
+	ghid "github.com/go-ctap/hid"
 )
 
 func ensureDataLen(data []byte, min int) error {
@@ -28,24 +29,37 @@ func ensureResponseCID(msg Message, cid ChannelID) error {
 	return nil
 }
 
-func CBOR(dev io.ReadWriter, cid ChannelID, data []byte) (transport.CBORResponse, error) {
+func writeCBOR(ctx context.Context, dev Device, cid ChannelID, data []byte) (protocol.Command, error) {
 	if len(data) < 1 {
-		return transport.CBORResponse{}, ErrInvalidRequestMessage
+		return 0, ErrInvalidRequestMessage
 	}
 
 	msg, err := NewMessage(cid, CTAPHID_CBOR, data)
 	if err != nil {
-		return transport.CBORResponse{}, err
+		return 0, err
 	}
+	if _, err := msg.WriteTo(ghid.WithContext(ctx, dev)); err != nil {
+		return 0, err
+	}
+	return protocol.Command(data[0]), nil
+}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+// CBOR exchanges a CBOR command on an allocated CTAPHID channel.
+func CBOR(ctx context.Context, dev Device, cid ChannelID, data []byte) (transport.CBORResponse, error) {
+	command, err := writeCBOR(ctx, dev, cid, data)
+	if err != nil {
 		return transport.CBORResponse{}, err
 	}
+	return readCBORResponse(ctx, dev, cid, command)
+}
+
+func readCBORResponse(ctx context.Context, dev Device, cid ChannelID, command protocol.Command) (transport.CBORResponse, error) {
+	bound := ghid.WithContext(ctx, dev)
 
 read:
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return transport.CBORResponse{}, err
 		}
 
@@ -84,11 +98,12 @@ read:
 			Data:       respData[1:],
 		}
 
-		return transport.ValidateCBORResponse(protocol.Command(data[0]), response)
+		return transport.ValidateCBORResponse(command, response)
 	}
 }
 
-func Init(dev io.ReadWriter, cid ChannelID, nonce []byte) (InitResponse, error) {
+// Init initializes a CTAPHID channel.
+func Init(ctx context.Context, dev Device, cid ChannelID, nonce []byte) (InitResponse, error) {
 	if len(nonce) != 8 {
 		return InitResponse{}, ErrInvalidRequestMessage
 	}
@@ -98,13 +113,14 @@ func Init(dev io.ReadWriter, cid ChannelID, nonce []byte) (InitResponse, error) 
 		return InitResponse{}, err
 	}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+	bound := ghid.WithContext(ctx, dev)
+	if _, err := msg.WriteTo(bound); err != nil {
 		return InitResponse{}, err
 	}
 
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return InitResponse{}, err
 		}
 
@@ -147,20 +163,22 @@ func Init(dev io.ReadWriter, cid ChannelID, nonce []byte) (InitResponse, error) 
 	}
 }
 
-func Ping(dev io.ReadWriter, cid ChannelID, ping []byte) (PingResponse, error) {
-	msg, err := NewMessage(cid, CTAPHID_PING, ping)
+// Ping sends a CTAPHID ping command.
+func Ping(ctx context.Context, dev Device, cid ChannelID, data []byte) (PingResponse, error) {
+	msg, err := NewMessage(cid, CTAPHID_PING, data)
 	if err != nil {
 		return PingResponse{}, err
 	}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+	bound := ghid.WithContext(ctx, dev)
+	if _, err := msg.WriteTo(bound); err != nil {
 		return PingResponse{}, err
 	}
 
 read:
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return PingResponse{}, err
 		}
 
@@ -199,7 +217,7 @@ read:
 // Vendor sends a command from the CTAPHID vendor-specific range (0x40-0x7f).
 // Command values do not include INIT_PACKET_BIT; NewMessage adds that bit when
 // encoding the initial HID packet.
-func Vendor(dev io.ReadWriter, cid ChannelID, command Command, data []byte) (VendorResponse, error) {
+func Vendor(ctx context.Context, dev Device, cid ChannelID, command Command, data []byte) (VendorResponse, error) {
 	if command < CTAPHID_VENDOR_FIRST || command > CTAPHID_VENDOR_LAST {
 		return VendorResponse{}, ErrInvalidRequestMessage
 	}
@@ -208,14 +226,15 @@ func Vendor(dev io.ReadWriter, cid ChannelID, command Command, data []byte) (Ven
 	if err != nil {
 		return VendorResponse{}, err
 	}
-	if _, err := msg.WriteTo(dev); err != nil {
+	bound := ghid.WithContext(ctx, dev)
+	if _, err := msg.WriteTo(bound); err != nil {
 		return VendorResponse{}, err
 	}
 
 read:
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return VendorResponse{}, err
 		}
 		if err := ensureResponseCID(respMsg, cid); err != nil {
@@ -245,32 +264,35 @@ read:
 	}
 }
 
-func Cancel(dev io.ReadWriter, cid ChannelID) error {
+// Cancel sends a CTAPHID cancellation command.
+func Cancel(ctx context.Context, dev Device, cid ChannelID) error {
 	msg, err := NewMessage(cid, CTAPHID_CANCEL, nil)
 	if err != nil {
 		return err
 	}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+	if _, err := msg.WriteTo(ghid.WithContext(ctx, dev)); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func Wink(dev io.ReadWriter, cid ChannelID) error {
+// Wink sends a CTAPHID wink command and waits for its response.
+func Wink(ctx context.Context, dev Device, cid ChannelID) error {
 	msg, err := NewMessage(cid, CTAPHID_WINK, nil)
 	if err != nil {
 		return err
 	}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+	bound := ghid.WithContext(ctx, dev)
+	if _, err := msg.WriteTo(bound); err != nil {
 		return err
 	}
 
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return err
 		}
 
@@ -296,7 +318,8 @@ func Wink(dev io.ReadWriter, cid ChannelID) error {
 	}
 }
 
-func Lock(dev io.ReadWriter, cid ChannelID, seconds uint8) error {
+// Lock controls the CTAPHID channel lock for up to ten seconds.
+func Lock(ctx context.Context, dev Device, cid ChannelID, seconds uint8) error {
 	if seconds > 10 {
 		return ErrInvalidRequestMessage
 	}
@@ -306,13 +329,14 @@ func Lock(dev io.ReadWriter, cid ChannelID, seconds uint8) error {
 		return err
 	}
 
-	if _, err := msg.WriteTo(dev); err != nil {
+	bound := ghid.WithContext(ctx, dev)
+	if _, err := msg.WriteTo(bound); err != nil {
 		return err
 	}
 
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(dev); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return err
 		}
 

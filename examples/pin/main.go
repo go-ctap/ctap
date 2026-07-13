@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -11,18 +12,21 @@ import (
 )
 
 func main() {
-	device, err := discover.SelectDevice()
+	ctx := context.Background()
+	device, err := discover.SelectDevice(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer device.Close()
+	defer func() {
+		_ = device.Close()
+	}()
 
 	pin := os.Getenv("FIDO2_PIN")
 	if pin == "" {
 		log.Fatal("FIDO2_PIN is not set")
 	}
 
-	retries, powerCycleRequired, err := device.GetPINRetries()
+	retries, powerCycleRequired, err := device.GetPINRetries(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,6 +37,7 @@ func main() {
 	fmt.Println()
 
 	token, err := device.GetPinUvAuthTokenUsingPIN(
+		ctx,
 		pin,
 		protocol.PermissionCredentialManagement,
 		"",
@@ -41,11 +46,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	printCredentials(device, token)
+	printCredentials(ctx, device, token)
 }
 
-func printCredentials(device *authenticator.Device, token []byte) {
-	metadata, err := device.GetCredsMetadata(token)
+func printCredentials(ctx context.Context, device *authenticator.Device, token []byte) {
+	metadata, err := device.GetCredsMetadata(ctx, token)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -56,7 +61,7 @@ func printCredentials(device *authenticator.Device, token []byte) {
 	)
 
 	rps := make([]protocol.AuthenticatorCredentialManagementResponse, 0)
-	for rp, err := range device.EnumerateRPs(token) {
+	for rp, err := range device.EnumerateRPs(ctx, token) {
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -65,7 +70,7 @@ func printCredentials(device *authenticator.Device, token []byte) {
 
 	index := 1
 	for _, rp := range rps {
-		for credential, err := range device.EnumerateCredentials(token, rp.RPIDHash) {
+		for credential, err := range device.EnumerateCredentials(ctx, token, rp.RPIDHash) {
 			if err != nil {
 				log.Fatal(err)
 			}

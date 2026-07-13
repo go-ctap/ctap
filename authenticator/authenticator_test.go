@@ -2,6 +2,7 @@ package authenticator
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/sha256"
@@ -30,12 +31,12 @@ import (
 )
 
 var testCID = ctaphid.ChannelID{1, 2, 3, 4}
+var testContext = context.Background()
 
 var (
 	_ pinger                 = (*ctaphid.Transport)(nil)
 	_ winker                 = (*ctaphid.Transport)(nil)
 	_ locker                 = (*ctaphid.Transport)(nil)
-	_ canceler               = (*ctaphid.Transport)(nil)
 	_ yubico.VendorTransport = (*ctaphid.Transport)(nil)
 )
 
@@ -53,21 +54,21 @@ type capabilityTransport struct {
 	lockSeconds  uint8
 }
 
-func (t *capabilityTransport) Ping([]byte) ([]byte, error) {
+func (t *capabilityTransport) Ping(context.Context, []byte) ([]byte, error) {
 	return slices.Clone(t.pingResponse), nil
 }
 
-func (t *capabilityTransport) Wink() error {
+func (t *capabilityTransport) Wink(context.Context) error {
 	t.winked = true
 	return nil
 }
 
-func (t *capabilityTransport) Lock(seconds uint8) error {
+func (t *capabilityTransport) Lock(_ context.Context, seconds uint8) error {
 	t.lockSeconds = seconds
 	return nil
 }
 
-func (t *optionTransport) CBOR(data []byte) (ctaptransport.CBORResponse, error) {
+func (t *optionTransport) CBOR(_ context.Context, data []byte) (ctaptransport.CBORResponse, error) {
 	t.requests = append(t.requests, slices.Clone(data))
 	return ctaptransport.CBORResponse{Data: slices.Clone(t.response)}, t.err
 }
@@ -111,7 +112,7 @@ func TestNewUsesConfiguredTransport(t *testing.T) {
 		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 	})}
 
-	device, err := New(transport)
+	device, err := New(testContext, transport)
 	require.NoError(t, err)
 	assert.Equal(t, protocol.Versions{protocol.FIDO_2_1}, device.GetInfo().Versions)
 	assert.Equal(t, [][]byte{{byte(protocol.AuthenticatorGetInfo)}}, transport.requests)
@@ -123,7 +124,7 @@ func TestNewUsesConfiguredTransport(t *testing.T) {
 func TestNewClosesConfiguredTransportAfterGetInfoFailure(t *testing.T) {
 	transport := &optionTransport{err: errors.New("get info failed")}
 
-	_, err := New(transport)
+	_, err := New(testContext, transport)
 	require.Error(t, err)
 	assert.True(t, transport.closed)
 }
@@ -132,22 +133,22 @@ func TestHIDCapabilitiesPreserveDeviceCommands(t *testing.T) {
 	transport := &capabilityTransport{pingResponse: []byte("hello")}
 	d := &Device{transport: transport}
 
-	require.NoError(t, d.Ping([]byte("hello")))
-	require.NoError(t, d.Wink())
-	require.NoError(t, d.Lock(7))
+	require.NoError(t, d.Ping(testContext, []byte("hello")))
+	require.NoError(t, d.Wink(testContext))
+	require.NoError(t, d.Lock(testContext, 7))
 	assert.True(t, transport.winked)
 	assert.Equal(t, uint8(7), transport.lockSeconds)
 
 	transport.pingResponse = []byte("different")
-	require.ErrorIs(t, d.Ping([]byte("hello")), ErrPingPongMismatch)
+	require.ErrorIs(t, d.Ping(testContext, []byte("hello")), ErrPingPongMismatch)
 }
 
 func TestUnsupportedTransportRejectsHIDCommands(t *testing.T) {
 	d := &Device{transport: &optionTransport{}}
 
-	require.ErrorIs(t, d.Ping(nil), ErrNotSupported)
-	require.ErrorIs(t, d.Wink(), ErrNotSupported)
-	require.ErrorIs(t, d.Lock(1), ErrNotSupported)
+	require.ErrorIs(t, d.Ping(testContext, nil), ErrNotSupported)
+	require.ErrorIs(t, d.Wink(testContext), ErrNotSupported)
+	require.ErrorIs(t, d.Lock(testContext, 1), ErrNotSupported)
 }
 
 func testKeyAgreement(t *testing.T) key.Key {
@@ -182,7 +183,7 @@ func TestGetAssertionContinuesAfterAssertionWithoutExtensionData(t *testing.T) {
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{})
 
 	var assertions []protocol.AuthenticatorGetAssertionResponse
-	for assertion, err := range d.GetAssertion(nil, "example.com", []byte("client-data"), nil, nil, nil) {
+	for assertion, err := range d.GetAssertion(testContext, nil, "example.com", []byte("client-data"), nil, nil, nil) {
 		require.NoError(t, err)
 		assertions = append(assertions, assertion)
 	}
@@ -205,7 +206,7 @@ func TestLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
 		},
 	})
 
-	blobs, err := d.GetLargeBlobs()
+	blobs, err := d.GetLargeBlobs(testContext)
 	require.NoError(t, err)
 	assert.Empty(t, blobs)
 
@@ -228,7 +229,7 @@ func TestLargeBlobsTreatsCorruptConfigAsInitialEmptyArray(t *testing.T) {
 		},
 	})
 
-	blobs, err := d.GetLargeBlobs()
+	blobs, err := d.GetLargeBlobs(testContext)
 	require.NoError(t, err)
 	assert.Empty(t, blobs)
 }
@@ -247,7 +248,7 @@ func TestSetLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
 		Nonce:      []byte("nonce"),
 	}
 
-	err := d.SetLargeBlobs(make([]byte, 32), []protocol.LargeBlob{blob})
+	err := d.SetLargeBlobs(testContext, make([]byte, 32), []protocol.LargeBlob{blob})
 	require.NoError(t, err)
 
 	command, requestCBOR := fake.FirstCTAPPayload(t)
@@ -269,7 +270,7 @@ func TestSetLargeBlobsRequiresReportedMaxSerializedLargeBlobArray(t *testing.T) 
 		},
 	})
 
-	err := d.SetLargeBlobs(make([]byte, 32), []protocol.LargeBlob{})
+	err := d.SetLargeBlobs(testContext, make([]byte, 32), []protocol.LargeBlob{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "maxSerializedLargeBlobArray")
 	assert.Empty(t, fake.Writes())
@@ -281,7 +282,7 @@ func TestCredentialManagementUnsupportedIteratorsReturnBeforeCommand(t *testing.
 		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{Options: map[protocol.Option]bool{}})
 
 		var count int
-		for rp, err := range d.EnumerateRPs(nil) {
+		for rp, err := range d.EnumerateRPs(testContext, nil) {
 			count++
 			assert.Equal(t, protocol.AuthenticatorCredentialManagementResponse{}, rp)
 			require.Error(t, err)
@@ -297,7 +298,7 @@ func TestCredentialManagementUnsupportedIteratorsReturnBeforeCommand(t *testing.
 		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{Options: map[protocol.Option]bool{}})
 
 		var count int
-		for cred, err := range d.EnumerateCredentials(nil, make([]byte, 32)) {
+		for cred, err := range d.EnumerateCredentials(testContext, nil, make([]byte, 32)) {
 			count++
 			assert.Equal(t, protocol.AuthenticatorCredentialManagementResponse{}, cred)
 			require.Error(t, err)
@@ -320,6 +321,7 @@ func TestUpdateUserInformationUsesPreviewCommandForPreviewOnlyDevice(t *testing.
 	})
 
 	err := d.UpdateUserInformation(
+		testContext,
 		make([]byte, 32),
 		credential.PublicKeyCredentialDescriptor{ID: []byte("credential-id")},
 		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id")},
@@ -343,6 +345,7 @@ func TestMakeCredentialCredPropsOutputDependsOnCredPropsInput(t *testing.T) {
 	})
 
 	resp, err := d.MakeCredential(
+		testContext,
 		nil,
 		[]byte("client-data"),
 		credential.PublicKeyCredentialRpEntity{ID: "example.com", Name: "Example"},
@@ -376,6 +379,7 @@ func TestMakeCredentialRequiresMaxCredBlobLengthWhenCredBlobExtensionReported(t 
 	})
 
 	_, err := d.MakeCredential(
+		testContext,
 		nil,
 		[]byte("client-data"),
 		credential.PublicKeyCredentialRpEntity{ID: "example.com", Name: "Example"},
@@ -403,7 +407,7 @@ func TestMissingPinUvAuthProtocolsReturnsError(t *testing.T) {
 		Options: map[protocol.Option]bool{protocol.OptionClientPIN: false},
 	})
 
-	err := d.SetPIN("1234")
+	err := d.SetPIN(testContext, "1234")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotSupported))
 	assert.Empty(t, fake.Writes())
@@ -416,7 +420,7 @@ func TestGetPinUvAuthTokenUsingPINValidatesPINBeforeCommand(t *testing.T) {
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
 	})
 
-	_, err := d.GetPinUvAuthTokenUsingPIN("123\x00", protocol.PermissionCredentialManagement, "")
+	_, err := d.GetPinUvAuthTokenUsingPIN(testContext, "123\x00", protocol.PermissionCredentialManagement, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "0x00")
 	assert.Empty(t, fake.Writes())
@@ -430,7 +434,7 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 			Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
 		})
 
-		err := d.SetPIN("123")
+		err := d.SetPIN(testContext, "123")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "at least 4")
 		assert.Empty(t, fake.Writes())
@@ -444,7 +448,7 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 			Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
 		})
 
-		err := d.SetPIN("1234567")
+		err := d.SetPIN(testContext, "1234567")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "at least 8")
 		assert.Empty(t, fake.Writes())
@@ -465,7 +469,7 @@ func TestSetPINRefreshesCachedGetInfo(t *testing.T) {
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
 	})
 
-	require.NoError(t, d.SetPIN("1234"))
+	require.NoError(t, d.SetPIN(testContext, "1234"))
 
 	info := d.GetInfo()
 	assert.True(t, info.Options[protocol.OptionClientPIN])
@@ -479,7 +483,7 @@ func TestChangePINValidatesNewPINBeforeCommand(t *testing.T) {
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
 	})
 
-	err := d.ChangePIN("1234", "1234567")
+	err := d.ChangePIN(testContext, "1234", "1234567")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least 8")
 	assert.Empty(t, fake.Writes())
@@ -493,6 +497,7 @@ func TestGetAssertionValidatesHMACSecretSalts(t *testing.T) {
 
 	var count int
 	for assertion, err := range d.GetAssertion(
+		testContext,
 		nil,
 		"example.com",
 		[]byte("client-data"),
@@ -524,6 +529,7 @@ func TestMakeCredentialValidatesHMACSecretMCSalts(t *testing.T) {
 	})
 
 	_, err := d.MakeCredential(
+		testContext,
 		nil,
 		[]byte("client-data"),
 		credential.PublicKeyCredentialRpEntity{ID: "example.com", Name: "Example"},
@@ -551,7 +557,7 @@ func TestLockRejectsOutOfRangeSeconds(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID)
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{})
 
-	err := d.Lock(11)
+	err := d.Lock(testContext, 11)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, SyntaxError))
 	assert.Empty(t, fake.Writes())

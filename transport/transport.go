@@ -2,6 +2,7 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -40,10 +41,11 @@ func (e *CTAPError) Unwrap() error {
 // CBOR exchanges one CTAP command byte followed by its CBOR payload.
 // Implementations return a CTAPError when the authenticator status is not OK.
 type CBOR interface {
-	CBOR(data []byte) (CBORResponse, error)
+	CBOR(ctx context.Context, data []byte) (CBORResponse, error)
 }
 
-// Device is an owned CTAP transport connection.
+// Device is an owned CTAP transport connection. Close must be safe to call
+// concurrently with CBOR and should unblock any in-flight exchange.
 type Device interface {
 	CBOR
 	io.Closer

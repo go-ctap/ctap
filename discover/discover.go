@@ -3,23 +3,17 @@ package discover
 import (
 	"context"
 	"errors"
-	"sync"
 
 	"github.com/go-ctap/ctap/authenticator"
 	"github.com/go-ctap/ctap/options"
 	"github.com/go-ctap/ctap/protocol"
 	ghid "github.com/go-ctap/hid"
 	"github.com/samber/lo"
-
-	"github.com/samber/mo"
 )
 
-func EnumerateFIDODevices(opts ...options.Option) ([]*ghid.DeviceInfo, error) {
-	oo := options.NewOptions(opts...)
-
+func EnumerateFIDODevices(ctx context.Context, opts ...options.Option) ([]*ghid.DeviceInfo, error) {
 	devInfos := make([]*ghid.DeviceInfo, 0)
-	ctx := context.WithValue(oo.Context, authenticator.CtxKeyUseNamedPipe, oo.UseNamedPipe)
-	for devInfo, err := range authenticator.Enumerate(ctx) {
+	for devInfo, err := range authenticator.Enumerate(ctx, opts...) {
 		if err != nil {
 			return nil, err
 		}
@@ -32,11 +26,11 @@ func EnumerateFIDODevices(opts ...options.Option) ([]*ghid.DeviceInfo, error) {
 
 // SelectDevice allows selecting a device by confirming presence;
 // useful while a user has many tokens connected. Works only with FIDO 2.1 tokens (including PRE).
-func SelectDevice(opts ...options.Option) (*authenticator.Device, error) {
+func SelectDevice(ctx context.Context, opts ...options.Option) (*authenticator.Device, error) {
 	oo := options.NewOptions(opts...)
 
 	if oo.Paths == nil {
-		devInfos, err := EnumerateFIDODevices(opts...)
+		devInfos, err := EnumerateFIDODevices(ctx, opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -46,56 +40,36 @@ func SelectDevice(opts ...options.Option) (*authenticator.Device, error) {
 	}
 
 	if len(oo.Paths) == 1 {
-		return authenticator.OpenHID(oo.Paths[0], opts...)
+		return authenticator.OpenHID(ctx, oo.Paths[0], opts...)
 	}
 
-	devices := make([]*authenticator.Device, 0)
-
-	// Here we will receive either a device or an error from first success Selection() call.
-	selection := make(chan mo.Either[*authenticator.Device, error], len(oo.Paths))
-
-	// WaitGroup allows us to wait for all Selection() calls to finish.
-	var wg sync.WaitGroup
-	// Return only first successful Selection() call.
-	var once sync.Once
-
-	// It will allow us to cancel all other active Selection() calls
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	devices := make([]*authenticator.Device, 0, len(oo.Paths))
+	closeDevices := func(except *authenticator.Device) error {
+		var closeErr error
+		for _, dev := range devices {
+			if dev == except {
+				continue
+			}
+			closeErr = errors.Join(closeErr, dev.Close())
+		}
+		return closeErr
+	}
 
 	for _, p := range oo.Paths {
-		dev, err := authenticator.OpenHID(p, opts...)
+		dev, err := authenticator.OpenHID(ctx, p, opts...)
 		if err != nil {
-			return nil, err
+			return nil, errors.Join(err, closeDevices(nil))
 		}
 
 		info := dev.GetInfo()
 		if !info.Versions.Supports(protocol.FIDO_2_1) &&
 			!info.Versions.Supports(protocol.FIDO_2_1_PRE) &&
 			!info.Versions.Supports(protocol.FIDO_2_3) {
-			// We need to close this device because it's not supported.
-			_ = dev.Close()
+			if err := dev.Close(); err != nil {
+				return nil, errors.Join(err, closeDevices(nil))
+			}
 			continue
 		}
-
-		wg.Add(1)
-		go func(dev *authenticator.Device) {
-			defer wg.Done()
-
-			// Selection() will block until ctx is canceled or a device is selected.
-			err := dev.Selection(ctx)
-
-			if !errors.Is(ctx.Err(), context.Canceled) {
-				once.Do(func() {
-					cancel()
-					if err != nil {
-						selection <- mo.Right[*authenticator.Device, error](err)
-						return
-					}
-					selection <- mo.Left[*authenticator.Device, error](dev)
-				})
-			}
-		}(dev)
 
 		devices = append(devices, dev)
 	}
@@ -104,24 +78,66 @@ func SelectDevice(opts ...options.Option) (*authenticator.Device, error) {
 		return nil, errors.New("no supported devices found")
 	}
 
-	wg.Wait()
-
-	sel := <-selection
-	err, ok := sel.Right()
-	if ok {
-		return nil, err
+	type selectionResult struct {
+		device *authenticator.Device
+		err    error
 	}
-	selectedDev := sel.MustLeft()
+	results := make(chan selectionResult, len(devices))
+	selectionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	for _, dev := range devices {
-		if selectedDev.Path == dev.Path {
-			continue
-		}
+		go func() {
+			results <- selectionResult{device: dev, err: dev.Selection(selectionCtx)}
+		}()
+	}
 
-		if err := dev.Close(); err != nil {
-			return nil, err
+	var (
+		selectedDev  *authenticator.Device
+		selectionErr error
+		cleanupErr   error
+		decided      bool
+	)
+	ctxDone := ctx.Done()
+	for remaining := len(devices); remaining > 0; {
+		select {
+		case result := <-results:
+			remaining--
+			if result.err == nil && !decided && ctx.Err() == nil {
+				decided = true
+				selectedDev = result.device
+				cancel()
+				cleanupErr = closeDevices(selectedDev)
+				if cleanupErr != nil {
+					cleanupErr = errors.Join(cleanupErr, selectedDev.Close())
+					selectedDev = nil
+				}
+				ctxDone = nil
+				continue
+			}
+			if result.err != nil && !errors.Is(result.err, context.Canceled) {
+				selectionErr = errors.Join(selectionErr, result.err)
+			}
+		case <-ctxDone:
+			decided = true
+			cancel()
+			cleanupErr = closeDevices(nil)
+			ctxDone = nil
 		}
 	}
 
-	return selectedDev, nil
+	if selectedDev != nil {
+		return selectedDev, nil
+	}
+	if err := ctx.Err(); err != nil {
+		if !decided {
+			cancel()
+			cleanupErr = closeDevices(nil)
+		}
+		return nil, errors.Join(err, cleanupErr)
+	}
+	if !decided {
+		cleanupErr = closeDevices(nil)
+	}
+	return nil, errors.Join(selectionErr, cleanupErr)
 }

@@ -2,6 +2,7 @@ package testhid
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -86,11 +87,11 @@ func NewCBORDevice(t testing.TB, cid ctaphid.ChannelID, responses ...[]byte) *De
 	return New(t, script...)
 }
 
-func (d *Device) Read(p []byte) (int, error) {
+func (d *Device) Read(_ context.Context, p []byte) (int, error) {
 	return d.reads.Read(p)
 }
 
-func (d *Device) Write(p []byte) (int, error) {
+func (d *Device) Write(_ context.Context, p []byte) (int, error) {
 	return d.writes.Write(p)
 }
 
@@ -247,4 +248,4 @@ func parseRequest(written []byte) (Request, int, error) {
 	return request, consumed, nil
 }
 
-var _ io.ReadWriteCloser = (*Device)(nil)
+var _ ctaphid.Device = (*Device)(nil)

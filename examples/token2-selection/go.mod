@@ -1,8 +1,11 @@
-module github.com/go-ctap/ctap/examples/pin
+module github.com/go-ctap/ctap/examples/token2-selection
 
 go 1.26.3
 
-require github.com/go-ctap/ctap v0.0.0
+require (
+	github.com/go-ctap/ctap v0.0.0
+	github.com/go-ctap/pcsc v0.3.0
+)
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect

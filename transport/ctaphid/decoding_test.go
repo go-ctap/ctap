@@ -2,6 +2,7 @@ package ctaphid
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"testing"
@@ -20,13 +21,15 @@ type scriptedDevice struct {
 	writes bytes.Buffer
 }
 
-func (d *scriptedDevice) Read(p []byte) (int, error) {
+func (d *scriptedDevice) Read(_ context.Context, p []byte) (int, error) {
 	return d.reads.Read(p)
 }
 
-func (d *scriptedDevice) Write(p []byte) (int, error) {
+func (d *scriptedDevice) Write(_ context.Context, p []byte) (int, error) {
 	return d.writes.Write(p)
 }
+
+func (d *scriptedDevice) Close() error { return nil }
 
 func TestMessage_ReadFrom(t *testing.T) {
 	m := new(Message)
@@ -72,7 +75,7 @@ func TestCBORRejectsUnexpectedResponseCID(t *testing.T) {
 	}
 
 	dev := &scriptedDevice{reads: bytes.NewReader(reads.Bytes())}
-	_, err = CBOR(dev, ChannelID{1, 2, 3, 4}, []byte{0x04})
+	_, err = NewTransport(dev, ChannelID{1, 2, 3, 4}).CBOR(context.Background(), []byte{0x04})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidResponseMessage))
 }

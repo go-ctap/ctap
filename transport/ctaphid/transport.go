@@ -1,67 +1,150 @@
 package ctaphid
 
 import (
+	"context"
+	"crypto/rand"
+	"errors"
 	"io"
 	"sync"
 
+	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
+	ghid "github.com/go-ctap/hid"
 )
 
 // Transport adapts a CTAPHID channel to the transport-independent CBOR API.
+// CBOR uses CTAPHID_CANCEL when its context is canceled. Device I/O receives
+// the command context directly.
 type Transport struct {
-	device io.ReadWriteCloser
-	cid    ChannelID
-	mu     sync.Mutex
+	device  Device
+	cid     ChannelID
+	mu      sync.Mutex
+	writeMu sync.Mutex // serializes CTAPHID_CBOR and CTAPHID_CANCEL writes
+}
+
+// Device is the contextual I/O subset implemented by hid.Device and proxy
+// connections.
+type Device interface {
+	ghid.ContextReadWriter
+	io.Closer
 }
 
 var _ ctaptransport.Device = (*Transport)(nil)
 
-func NewTransport(device io.ReadWriteCloser, cid ChannelID) *Transport {
+// Open allocates a CTAPHID channel on device. It takes ownership of device and
+// closes it if channel allocation fails. The returned Transport owns device on
+// success.
+func Open(ctx context.Context, device Device) (*Transport, error) {
+	if device == nil {
+		return nil, errors.New("ctaphid: nil device")
+	}
+	nonce := make([]byte, 8)
+	if _, err := rand.Read(nonce); err != nil {
+		_ = device.Close()
+		return nil, err
+	}
+
+	response, err := Init(ctx, device, BROADCAST_CID, nonce)
+	if err != nil {
+		_ = device.Close()
+		return nil, err
+	}
+
+	return NewTransport(device, response.CID), nil
+}
+
+// NewTransport wraps an already allocated CTAPHID channel and takes ownership
+// of device.
+func NewTransport(device Device, cid ChannelID) *Transport {
 	return &Transport{device: device, cid: cid}
 }
 
-func (t *Transport) CBOR(data []byte) (ctaptransport.CBORResponse, error) {
+// CBOR exchanges a CBOR command and sends CTAPHID_CANCEL when contextual device
+// I/O reports that ctx is done.
+func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORResponse, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return CBOR(t.device, t.cid, data)
+	if err := ctx.Err(); err != nil {
+		return ctaptransport.CBORResponse{}, err
+	}
+
+	command, err := t.writeCBOR(ctx, data)
+	if err != nil {
+		return ctaptransport.CBORResponse{}, err
+	}
+
+	response, err := readCBORResponse(ctx, t.device, t.cid, command)
+	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+		_ = t.cancel(context.WithoutCancel(ctx))
+	}
+	return response, err
 }
 
-func (t *Transport) Ping(data []byte) ([]byte, error) {
+func (t *Transport) writeCBOR(ctx context.Context, data []byte) (protocol.Command, error) {
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	return writeCBOR(ctx, t.device, t.cid, data)
+}
+
+func (t *Transport) Ping(ctx context.Context, data []byte) ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
-	response, err := Ping(t.device, t.cid, data)
+	response, err := Ping(ctx, t.device, t.cid, data)
 	if err != nil {
 		return nil, err
 	}
 	return response.Bytes, nil
 }
 
-func (t *Transport) Wink() error {
+func (t *Transport) Wink(ctx context.Context) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return Wink(t.device, t.cid)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return Wink(ctx, t.device, t.cid)
 }
 
-func (t *Transport) Lock(seconds uint8) error {
+func (t *Transport) Lock(ctx context.Context, seconds uint8) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return Lock(t.device, t.cid, seconds)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return Lock(ctx, t.device, t.cid, seconds)
 }
 
-func (t *Transport) Cancel() error {
-	// Cancel must be writable while CBOR is blocked waiting for a response.
-	return Cancel(t.device, t.cid)
+func (t *Transport) Cancel(ctx context.Context) error {
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return Cancel(ctx, t.device, t.cid)
 }
 
-func (t *Transport) Vendor(command Command, data []byte) (VendorResponse, error) {
+func (t *Transport) cancel(ctx context.Context) error {
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	return Cancel(ctx, t.device, t.cid)
+}
+
+func (t *Transport) Vendor(ctx context.Context, command Command, data []byte) (VendorResponse, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return Vendor(t.device, t.cid, command, data)
+	if err := ctx.Err(); err != nil {
+		return VendorResponse{}, err
+	}
+	return Vendor(ctx, t.device, t.cid, command, data)
 }
 
 func (t *Transport) Close() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	return t.device.Close()
 }

@@ -3,7 +3,6 @@ package authenticator
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -18,7 +17,6 @@ import (
 	"github.com/go-ctap/ctap/credential"
 	"github.com/go-ctap/ctap/crypto"
 	"github.com/go-ctap/ctap/extension"
-	"github.com/go-ctap/ctap/hidproxy"
 	"github.com/go-ctap/ctap/options"
 	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
@@ -41,30 +39,15 @@ type Device struct {
 }
 
 type pinger interface {
-	Ping(data []byte) ([]byte, error)
+	Ping(ctx context.Context, data []byte) ([]byte, error)
 }
 
 type winker interface {
-	Wink() error
+	Wink(ctx context.Context) error
 }
 
 type locker interface {
-	Lock(seconds uint8) error
-}
-
-type canceler interface {
-	Cancel() error
-}
-
-type CtxKey = string
-
-const (
-	CtxKeyUseNamedPipe CtxKey = "useNamedPipe"
-)
-
-func useNamedPipe(ctx context.Context) bool {
-	use, _ := ctx.Value(CtxKeyUseNamedPipe).(bool)
-	return use
+	Lock(ctx context.Context, seconds uint8) error
 }
 
 func (d *Device) requirePinUvAuthProtocol() (protocol.PinUvAuthProtocol, error) {
@@ -75,13 +58,13 @@ func (d *Device) requirePinUvAuthProtocol() (protocol.PinUvAuthProtocol, error) 
 	return d.pinUvAuthProtocol, nil
 }
 
-func (d *Device) pinUvAuthProtocolWithKeyAgreement() (protocol.PinUvAuthProtocol, key.Key, error) {
+func (d *Device) pinUvAuthProtocolWithKeyAgreement(ctx context.Context) (protocol.PinUvAuthProtocol, key.Key, error) {
 	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
 	if err != nil {
 		return 0, nil, err
 	}
 
-	keyAgreement, err := d.ctapClient.GetKeyAgreement(pinUvAuthProtocol)
+	keyAgreement, err := d.ctapClient.GetKeyAgreement(ctx, pinUvAuthProtocol)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -89,8 +72,8 @@ func (d *Device) pinUvAuthProtocolWithKeyAgreement() (protocol.PinUvAuthProtocol
 	return pinUvAuthProtocol, keyAgreement, nil
 }
 
-func (d *Device) refreshInfoLocked() error {
-	info, err := d.ctapClient.GetInfo()
+func (d *Device) refreshInfoLocked(ctx context.Context) error {
+	info, err := d.ctapClient.GetInfo(ctx)
 	if err != nil {
 		return err
 	}
@@ -104,7 +87,7 @@ func (d *Device) maxFragmentLength() uint {
 }
 
 // New creates a Device over an initialized transport and takes ownership of it.
-func New(transport ctaptransport.Device, opts ...options.Option) (*Device, error) {
+func New(ctx context.Context, transport ctaptransport.Device, opts ...options.Option) (*Device, error) {
 	if transport == nil {
 		return nil, errors.New("device: nil transport")
 	}
@@ -121,7 +104,7 @@ func New(transport ctaptransport.Device, opts ...options.Option) (*Device, error
 		ctapClient: ctapClient,
 		encMode:    oo.EncMode,
 	}
-	info, err := d.ctapClient.GetInfo()
+	info, err := d.ctapClient.GetInfo(ctx)
 	if err != nil {
 		return nil, errors.Join(err, transport.Close())
 	}
@@ -135,44 +118,16 @@ func New(transport ctaptransport.Device, opts ...options.Option) (*Device, error
 
 // OpenHID opens a HID authenticator, allocates a CTAPHID channel, and takes
 // ownership of the resulting connection.
-func OpenHID(path string, opts ...options.Option) (*Device, error) {
-	oo := options.NewOptions(opts...)
-	if oo.UseNamedPipe {
-		transport, err := hidproxy.Open(oo.Context, path)
-		if err != nil {
-			return nil, err
-		}
-		d, err := New(transport, opts...)
-		if err != nil {
-			return nil, err
-		}
-		d.Path = path
-		return d, nil
-	}
-
-	dev, err := OpenPath(oo.Context, path)
+func OpenHID(ctx context.Context, path string, opts ...options.Option) (*Device, error) {
+	dev, err := OpenPath(ctx, path, opts...)
 	if err != nil {
 		return nil, err
 	}
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = dev.Close()
-		}
-	}()
-
-	nonce := make([]byte, 8)
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, err
-	}
-
-	msg, err := ctaphid.Init(dev, ctaphid.BROADCAST_CID, nonce)
+	transport, err := ctaphid.Open(ctx, dev)
 	if err != nil {
 		return nil, err
 	}
-	transport := ctaphid.NewTransport(dev, msg.CID)
-	cleanup = false
-	d, err := New(transport, opts...)
+	d, err := New(ctx, transport, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -182,15 +137,12 @@ func OpenHID(path string, opts ...options.Option) (*Device, error) {
 
 // Close closes the underlying transport.
 func (d *Device) Close() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	return d.transport.Close()
 }
 
 // Ping sends a ping message to the device and verifies the response matches the sent data.
 // Returns an error on failure.
-func (d *Device) Ping(ping []byte) error {
+func (d *Device) Ping(ctx context.Context, ping []byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	transport, ok := d.transport.(pinger)
@@ -198,7 +150,7 @@ func (d *Device) Ping(ping []byte) error {
 		return newErrorMessage(ErrNotSupported, "ping requires CTAPHID")
 	}
 
-	pong, err := transport.Ping(ping)
+	pong, err := transport.Ping(ctx, ping)
 	if err != nil {
 		return err
 	}
@@ -212,7 +164,7 @@ func (d *Device) Ping(ping []byte) error {
 
 // Wink sends a blink command to the device to visually signal its presence to the user.
 // It uses the CTAPHID_WINK command, which is optional and could be unsupported by some devices.
-func (d *Device) Wink() error {
+func (d *Device) Wink(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	transport, ok := d.transport.(winker)
@@ -220,13 +172,13 @@ func (d *Device) Wink() error {
 		return newErrorMessage(ErrNotSupported, "wink requires CTAPHID")
 	}
 
-	return transport.Wink()
+	return transport.Wink(ctx)
 }
 
 // Lock places an exclusive lock for one channel to communicate with the device.
 // As long as the lock is active, any other channel trying to send a message will fail.
 // Send 0 seconds to unlock the channel.
-func (d *Device) Lock(seconds uint) error {
+func (d *Device) Lock(ctx context.Context, seconds uint) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	transport, ok := d.transport.(locker)
@@ -238,11 +190,12 @@ func (d *Device) Lock(seconds uint) error {
 		return newErrorMessage(SyntaxError, "lock seconds must be between 0 and 10")
 	}
 
-	return transport.Lock(uint8(seconds))
+	return transport.Lock(ctx, uint8(seconds))
 }
 
 // MakeCredential initiates the process of creating a new credential on a device with specified parameters and options.
 func (d *Device) MakeCredential(
+	ctx context.Context,
 	pinUvAuthToken []byte,
 	clientData []byte,
 	rp credential.PublicKeyCredentialRpEntity,
@@ -304,7 +257,7 @@ func (d *Device) MakeCredential(
 			err          error
 			keyAgreement key.Key
 		)
-		pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement()
+		pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement(ctx)
 		if err != nil {
 			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
@@ -366,7 +319,7 @@ func (d *Device) MakeCredential(
 			err          error
 			keyAgreement key.Key
 		)
-		pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement()
+		pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement(ctx)
 		if err != nil {
 			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
@@ -501,6 +454,7 @@ func (d *Device) MakeCredential(
 
 	clientDataHash := sha256.Sum256(clientData)
 	resp, err := d.ctapClient.MakeCredential(
+		ctx,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 		clientDataHash[:],
@@ -585,6 +539,7 @@ func (d *Device) MakeCredential(
 // for the specified Relying Party, clientData, and allowed list (in case of non-discoverable credentials).
 // It yields results via a callback function.
 func (d *Device) GetAssertion(
+	ctx context.Context,
 	pinUvAuthToken []byte,
 	rpID string,
 	clientData []byte,
@@ -627,7 +582,7 @@ func (d *Device) GetAssertion(
 				err          error
 				keyAgreement key.Key
 			)
-			pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement()
+			pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement(ctx)
 			if err != nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 				return
@@ -717,7 +672,7 @@ func (d *Device) GetAssertion(
 				err          error
 				keyAgreement key.Key
 			)
-			pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement()
+			pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement(ctx)
 			if err != nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 				return
@@ -790,6 +745,7 @@ func (d *Device) GetAssertion(
 
 		clientDataHash := sha256.Sum256(clientData)
 		for assertion, err := range d.ctapClient.GetAssertion(
+			ctx,
 			pinUvAuthProtocol,
 			pinUvAuthToken,
 			rpID,
@@ -888,7 +844,7 @@ func (d *Device) GetInfo() protocol.AuthenticatorGetInfoResponse {
 // GetYubiKeyDeviceInfo returns Yubico-specific device metadata using the
 // vendor HID command 0xc2. Non-Yubico authenticators will normally return a
 // CTAPHID invalid-command error.
-func (d *Device) GetYubiKeyDeviceInfo() (yubico.DeviceInfo, error) {
+func (d *Device) GetYubiKeyDeviceInfo(ctx context.Context) (yubico.DeviceInfo, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	transport, ok := d.transport.(yubico.VendorTransport)
@@ -896,12 +852,12 @@ func (d *Device) GetYubiKeyDeviceInfo() (yubico.DeviceInfo, error) {
 		return yubico.DeviceInfo{}, newErrorMessage(ErrNotSupported, "Yubico device info requires CTAPHID")
 	}
 
-	return yubico.GetDeviceInfo(transport)
+	return yubico.GetDeviceInfo(ctx, transport)
 }
 
 // GetPINRetries retrieves the number of PIN retries remaining for the device, and if it requires a power cycle
 // (after reaching the limit, you can reset remaining tries by re-connecting the token).
-func (d *Device) GetPINRetries() (uint, *bool, error) {
+func (d *Device) GetPINRetries(ctx context.Context) (uint, *bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -918,12 +874,12 @@ func (d *Device) GetPINRetries() (uint, *bool, error) {
 		return 0, nil, err
 	}
 
-	return d.ctapClient.GetPINRetries(pinUvAuthProtocol)
+	return d.ctapClient.GetPINRetries(ctx, pinUvAuthProtocol)
 }
 
 // SetPIN sets a new PIN on the device if the clientPin option is supported and no PIN exists.
 // Returns an error if the device does not support clientPin or if it was already set with PIN.
-func (d *Device) SetPIN(pin string) error {
+func (d *Device) SetPIN(ctx context.Context, pin string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -940,21 +896,21 @@ func (d *Device) SetPIN(pin string) error {
 		return err
 	}
 
-	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement()
+	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement(ctx)
 	if err != nil {
 		return err
 	}
 
-	if err := d.ctapClient.SetPIN(pinUvAuthProtocol, keyAgreement, pin); err != nil {
+	if err := d.ctapClient.SetPIN(ctx, pinUvAuthProtocol, keyAgreement, pin); err != nil {
 		return err
 	}
 
-	return d.refreshInfoLocked()
+	return d.refreshInfoLocked(ctx)
 }
 
 // ChangePIN updates the device's PIN by using the provided current PIN and new PIN.
 // Returns an error if the device does not support clientPin or if the PIN change process fails.
-func (d *Device) ChangePIN(currentPin, newPin string) error {
+func (d *Device) ChangePIN(ctx context.Context, currentPin, newPin string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -975,12 +931,13 @@ func (d *Device) ChangePIN(currentPin, newPin string) error {
 		return err
 	}
 
-	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement()
+	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement(ctx)
 	if err != nil {
 		return err
 	}
 
 	if err := d.ctapClient.ChangePIN(
+		ctx,
 		pinUvAuthProtocol,
 		keyAgreement,
 		currentPin,
@@ -989,13 +946,14 @@ func (d *Device) ChangePIN(currentPin, newPin string) error {
 		return err
 	}
 
-	return d.refreshInfoLocked()
+	return d.refreshInfoLocked(ctx)
 }
 
 // GetPinUvAuthTokenUsingPIN obtains a pinUvAuthToken using a given PIN, permission, and in some cases optional
 // Relying Party ID. Returns a token as a byte slice or an error if the operation fails.
 // Checks device capabilities and permissions before proceeding.
 func (d *Device) GetPinUvAuthTokenUsingPIN(
+	ctx context.Context,
 	pin string,
 	permission protocol.Permission,
 	rpID string,
@@ -1044,7 +1002,7 @@ func (d *Device) GetPinUvAuthTokenUsingPIN(
 			"you cannot set be AuthenticatorConfiguration permission if device doesn't support uv option")
 	}
 
-	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement()
+	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1052,6 +1010,7 @@ func (d *Device) GetPinUvAuthTokenUsingPIN(
 	token, ok := d.info.Options[protocol.OptionPinUvAuthToken]
 	if !ok || !token {
 		return d.ctapClient.GetPinToken(
+			ctx,
 			pinUvAuthProtocol,
 			keyAgreement,
 			pin,
@@ -1059,6 +1018,7 @@ func (d *Device) GetPinUvAuthTokenUsingPIN(
 	}
 
 	return d.ctapClient.GetPinUvAuthTokenUsingPinWithPermissions(
+		ctx,
 		pinUvAuthProtocol,
 		keyAgreement,
 		pin,
@@ -1070,7 +1030,7 @@ func (d *Device) GetPinUvAuthTokenUsingPIN(
 // GetPinUvAuthTokenUsingUV obtains a pinUvAuthToken by performing user verification (UV) on a compatible device.
 // Returns an error if the device does not support pinUvAuthToken or user verification features.
 // Requires the permission type and optionally Relying Party ID (rpID) in some cases to execute successfully.
-func (d *Device) GetPinUvAuthTokenUsingUV(permission protocol.Permission, rpID string) ([]byte, error) {
+func (d *Device) GetPinUvAuthTokenUsingUV(ctx context.Context, permission protocol.Permission, rpID string) ([]byte, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1087,12 +1047,13 @@ func (d *Device) GetPinUvAuthTokenUsingUV(permission protocol.Permission, rpID s
 		return nil, newErrorMessage(ErrUvNotConfigured, "please configure UV first (e.g. enroll biometry)")
 	}
 
-	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement()
+	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	return d.ctapClient.GetPinUvAuthTokenUsingUvWithPermissions(
+		ctx,
 		pinUvAuthProtocol,
 		keyAgreement,
 		permission,
@@ -1102,7 +1063,7 @@ func (d *Device) GetPinUvAuthTokenUsingUV(permission protocol.Permission, rpID s
 
 // GetUVRetries retrieves the number of remaining user verification retries from the device.
 // Returns an error if the device does not support user verification.
-func (d *Device) GetUVRetries() (uint, error) {
+func (d *Device) GetUVRetries(ctx context.Context) (uint, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1114,25 +1075,25 @@ func (d *Device) GetUVRetries() (uint, error) {
 		return 0, newErrorMessage(ErrUvNotConfigured, "please configure UV first (e.g. enroll biometry)")
 	}
 
-	return d.ctapClient.GetUVRetries()
+	return d.ctapClient.GetUVRetries(ctx)
 }
 
 // Reset performs a factory reset on the device, clearing all stored user data and resetting it to its default state.
 // Some devices require doing reset within 10 seconds after you connected the token.
-func (d *Device) Reset() error {
+func (d *Device) Reset(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if err := d.ctapClient.Reset(); err != nil {
+	if err := d.ctapClient.Reset(ctx); err != nil {
 		return err
 	}
 
-	return d.refreshInfoLocked()
+	return d.refreshInfoLocked(ctx)
 }
 
 // GetBioModality returns bio modality of authenticator.
 // Currently, only fingerprint modality is defined in the FIDO 2.2 specification.
-func (d *Device) GetBioModality() (protocol.AuthenticatorBioEnrollmentResponse, error) {
+func (d *Device) GetBioModality(ctx context.Context) (protocol.AuthenticatorBioEnrollmentResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1145,6 +1106,7 @@ func (d *Device) GetBioModality() (protocol.AuthenticatorBioEnrollmentResponse, 
 	}
 
 	return d.ctapClient.GetBioModality(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 	)
 }
@@ -1154,7 +1116,7 @@ func (d *Device) GetBioModality() (protocol.AuthenticatorBioEnrollmentResponse, 
 //		FingerprintKind: For touch type fingerprints, its value is 1. For swipe type fingerprints, its value is 2.
 //		MaxCaptureSamplesRequiredForEnroll: Indicates the maximum good samples required for enrollment.
 //	 	MaxTemplateFriendlyName: Indicates the maximum number of bytes the authenticator will accept as a templateFriendlyName.
-func (d *Device) GetFingerprintSensorInfo() (protocol.AuthenticatorBioEnrollmentResponse, error) {
+func (d *Device) GetFingerprintSensorInfo(ctx context.Context) (protocol.AuthenticatorBioEnrollmentResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1167,6 +1129,7 @@ func (d *Device) GetFingerprintSensorInfo() (protocol.AuthenticatorBioEnrollment
 	}
 
 	return d.ctapClient.GetFingerprintSensorInfo(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 	)
 }
@@ -1174,6 +1137,7 @@ func (d *Device) GetFingerprintSensorInfo() (protocol.AuthenticatorBioEnrollment
 // EnrollBegin begins a fingerprint enrollment process and returns TemplateID, LastEnrollSampleStatus,
 // and RemainingSamples properties. Use those properties to continue to capture the next samples or cancel it.
 func (d *Device) EnrollBegin(
+	ctx context.Context,
 	pinUvAuthToken []byte,
 	timeoutMilliseconds uint,
 ) (protocol.AuthenticatorBioEnrollmentResponse, error) {
@@ -1194,6 +1158,7 @@ func (d *Device) EnrollBegin(
 	}
 
 	resp, err := d.ctapClient.EnrollBegin(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 		pinUvAuthProtocol,
 		pinUvAuthToken,
@@ -1208,7 +1173,7 @@ func (d *Device) EnrollBegin(
 	}
 
 	if len(resp.TemplateID) > 0 && *resp.RemainingSamples == 0 {
-		if err := d.refreshInfoLocked(); err != nil {
+		if err := d.refreshInfoLocked(ctx); err != nil {
 			return protocol.AuthenticatorBioEnrollmentResponse{}, err
 		}
 	}
@@ -1218,6 +1183,7 @@ func (d *Device) EnrollBegin(
 
 // EnrollCaptureNextSample continues capturing samples from an already started enrollment process.
 func (d *Device) EnrollCaptureNextSample(
+	ctx context.Context,
 	pinUvAuthToken []byte,
 	templateID []byte,
 	timeoutMilliseconds uint,
@@ -1239,6 +1205,7 @@ func (d *Device) EnrollCaptureNextSample(
 	}
 
 	resp, err := d.ctapClient.EnrollCaptureNextSample(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 		pinUvAuthProtocol,
 		pinUvAuthToken,
@@ -1254,7 +1221,7 @@ func (d *Device) EnrollCaptureNextSample(
 	}
 
 	if len(resp.TemplateID) > 0 && *resp.RemainingSamples == 0 {
-		if err := d.refreshInfoLocked(); err != nil {
+		if err := d.refreshInfoLocked(ctx); err != nil {
 			return protocol.AuthenticatorBioEnrollmentResponse{}, err
 		}
 	}
@@ -1263,7 +1230,7 @@ func (d *Device) EnrollCaptureNextSample(
 }
 
 // CancelCurrentEnrollment cancels a current enrollment process.
-func (d *Device) CancelCurrentEnrollment() error {
+func (d *Device) CancelCurrentEnrollment(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1276,13 +1243,14 @@ func (d *Device) CancelCurrentEnrollment() error {
 	}
 
 	return d.ctapClient.CancelCurrentEnrollment(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 	)
 }
 
 // EnumerateEnrollments enumerates enrollments by returning TemplateInfos property with an array of TemplateInfo
 // for all the enrollments available on the authenticator.
-func (d *Device) EnumerateEnrollments(pinUvAuthToken []byte) (protocol.AuthenticatorBioEnrollmentResponse, error) {
+func (d *Device) EnumerateEnrollments(ctx context.Context, pinUvAuthToken []byte) (protocol.AuthenticatorBioEnrollmentResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1300,6 +1268,7 @@ func (d *Device) EnumerateEnrollments(pinUvAuthToken []byte) (protocol.Authentic
 	}
 
 	return d.ctapClient.EnumerateEnrollments(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 		pinUvAuthProtocol,
 		pinUvAuthToken,
@@ -1307,7 +1276,7 @@ func (d *Device) EnumerateEnrollments(pinUvAuthToken []byte) (protocol.Authentic
 }
 
 // SetFriendlyName allows renaming/setting of a friendly fingerprint name.
-func (d *Device) SetFriendlyName(pinUvAuthToken []byte, templateID []byte, friendlyName string) error {
+func (d *Device) SetFriendlyName(ctx context.Context, pinUvAuthToken []byte, templateID []byte, friendlyName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1325,6 +1294,7 @@ func (d *Device) SetFriendlyName(pinUvAuthToken []byte, templateID []byte, frien
 	}
 
 	return d.ctapClient.SetFriendlyName(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 		pinUvAuthProtocol,
 		pinUvAuthToken,
@@ -1334,7 +1304,7 @@ func (d *Device) SetFriendlyName(pinUvAuthToken []byte, templateID []byte, frien
 }
 
 // RemoveEnrollment removes existing enrollment.
-func (d *Device) RemoveEnrollment(pinUvAuthToken []byte, templateID []byte) error {
+func (d *Device) RemoveEnrollment(ctx context.Context, pinUvAuthToken []byte, templateID []byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1352,6 +1322,7 @@ func (d *Device) RemoveEnrollment(pinUvAuthToken []byte, templateID []byte) erro
 	}
 
 	if err := d.ctapClient.RemoveEnrollment(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 		pinUvAuthProtocol,
 		pinUvAuthToken,
@@ -1360,12 +1331,12 @@ func (d *Device) RemoveEnrollment(pinUvAuthToken []byte, templateID []byte) erro
 		return err
 	}
 
-	return d.refreshInfoLocked()
+	return d.refreshInfoLocked(ctx)
 }
 
 // GetCredsMetadata retrieves credential management metadata if the device supports it.
 // Mainly ExistingResidentCredentialsCount and MaxPossibleRemainingResidentCredentialsCount.
-func (d *Device) GetCredsMetadata(pinUvAuthToken []byte) (protocol.AuthenticatorCredentialManagementResponse, error) {
+func (d *Device) GetCredsMetadata(ctx context.Context, pinUvAuthToken []byte) (protocol.AuthenticatorCredentialManagementResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1383,6 +1354,7 @@ func (d *Device) GetCredsMetadata(pinUvAuthToken []byte) (protocol.Authenticator
 	}
 
 	return d.ctapClient.GetCredsMetadata(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 		pinUvAuthProtocol,
 		pinUvAuthToken,
@@ -1398,7 +1370,7 @@ func (d *Device) GetCredsMetadata(pinUvAuthToken []byte) (protocol.Authenticator
 // its request mutex while yielding. In particular, collect all RPs first and
 // only then call EnumerateCredentials; nesting the iterators will deadlock and
 // would invalidate the authenticator's active enumeration state.
-func (d *Device) EnumerateRPs(pinUvAuthToken []byte) iter.Seq2[protocol.AuthenticatorCredentialManagementResponse, error] {
+func (d *Device) EnumerateRPs(ctx context.Context, pinUvAuthToken []byte) iter.Seq2[protocol.AuthenticatorCredentialManagementResponse, error] {
 	return func(yield func(protocol.AuthenticatorCredentialManagementResponse, error) bool) {
 		d.mu.Lock()
 		defer d.mu.Unlock()
@@ -1419,6 +1391,7 @@ func (d *Device) EnumerateRPs(pinUvAuthToken []byte) iter.Seq2[protocol.Authenti
 		}
 
 		for rp, err := range d.ctapClient.EnumerateRPs(
+			ctx,
 			d.info.Versions.IsPreviewOnly(),
 			pinUvAuthProtocol,
 			pinUvAuthToken,
@@ -1438,7 +1411,7 @@ func (d *Device) EnumerateRPs(pinUvAuthToken []byte) iter.Seq2[protocol.Authenti
 // method. Authenticators keep enumeration state internally, and Device holds
 // its request mutex while yielding. Do not nest this iterator inside
 // EnumerateRPs; finish and materialize the RP enumeration first.
-func (d *Device) EnumerateCredentials(pinUvAuthToken []byte, rpIDHash []byte) iter.Seq2[protocol.AuthenticatorCredentialManagementResponse, error] {
+func (d *Device) EnumerateCredentials(ctx context.Context, pinUvAuthToken []byte, rpIDHash []byte) iter.Seq2[protocol.AuthenticatorCredentialManagementResponse, error] {
 	return func(yield func(protocol.AuthenticatorCredentialManagementResponse, error) bool) {
 		d.mu.Lock()
 		defer d.mu.Unlock()
@@ -1459,6 +1432,7 @@ func (d *Device) EnumerateCredentials(pinUvAuthToken []byte, rpIDHash []byte) it
 		}
 
 		for rp, err := range d.ctapClient.EnumerateCredentials(
+			ctx,
 			d.info.Versions.IsPreviewOnly(),
 			pinUvAuthProtocol,
 			pinUvAuthToken,
@@ -1474,6 +1448,7 @@ func (d *Device) EnumerateCredentials(pinUvAuthToken []byte, rpIDHash []byte) it
 // DeleteCredential removes a specified credential from the device using the given authentication token.
 // It returns an error if credential management is not supported or the operation fails.
 func (d *Device) DeleteCredential(
+	ctx context.Context,
 	pinUvAuthToken []byte,
 	credentialID credential.PublicKeyCredentialDescriptor,
 ) error {
@@ -1494,6 +1469,7 @@ func (d *Device) DeleteCredential(
 	}
 
 	return d.ctapClient.DeleteCredential(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 		pinUvAuthProtocol,
 		pinUvAuthToken,
@@ -1505,6 +1481,7 @@ func (d *Device) DeleteCredential(
 // Requires the device to support credential management features.
 // Returns an error if the operation is not supported or fails.
 func (d *Device) UpdateUserInformation(
+	ctx context.Context,
 	pinUvAuthToken []byte,
 	credentialID credential.PublicKeyCredentialDescriptor,
 	user credential.PublicKeyCredentialUserEntity,
@@ -1526,6 +1503,7 @@ func (d *Device) UpdateUserInformation(
 	}
 
 	return d.ctapClient.UpdateUserInformation(
+		ctx,
 		d.info.Versions.IsPreviewOnly(),
 		pinUvAuthProtocol,
 		pinUvAuthToken,
@@ -1537,7 +1515,7 @@ func (d *Device) UpdateUserInformation(
 // GetLargeBlobs retrieves a list of large blobs from the device that supports the large blobs option.
 // Returns an error if the device does not support large blobs or if there is an issue with the retrieval process.
 // Ensures integrity by validating computed and actual hashes of the retrieved data.
-func (d *Device) GetLargeBlobs() ([]protocol.LargeBlob, error) {
+func (d *Device) GetLargeBlobs(ctx context.Context) ([]protocol.LargeBlob, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1549,6 +1527,7 @@ func (d *Device) GetLargeBlobs() ([]protocol.LargeBlob, error) {
 	maxFragmentLength := d.maxFragmentLength()
 
 	resp, err := d.ctapClient.LargeBlobs(
+		ctx,
 		0,
 		nil,
 		maxFragmentLength,
@@ -1566,6 +1545,7 @@ func (d *Device) GetLargeBlobs() ([]protocol.LargeBlob, error) {
 	// Continue to read
 	for uint(len(config)) == maxFragmentLength {
 		respNext, err := d.ctapClient.LargeBlobs(
+			ctx,
 			0,
 			nil,
 			maxFragmentLength,
@@ -1604,7 +1584,7 @@ func (d *Device) GetLargeBlobs() ([]protocol.LargeBlob, error) {
 // SetLargeBlobs stores large blobs on the device, ensuring compatibility with its supported capabilities and limits.
 // It validates device support, fragments the blob data if needed, and sends it in chunks to the device.
 // Returns an error if the device does not support large blobs, the data exceeds size limits, or if any other failure occurs.
-func (d *Device) SetLargeBlobs(pinUvAuthToken []byte, blobs []protocol.LargeBlob) error {
+func (d *Device) SetLargeBlobs(ctx context.Context, pinUvAuthToken []byte, blobs []protocol.LargeBlob) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1655,6 +1635,7 @@ func (d *Device) SetLargeBlobs(pinUvAuthToken []byte, blobs []protocol.LargeBlob
 		}
 
 		if _, err := d.ctapClient.LargeBlobs(
+			ctx,
 			pinUvAuthProtocol,
 			pinUvAuthToken,
 			0,
@@ -1672,7 +1653,7 @@ func (d *Device) SetLargeBlobs(pinUvAuthToken []byte, blobs []protocol.LargeBlob
 }
 
 // EnableEnterpriseAttestation enables enterprise attestation on the device if supported, using the provided token.
-func (d *Device) EnableEnterpriseAttestation(pinUvAuthToken []byte) error {
+func (d *Device) EnableEnterpriseAttestation(ctx context.Context, pinUvAuthToken []byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1689,17 +1670,18 @@ func (d *Device) EnableEnterpriseAttestation(pinUvAuthToken []byte) error {
 	}
 
 	if err := d.ctapClient.EnableEnterpriseAttestation(
+		ctx,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 	); err != nil {
 		return err
 	}
 
-	return d.refreshInfoLocked()
+	return d.refreshInfoLocked(ctx)
 }
 
 // ToggleAlwaysUV toggles the always UV (User Verification) setting on the device if supported, using the provided token.
-func (d *Device) ToggleAlwaysUV(pinUvAuthToken []byte) error {
+func (d *Device) ToggleAlwaysUV(ctx context.Context, pinUvAuthToken []byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1716,16 +1698,18 @@ func (d *Device) ToggleAlwaysUV(pinUvAuthToken []byte) error {
 	}
 
 	if err := d.ctapClient.ToggleAlwaysUV(
+		ctx,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 	); err != nil {
 		return err
 	}
 
-	return d.refreshInfoLocked()
+	return d.refreshInfoLocked(ctx)
 }
 
 func (d *Device) SetMinPINLength(
+	ctx context.Context,
 	pinUvAuthToken []byte,
 	newMinPINLength uint,
 	minPinLengthRPIDs []string,
@@ -1745,6 +1729,7 @@ func (d *Device) SetMinPINLength(
 	}
 
 	if err := d.ctapClient.SetMinPINLength(
+		ctx,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 		newMinPINLength,
@@ -1755,7 +1740,7 @@ func (d *Device) SetMinPINLength(
 		return err
 	}
 
-	return d.refreshInfoLocked()
+	return d.refreshInfoLocked(ctx)
 }
 
 // Selection is a higher-level version of ctap.Selection. CTAPHID commands are
@@ -1764,28 +1749,5 @@ func (d *Device) SetMinPINLength(
 func (d *Device) Selection(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-
-	transport, ok := d.transport.(canceler)
-	if !ok {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		return d.ctapClient.Selection()
-	}
-
-	errc := make(chan error, 1)
-
-	go func() {
-		errc <- d.ctapClient.Selection()
-	}()
-
-	select {
-	case <-ctx.Done():
-		if err := transport.Cancel(); err != nil {
-			return errors.Join(err, <-errc)
-		}
-		return <-errc
-	case err := <-errc:
-		return err
-	}
+	return d.ctapClient.Selection(ctx)
 }

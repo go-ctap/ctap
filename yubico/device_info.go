@@ -2,6 +2,7 @@
 package yubico
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -74,13 +75,13 @@ var ErrInvalidDeviceInfo = errors.New("invalid Yubico device information")
 const CommandGetDeviceInfo ctaphid.Command = ctaphid.CTAPHID_VENDOR_FIRST + 2
 
 type VendorTransport interface {
-	Vendor(command ctaphid.Command, data []byte) (ctaphid.VendorResponse, error)
+	Vendor(ctx context.Context, command ctaphid.Command, data []byte) (ctaphid.VendorResponse, error)
 }
 
 // GetDeviceInfo sends Yubico's CTAPHID command 0xc2 (0x42 without the INIT
 // packet bit) and parses its TLV response.
-func GetDeviceInfo(transport VendorTransport) (DeviceInfo, error) {
-	response, err := transport.Vendor(CommandGetDeviceInfo, nil)
+func GetDeviceInfo(ctx context.Context, transport VendorTransport) (DeviceInfo, error) {
+	response, err := transport.Vendor(ctx, CommandGetDeviceInfo, nil)
 	if err != nil {
 		return DeviceInfo{}, err
 	}
