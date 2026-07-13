@@ -86,7 +86,9 @@ func (d *Device) maxFragmentLength() uint {
 	return d.info.EffectiveMaxMsgSize() - 64
 }
 
-// New creates a Device over an initialized transport and takes ownership of it.
+// New creates a Device over an initialized transport. The caller retains
+// ownership of transport if New returns an error. The returned Device owns
+// transport on success.
 func New(ctx context.Context, transport ctaptransport.Device, opts ...options.Option) (*Device, error) {
 	if transport == nil {
 		return nil, errors.New("device: nil transport")
@@ -96,7 +98,7 @@ func New(ctx context.Context, transport ctaptransport.Device, opts ...options.Op
 	clientOpts := append(slices.Clone(opts), options.WithTransport(transport))
 	ctapClient, err := client.NewClient(clientOpts...)
 	if err != nil {
-		return nil, errors.Join(err, transport.Close())
+		return nil, err
 	}
 
 	d := &Device{
@@ -106,7 +108,7 @@ func New(ctx context.Context, transport ctaptransport.Device, opts ...options.Op
 	}
 	info, err := d.ctapClient.GetInfo(ctx)
 	if err != nil {
-		return nil, errors.Join(err, transport.Close())
+		return nil, err
 	}
 	d.info = info
 	if len(info.PinUvAuthProtocols) > 0 {
@@ -125,11 +127,11 @@ func OpenHID(ctx context.Context, path string, opts ...options.Option) (*Device,
 	}
 	transport, err := ctaphid.Open(ctx, dev)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, dev.Close())
 	}
 	d, err := New(ctx, transport, opts...)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, transport.Close())
 	}
 	d.Path = path
 	return d, nil

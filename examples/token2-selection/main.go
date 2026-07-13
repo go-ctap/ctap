@@ -40,8 +40,10 @@ func run(ctx context.Context) (err error) {
 
 	device, err := authenticator.New(ctx, tokenTransport)
 	if err != nil {
-		// authenticator.New owns and closes tokenTransport even on failure.
-		return fmt.Errorf("initialize authenticator: %w", err)
+		return errors.Join(
+			fmt.Errorf("initialize authenticator: %w", err),
+			tokenTransport.Close(),
+		)
 	}
 	defer func() {
 		err = errors.Join(err, device.Close())

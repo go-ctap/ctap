@@ -31,27 +31,24 @@ type Device interface {
 
 var _ ctaptransport.Device = (*Transport)(nil)
 
-// Open allocates a CTAPHID channel on device. It takes ownership of device and
-// closes it if channel allocation fails. The returned Transport owns device on
+// Open allocates a CTAPHID channel on device. The caller retains ownership of
+// device if Open returns an error. The returned Transport owns device on
 // success.
 func Open(ctx context.Context, device Device) (*Transport, error) {
 	if device == nil {
 		return nil, errors.New("ctaphid: nil device")
 	}
 	if err := ctx.Err(); err != nil {
-		_ = device.Close()
 		return nil, err
 	}
 
 	nonce := make([]byte, 8)
 	if _, err := rand.Read(nonce); err != nil {
-		_ = device.Close()
 		return nil, err
 	}
 
 	response, err := initChannel(ctx, device, BROADCAST_CID, nonce)
 	if err != nil {
-		_ = device.Close()
 		return nil, err
 	}
 

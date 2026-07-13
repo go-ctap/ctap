@@ -21,5 +21,9 @@ func Open(ctx context.Context, path string) (*ctaphid.Transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ctaphid.Open(ctx, device)
+	transport, err := ctaphid.Open(ctx, device)
+	if err != nil {
+		return nil, errors.Join(err, device.Close())
+	}
+	return transport, nil
 }
