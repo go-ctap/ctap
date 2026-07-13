@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"log"
@@ -13,7 +14,8 @@ import (
 )
 
 func main() {
-	device, err := discover.SelectDevice(options.WithUseNamedPipes())
+	ctx := context.Background()
+	device, err := discover.SelectDevice(ctx, options.WithUseNamedPipes())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -25,7 +27,7 @@ func main() {
 	if _, err := rand.Read(ping); err != nil {
 		log.Fatal(err)
 	}
-	if err := device.Ping(ping); err != nil {
+	if err := device.Ping(ctx, ping); err != nil {
 		log.Fatal(err)
 	}
 
@@ -41,6 +43,7 @@ func main() {
 	}
 
 	token, err := device.GetPinUvAuthTokenUsingPIN(
+		ctx,
 		pin,
 		protocol.PermissionCredentialManagement,
 		"",
@@ -49,11 +52,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	printCredentials(device, token)
+	printCredentials(ctx, device, token)
 }
 
-func printCredentials(device *authenticator.Device, token []byte) {
-	metadata, err := device.GetCredsMetadata(token)
+func printCredentials(ctx context.Context, device *authenticator.Device, token []byte) {
+	metadata, err := device.GetCredsMetadata(ctx, token)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,7 +67,7 @@ func printCredentials(device *authenticator.Device, token []byte) {
 	)
 
 	rps := make([]protocol.AuthenticatorCredentialManagementResponse, 0)
-	for rp, err := range device.EnumerateRPs(token) {
+	for rp, err := range device.EnumerateRPs(ctx, token) {
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -73,7 +76,7 @@ func printCredentials(device *authenticator.Device, token []byte) {
 
 	index := 1
 	for _, rp := range rps {
-		for credential, err := range device.EnumerateCredentials(token, rp.RPIDHash) {
+		for credential, err := range device.EnumerateCredentials(ctx, token, rp.RPIDHash) {
 			if err != nil {
 				log.Fatal(err)
 			}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -10,7 +11,8 @@ import (
 )
 
 func main() {
-	device, err := discover.SelectDevice()
+	ctx := context.Background()
+	device, err := discover.SelectDevice(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -18,13 +20,14 @@ func main() {
 		_ = device.Close()
 	}()
 
-	retries, err := device.GetUVRetries()
+	retries, err := device.GetUVRetries(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("UV retries: %d\n", retries)
 
 	token, err := device.GetPinUvAuthTokenUsingUV(
+		ctx,
 		protocol.PermissionCredentialManagement|protocol.PermissionBioEnrollment,
 		"",
 	)
@@ -32,12 +35,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	printFingerprints(device, token)
-	printCredentials(device, token)
+	printFingerprints(ctx, device, token)
+	printCredentials(ctx, device, token)
 }
 
-func printFingerprints(device *authenticator.Device, token []byte) {
-	response, err := device.EnumerateEnrollments(token)
+func printFingerprints(ctx context.Context, device *authenticator.Device, token []byte) {
+	response, err := device.EnumerateEnrollments(ctx, token)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,8 +56,8 @@ func printFingerprints(device *authenticator.Device, token []byte) {
 	}
 }
 
-func printCredentials(device *authenticator.Device, token []byte) {
-	metadata, err := device.GetCredsMetadata(token)
+func printCredentials(ctx context.Context, device *authenticator.Device, token []byte) {
+	metadata, err := device.GetCredsMetadata(ctx, token)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -65,7 +68,7 @@ func printCredentials(device *authenticator.Device, token []byte) {
 	)
 
 	rps := make([]protocol.AuthenticatorCredentialManagementResponse, 0)
-	for rp, err := range device.EnumerateRPs(token) {
+	for rp, err := range device.EnumerateRPs(ctx, token) {
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -74,7 +77,7 @@ func printCredentials(device *authenticator.Device, token []byte) {
 
 	index := 1
 	for _, rp := range rps {
-		for credential, err := range device.EnumerateCredentials(token, rp.RPIDHash) {
+		for credential, err := range device.EnumerateCredentials(ctx, token, rp.RPIDHash) {
 			if err != nil {
 				log.Fatal(err)
 			}

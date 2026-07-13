@@ -3,6 +3,7 @@
 package token2
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +30,7 @@ const (
 
 // Card is the raw APDU subset implemented by pcsc.Card.
 type Card interface {
+	io.Closer
 	Transmit(apdu []byte) ([]byte, error)
 }
 
@@ -52,22 +54,31 @@ var _ ctaptransport.Device = (*Transport)(nil)
 
 // New selects the Token2 applet and returns an initialized transport. The
 // caller retains ownership of card if initialization fails.
-func New(card Card) (*Transport, error) {
+func New(ctx context.Context, card Card) (*Transport, error) {
 	if card == nil {
 		return nil, errors.New("token2: nil card")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	t := &Transport{card: card}
 	selectAPDU := slices.Concat([]byte{0x00, 0xa4, 0x04, 0x00, byte(len(appletAID))}, appletAID)
-	if _, err := t.exchange(selectAPDU); err != nil {
+	if _, err := t.exchange(ctx, selectAPDU); err != nil {
 		return nil, fmt.Errorf("token2: select applet: %w", err)
 	}
 
 	return t, nil
 }
 
-// CBOR sends a CTAP command byte and CBOR payload through INS C5/P1 03.
-func (t *Transport) CBOR(data []byte) (ctaptransport.CBORResponse, error) {
+// CBOR sends a CTAP command byte and CBOR payload through INS C5/P1 03. The
+// context is checked before and after each APDU transmission, but an in-flight
+// Transmit cannot be interrupted through the Card interface. Close may be called
+// concurrently when the underlying card supports interrupting I/O that way.
+func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return ctaptransport.CBORResponse{}, err
+	}
 	if len(data) < 1 {
 		return ctaptransport.CBORResponse{}, errors.New("token2: empty CTAP command")
 	}
@@ -77,8 +88,11 @@ func (t *Transport) CBOR(data []byte) (ctaptransport.CBORResponse, error) {
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return ctaptransport.CBORResponse{}, err
+	}
 
-	response, err := t.exchange(commandAPDU(data))
+	response, err := t.exchange(ctx, commandAPDU(data))
 	if err != nil {
 		return ctaptransport.CBORResponse{}, err
 	}
@@ -101,9 +115,15 @@ func commandAPDU(data []byte) []byte {
 	return slices.Concat(header, []byte{0x00, byte(len(data) >> 8), byte(len(data))}, data)
 }
 
-func (t *Transport) exchange(apdu []byte) ([]byte, error) {
+func (t *Transport) exchange(ctx context.Context, apdu []byte) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	response, err := t.card.Transmit(apdu)
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -124,8 +144,14 @@ func (t *Transport) exchange(apdu []byte) ([]byte, error) {
 			}
 			return data, nil
 		case 0x61:
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			response, err = t.card.Transmit([]byte{claToken2, insGetResponse, 0x00, 0x00, sw2})
 			if err != nil {
+				return nil, err
+			}
+			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
 		default:
@@ -134,14 +160,8 @@ func (t *Transport) exchange(apdu []byte) ([]byte, error) {
 	}
 }
 
-// Close closes the underlying card when it implements io.Closer.
+// Close closes the underlying card. It does not wait for an in-flight Transmit,
+// so callers can use it as an I/O escape hatch.
 func (t *Transport) Close() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	closer, ok := t.card.(io.Closer)
-	if !ok {
-		return nil
-	}
-	return closer.Close()
+	return t.card.Close()
 }

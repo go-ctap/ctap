@@ -2,7 +2,10 @@ package token2
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"io"
+	"sync"
 	"testing"
 
 	"github.com/go-ctap/ctap/protocol"
@@ -15,6 +18,7 @@ type exchange struct {
 	request  []byte
 	response []byte
 	err      error
+	after    func()
 }
 
 type fakeCard struct {
@@ -29,7 +33,11 @@ func (c *fakeCard) Transmit(apdu []byte) ([]byte, error) {
 	next := c.exchanges[0]
 	c.exchanges = c.exchanges[1:]
 	assert.Equal(c.t, next.request, apdu)
-	return bytes.Clone(next.response), next.err
+	response := bytes.Clone(next.response)
+	if next.after != nil {
+		next.after()
+	}
+	return response, next.err
 }
 
 func (c *fakeCard) Close() error {
@@ -44,7 +52,7 @@ func newFakeTransport(t *testing.T, exchanges ...exchange) (*Transport, *fakeCar
 		{request: []byte{0x80, 0xc0, 0x00, 0x00, 0x04}, response: []byte{'1', '0', '0', '0', 0x90, 0x00}},
 	}, exchanges...)}
 
-	transport, err := New(card)
+	transport, err := New(context.Background(), card)
 	require.NoError(t, err)
 	return transport, card
 }
@@ -55,7 +63,7 @@ func TestCBORShortAPDU(t *testing.T) {
 		response: []byte{0x00, 0xa1, 0x01, 0x02, 0x90, 0x00},
 	})
 
-	response, err := transport.CBOR([]byte{0x04})
+	response, err := transport.CBOR(context.Background(), []byte{0x04})
 	require.NoError(t, err)
 	assert.Equal(t, ctaptransport.CBORResponse{
 		StatusCode: ctaptransport.CTAP2_OK,
@@ -72,7 +80,7 @@ func TestCBORExtendedAPDUAndGetResponse(t *testing.T) {
 		exchange{request: []byte{0x80, 0xc0, 0x00, 0x00, 0x02}, response: []byte{0x01, 0x02, 0x90, 0x00}},
 	)
 
-	response, err := transport.CBOR(command)
+	response, err := transport.CBOR(context.Background(), command)
 	require.NoError(t, err)
 	assert.Equal(t, ctaptransport.CBORResponse{
 		StatusCode: ctaptransport.CTAP2_OK,
@@ -87,7 +95,7 @@ func TestCBORReturnsTypedCTAPError(t *testing.T) {
 		response: []byte{byte(ctaptransport.CTAP2_ERR_INVALID_CBOR), 0x90, 0x00},
 	})
 
-	_, err := transport.CBOR([]byte{0x04})
+	_, err := transport.CBOR(context.Background(), []byte{0x04})
 	var ctapErr *ctaptransport.CTAPError
 	require.ErrorAs(t, err, &ctapErr)
 	assert.Equal(t, protocol.AuthenticatorGetInfo, ctapErr.Command)
@@ -100,7 +108,7 @@ func TestCBORReturnsAPDUError(t *testing.T) {
 		response: []byte{0x6a, 0x82},
 	})
 
-	_, err := transport.CBOR([]byte{0x04})
+	_, err := transport.CBOR(context.Background(), []byte{0x04})
 	var apduErr *APDUError
 	require.ErrorAs(t, err, &apduErr)
 	assert.Equal(t, byte(0x6a), apduErr.SW1)
@@ -113,7 +121,7 @@ func TestNewRejectsMalformedSelectResponse(t *testing.T) {
 		response: []byte{0x90},
 	}}}
 
-	_, err := New(card)
+	_, err := New(context.Background(), card)
 	require.ErrorIs(t, err, ErrInvalidResponse)
 }
 
@@ -130,6 +138,66 @@ func TestNewPropagatesTransmitError(t *testing.T) {
 		err:     wantErr,
 	}}}
 
-	_, err := New(card)
+	_, err := New(context.Background(), card)
 	require.ErrorIs(t, err, wantErr)
+}
+
+func TestCBORChecksContextBeforeChainedTransmit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	transport, card := newFakeTransport(t, exchange{
+		request:  []byte{0x80, 0xc5, 0x03, 0x00, 0x01, 0x04},
+		response: []byte{0x00, 0x61, 0x04},
+		after:    cancel,
+	})
+
+	_, err := transport.CBOR(ctx, []byte{0x04})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, card.exchanges)
+}
+
+func TestNewPreCanceledDoesNotTransmit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	card := &fakeCard{t: t}
+
+	_, err := New(ctx, card)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestCloseInterruptsBlockedTransmit(t *testing.T) {
+	card := newBlockingCard()
+	transport := &Transport{card: card}
+	resultc := make(chan error, 1)
+	go func() {
+		_, err := transport.CBOR(context.Background(), []byte{0x04})
+		resultc <- err
+	}()
+
+	<-card.started
+	require.NoError(t, transport.Close())
+	require.ErrorIs(t, <-resultc, io.ErrClosedPipe)
+}
+
+type blockingCard struct {
+	started chan struct{}
+	closed  chan struct{}
+	once    sync.Once
+}
+
+func newBlockingCard() *blockingCard {
+	return &blockingCard{
+		started: make(chan struct{}),
+		closed:  make(chan struct{}),
+	}
+}
+
+func (c *blockingCard) Transmit([]byte) ([]byte, error) {
+	c.once.Do(func() { close(c.started) })
+	<-c.closed
+	return nil, io.ErrClosedPipe
+}
+
+func (c *blockingCard) Close() error {
+	close(c.closed)
+	return nil
 }

@@ -24,21 +24,21 @@ type Message struct {
 	Data    []byte
 }
 
-func ParseMessage(pipe io.ReadWriteCloser) (Message, error) {
+func parseMessage(reader io.Reader) (Message, error) {
 	cmd := make([]byte, 1)
-	if _, err := io.ReadFull(pipe, cmd); err != nil {
+	if _, err := io.ReadFull(reader, cmd); err != nil {
 		return Message{}, err
 	}
 
 	bLen := make([]byte, 2)
-	if _, err := io.ReadFull(pipe, bLen); err != nil {
+	if _, err := io.ReadFull(reader, bLen); err != nil {
 		return Message{}, err
 	}
 	length := binary.BigEndian.Uint16(bLen)
 
 	bData := make([]byte, length)
 	if length > 0 {
-		if _, err := io.ReadFull(pipe, bData); err != nil {
+		if _, err := io.ReadFull(reader, bData); err != nil {
 			return Message{}, err
 		}
 	}

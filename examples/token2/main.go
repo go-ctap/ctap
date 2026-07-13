@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -13,19 +14,20 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
 	readerName := findReader(os.Getenv("PCSC_READER"))
 	card, err := pcsc.Open(readerName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	transport, err := token2.New(card)
+	transport, err := token2.New(ctx, card)
 	if err != nil {
 		_ = card.Close()
 		log.Fatal(err)
 	}
 
-	device, err := authenticator.New(transport)
+	device, err := authenticator.New(ctx, transport)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -37,6 +39,7 @@ func main() {
 	}
 
 	token, err := device.GetPinUvAuthTokenUsingPIN(
+		ctx,
 		pin,
 		protocol.PermissionCredentialManagement,
 		"",
@@ -46,7 +49,7 @@ func main() {
 	}
 
 	fmt.Printf("PC/SC reader: %s\n", readerName)
-	printCredentials(device, token)
+	printCredentials(ctx, device, token)
 }
 
 func findReader(filter string) string {
@@ -65,8 +68,8 @@ func findReader(filter string) string {
 	return ""
 }
 
-func printCredentials(device *authenticator.Device, token []byte) {
-	metadata, err := device.GetCredsMetadata(token)
+func printCredentials(ctx context.Context, device *authenticator.Device, token []byte) {
+	metadata, err := device.GetCredsMetadata(ctx, token)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -77,7 +80,7 @@ func printCredentials(device *authenticator.Device, token []byte) {
 	)
 
 	rps := make([]protocol.AuthenticatorCredentialManagementResponse, 0)
-	for rp, err := range device.EnumerateRPs(token) {
+	for rp, err := range device.EnumerateRPs(ctx, token) {
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -86,7 +89,7 @@ func printCredentials(device *authenticator.Device, token []byte) {
 
 	index := 1
 	for _, rp := range rps {
-		for credential, err := range device.EnumerateCredentials(token, rp.RPIDHash) {
+		for credential, err := range device.EnumerateCredentials(ctx, token, rp.RPIDHash) {
 			if err != nil {
 				log.Fatal(err)
 			}

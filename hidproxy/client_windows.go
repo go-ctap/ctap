@@ -27,12 +27,13 @@ func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 			yield(nil, err)
 			return
 		}
-		if _, err := message.WriteTo(pipe); err != nil {
-			yield(nil, err)
-			return
-		}
-
-		message, err = ParseMessage(pipe)
+		err = withContextIO(ctx, pipe, func() error {
+			if _, writeErr := message.WriteTo(pipe); writeErr != nil {
+				return writeErr
+			}
+			message, err = parseMessage(pipe)
+			return err
+		})
 		if err != nil {
 			yield(nil, err)
 			return
@@ -45,6 +46,10 @@ func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 		}
 
 		for _, device := range devices {
+			if err := ctx.Err(); err != nil {
+				yield(nil, err)
+				return
+			}
 			if !yield(device, nil) {
 				return
 			}
@@ -63,7 +68,10 @@ func openPath(ctx context.Context, path string) (io.ReadWriteCloser, error) {
 		_ = pipe.Close()
 		return nil, err
 	}
-	if _, err := message.WriteTo(pipe); err != nil {
+	if err := withContextIO(ctx, pipe, func() error {
+		_, writeErr := message.WriteTo(pipe)
+		return writeErr
+	}); err != nil {
 		_ = pipe.Close()
 		return nil, err
 	}

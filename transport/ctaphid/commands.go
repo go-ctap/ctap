@@ -28,20 +28,22 @@ func ensureResponseCID(msg Message, cid ChannelID) error {
 	return nil
 }
 
-func CBOR(dev io.ReadWriter, cid ChannelID, data []byte) (transport.CBORResponse, error) {
+func writeCBOR(dev io.Writer, cid ChannelID, data []byte) (protocol.Command, error) {
 	if len(data) < 1 {
-		return transport.CBORResponse{}, ErrInvalidRequestMessage
+		return 0, ErrInvalidRequestMessage
 	}
 
 	msg, err := NewMessage(cid, CTAPHID_CBOR, data)
 	if err != nil {
-		return transport.CBORResponse{}, err
+		return 0, err
 	}
-
 	if _, err := msg.WriteTo(dev); err != nil {
-		return transport.CBORResponse{}, err
+		return 0, err
 	}
+	return protocol.Command(data[0]), nil
+}
 
+func readCBORResponse(dev io.Reader, cid ChannelID, command protocol.Command) (transport.CBORResponse, error) {
 read:
 	for {
 		respMsg := make(Message, 0)
@@ -84,11 +86,11 @@ read:
 			Data:       respData[1:],
 		}
 
-		return transport.ValidateCBORResponse(protocol.Command(data[0]), response)
+		return transport.ValidateCBORResponse(command, response)
 	}
 }
 
-func Init(dev io.ReadWriter, cid ChannelID, nonce []byte) (InitResponse, error) {
+func initChannel(dev io.ReadWriter, cid ChannelID, nonce []byte) (InitResponse, error) {
 	if len(nonce) != 8 {
 		return InitResponse{}, ErrInvalidRequestMessage
 	}
@@ -147,8 +149,8 @@ func Init(dev io.ReadWriter, cid ChannelID, nonce []byte) (InitResponse, error) 
 	}
 }
 
-func Ping(dev io.ReadWriter, cid ChannelID, ping []byte) (PingResponse, error) {
-	msg, err := NewMessage(cid, CTAPHID_PING, ping)
+func ping(dev io.ReadWriter, cid ChannelID, data []byte) (PingResponse, error) {
+	msg, err := NewMessage(cid, CTAPHID_PING, data)
 	if err != nil {
 		return PingResponse{}, err
 	}
@@ -196,10 +198,10 @@ read:
 	}
 }
 
-// Vendor sends a command from the CTAPHID vendor-specific range (0x40-0x7f).
+// vendor sends a command from the CTAPHID vendor-specific range (0x40-0x7f).
 // Command values do not include INIT_PACKET_BIT; NewMessage adds that bit when
 // encoding the initial HID packet.
-func Vendor(dev io.ReadWriter, cid ChannelID, command Command, data []byte) (VendorResponse, error) {
+func vendor(dev io.ReadWriter, cid ChannelID, command Command, data []byte) (VendorResponse, error) {
 	if command < CTAPHID_VENDOR_FIRST || command > CTAPHID_VENDOR_LAST {
 		return VendorResponse{}, ErrInvalidRequestMessage
 	}
@@ -245,7 +247,7 @@ read:
 	}
 }
 
-func Cancel(dev io.ReadWriter, cid ChannelID) error {
+func cancel(dev io.Writer, cid ChannelID) error {
 	msg, err := NewMessage(cid, CTAPHID_CANCEL, nil)
 	if err != nil {
 		return err
@@ -258,7 +260,7 @@ func Cancel(dev io.ReadWriter, cid ChannelID) error {
 	return nil
 }
 
-func Wink(dev io.ReadWriter, cid ChannelID) error {
+func wink(dev io.ReadWriter, cid ChannelID) error {
 	msg, err := NewMessage(cid, CTAPHID_WINK, nil)
 	if err != nil {
 		return err
@@ -296,7 +298,7 @@ func Wink(dev io.ReadWriter, cid ChannelID) error {
 	}
 }
 
-func Lock(dev io.ReadWriter, cid ChannelID, seconds uint8) error {
+func lock(dev io.ReadWriter, cid ChannelID, seconds uint8) error {
 	if seconds > 10 {
 		return ErrInvalidRequestMessage
 	}
