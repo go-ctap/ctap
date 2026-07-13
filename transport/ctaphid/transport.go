@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"io"
 	"sync"
 
 	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
+	ghid "github.com/go-ctap/hid"
 )
 
 // Transport adapts a CTAPHID channel to the transport-independent CBOR API.
@@ -23,9 +25,8 @@ type Transport struct {
 // Device is the contextual I/O subset implemented by hid.Device and proxy
 // connections.
 type Device interface {
-	Read(context.Context, []byte) (int, error)
-	Write(context.Context, []byte) (int, error)
-	Close() error
+	ghid.ContextReadWriter
+	io.Closer
 }
 
 var _ ctaptransport.Device = (*Transport)(nil)

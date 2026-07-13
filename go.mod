@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/fxamacker/cbor/v2 v2.9.2
-	github.com/go-ctap/hid v0.9.0
+	github.com/go-ctap/hid v0.9.1
 	github.com/google/uuid v1.6.0
 	github.com/ldclabs/cose v1.4.0
 	github.com/samber/lo v1.53.0

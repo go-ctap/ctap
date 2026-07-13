@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-ctap/ctap/protocol"
 	"github.com/go-ctap/ctap/transport"
+	ghid "github.com/go-ctap/hid"
 )
 
 func ensureDataLen(data []byte, min int) error {
@@ -37,17 +38,19 @@ func writeCBOR(ctx context.Context, dev Device, cid ChannelID, data []byte) (pro
 	if err != nil {
 		return 0, err
 	}
-	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
+	if _, err := msg.WriteTo(ghid.WithContext(ctx, dev)); err != nil {
 		return 0, err
 	}
 	return protocol.Command(data[0]), nil
 }
 
 func readCBORResponse(ctx context.Context, dev Device, cid ChannelID, command protocol.Command) (transport.CBORResponse, error) {
+	bound := ghid.WithContext(ctx, dev)
+
 read:
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return transport.CBORResponse{}, err
 		}
 
@@ -100,13 +103,14 @@ func initChannel(ctx context.Context, dev Device, cid ChannelID, nonce []byte) (
 		return InitResponse{}, err
 	}
 
-	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
+	bound := ghid.WithContext(ctx, dev)
+	if _, err := msg.WriteTo(bound); err != nil {
 		return InitResponse{}, err
 	}
 
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return InitResponse{}, err
 		}
 
@@ -155,14 +159,15 @@ func ping(ctx context.Context, dev Device, cid ChannelID, data []byte) (PingResp
 		return PingResponse{}, err
 	}
 
-	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
+	bound := ghid.WithContext(ctx, dev)
+	if _, err := msg.WriteTo(bound); err != nil {
 		return PingResponse{}, err
 	}
 
 read:
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return PingResponse{}, err
 		}
 
@@ -210,14 +215,15 @@ func vendor(ctx context.Context, dev Device, cid ChannelID, command Command, dat
 	if err != nil {
 		return VendorResponse{}, err
 	}
-	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
+	bound := ghid.WithContext(ctx, dev)
+	if _, err := msg.WriteTo(bound); err != nil {
 		return VendorResponse{}, err
 	}
 
 read:
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return VendorResponse{}, err
 		}
 		if err := ensureResponseCID(respMsg, cid); err != nil {
@@ -253,7 +259,7 @@ func cancel(ctx context.Context, dev Device, cid ChannelID) error {
 		return err
 	}
 
-	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
+	if _, err := msg.WriteTo(ghid.WithContext(ctx, dev)); err != nil {
 		return err
 	}
 
@@ -266,13 +272,14 @@ func wink(ctx context.Context, dev Device, cid ChannelID) error {
 		return err
 	}
 
-	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
+	bound := ghid.WithContext(ctx, dev)
+	if _, err := msg.WriteTo(bound); err != nil {
 		return err
 	}
 
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return err
 		}
 
@@ -308,13 +315,14 @@ func lock(ctx context.Context, dev Device, cid ChannelID, seconds uint8) error {
 		return err
 	}
 
-	if _, err := msg.WriteTo(contextWriter{ctx, dev}); err != nil {
+	bound := ghid.WithContext(ctx, dev)
+	if _, err := msg.WriteTo(bound); err != nil {
 		return err
 	}
 
 	for {
 		respMsg := make(Message, 0)
-		if _, err := respMsg.ReadFrom(contextReader{ctx, dev}); err != nil {
+		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return err
 		}
 
@@ -339,17 +347,3 @@ func lock(ctx context.Context, dev Device, cid ChannelID, seconds uint8) error {
 		}
 	}
 }
-
-type contextReader struct {
-	ctx context.Context
-	dev Device
-}
-
-func (r contextReader) Read(p []byte) (int, error) { return r.dev.Read(r.ctx, p) }
-
-type contextWriter struct {
-	ctx context.Context
-	dev Device
-}
-
-func (w contextWriter) Write(p []byte) (int, error) { return w.dev.Write(w.ctx, p) }
