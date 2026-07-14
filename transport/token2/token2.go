@@ -130,6 +130,7 @@ func commandAPDU(data []byte) []byte {
 }
 
 func (t *Transport) exchange(ctx context.Context, apdu []byte) ([]byte, error) {
+	cla := apdu[0]
 	response, err := t.card.Transmit(ctx, apdu)
 	if err != nil {
 		return nil, err
@@ -152,7 +153,7 @@ func (t *Transport) exchange(ctx context.Context, apdu []byte) ([]byte, error) {
 			}
 			return data, nil
 		case 0x61:
-			response, err = t.card.Transmit(ctx, []byte{claToken2, insGetResponse, 0x00, 0x00, sw2})
+			response, err = t.card.Transmit(ctx, []byte{cla, insGetResponse, 0x00, 0x00, sw2})
 			if err != nil {
 				return nil, err
 			}
