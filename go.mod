@@ -2,6 +2,8 @@ module github.com/go-ctap/ctap
 
 go 1.26.3
 
+tool golang.org/x/tools/cmd/stringer
+
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/fxamacker/cbor/v2 v2.9.2
@@ -21,7 +23,10 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/tools v0.47.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

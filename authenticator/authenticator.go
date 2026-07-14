@@ -1577,7 +1577,7 @@ func (d *Device) GetLargeBlobs(ctx context.Context) ([]protocol.LargeBlob, error
 
 	var blobs []protocol.LargeBlob
 	if err := cbor.Unmarshal(bLargeBlobs, &blobs); err != nil {
-		return nil, err
+		return nil, SyntaxError
 	}
 
 	return blobs, nil

@@ -38,6 +38,31 @@ func (e *CTAPError) Unwrap() error {
 	return errors.New(e.StatusCode.String())
 }
 
+// IOOperation identifies the underlying transport operation which failed.
+type IOOperation string
+
+const (
+	IORead     IOOperation = "read"
+	IOWrite    IOOperation = "write"
+	IOTransmit IOOperation = "transmit"
+	IOClose    IOOperation = "close"
+)
+
+// IOError reports an error returned by an underlying transport connection.
+// The original error remains available through errors.Is and errors.As.
+type IOError struct {
+	Operation IOOperation
+	Err       error
+}
+
+func (e *IOError) Error() string {
+	return "transport " + string(e.Operation) + ": " + e.Err.Error()
+}
+
+func (e *IOError) Unwrap() error {
+	return e.Err
+}
+
 // CBOR exchanges one CTAP command byte followed by its CBOR payload.
 // Implementations return a CTAPError when the authenticator status is not OK.
 type CBOR interface {

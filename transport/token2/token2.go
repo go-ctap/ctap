@@ -34,6 +34,28 @@ type Card interface {
 	Transmit(ctx context.Context, apdu []byte) ([]byte, error)
 }
 
+type ioCard struct {
+	Card
+}
+
+func (c ioCard) Transmit(ctx context.Context, apdu []byte) ([]byte, error) {
+	response, err := c.Card.Transmit(ctx, apdu)
+	if err != nil {
+		return response, &ctaptransport.IOError{Operation: ctaptransport.IOTransmit, Err: err}
+	}
+
+	return response, nil
+}
+
+func (c ioCard) Close() error {
+	err := c.Card.Close()
+	if err != nil {
+		return &ctaptransport.IOError{Operation: ctaptransport.IOClose, Err: err}
+	}
+
+	return nil
+}
+
 // APDUError reports a non-success ISO 7816 status word.
 type APDUError struct {
 	SW1 byte
@@ -46,7 +68,7 @@ func (e *APDUError) Error() string {
 
 // Transport carries CTAP commands through the Token2 applet.
 type Transport struct {
-	card Card
+	card ioCard
 	mu   sync.Mutex
 }
 
@@ -58,7 +80,8 @@ func New(ctx context.Context, card Card) (*Transport, error) {
 	if card == nil {
 		return nil, errors.New("token2: nil card")
 	}
-	t := &Transport{card: card}
+
+	t := &Transport{card: ioCard{Card: card}}
 	selectAPDU := slices.Concat([]byte{0x00, 0xa4, 0x04, 0x00, byte(len(appletAID))}, appletAID)
 	if _, err := t.exchange(ctx, selectAPDU); err != nil {
 		return nil, fmt.Errorf("token2: select applet: %w", err)
@@ -111,6 +134,7 @@ func (t *Transport) exchange(ctx context.Context, apdu []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var data []byte
 	for {
 		if len(response) < 2 {

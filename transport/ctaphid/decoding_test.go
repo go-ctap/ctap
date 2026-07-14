@@ -78,6 +78,8 @@ func TestCBORRejectsUnexpectedResponseCID(t *testing.T) {
 	_, err = NewTransport(dev, ChannelID{1, 2, 3, 4}).CBOR(context.Background(), []byte{0x04})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidResponseMessage))
+	var ioErr *ctaptransport.IOError
+	assert.False(t, errors.As(err, &ioErr))
 }
 
 func newRawMessage(t *testing.T) []byte {

@@ -63,6 +63,13 @@ type ErrorResponse struct {
 	ErrorCode Error
 }
 
+// Error returns the symbolic CTAPHID error code. ErrorCode remains the
+// authoritative response byte, including for unknown and vendor-defined
+// values.
+func (r *ErrorResponse) Error() string {
+	return r.ErrorCode.String()
+}
+
 // VendorResponse contains the opaque response payload of a CTAPHID vendor
 // command.
 type VendorResponse struct {

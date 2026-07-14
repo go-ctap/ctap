@@ -3,7 +3,6 @@ package ctaphid
 import (
 	"context"
 	"crypto/subtle"
-	"errors"
 	"slices"
 
 	"github.com/go-ctap/ctap/protocol"
@@ -79,7 +78,7 @@ read:
 					if err := ensureDataLen(p.data, 1); err != nil {
 						return transport.CBORResponse{}, err
 					}
-					return transport.CBORResponse{}, errors.New(Error(p.data[0]).String())
+					return transport.CBORResponse{}, &ErrorResponse{ErrorCode: Error(p.data[0])}
 				case CTAPHID_KEEPALIVE:
 					continue read
 				default:
@@ -136,7 +135,7 @@ func Init(ctx context.Context, dev Device, cid ChannelID, nonce []byte) (InitRes
 				return InitResponse{}, err
 			}
 			if subtle.ConstantTimeCompare(p.data[:8], nonce) != 1 {
-				return InitResponse{}, errors.New("invalid nonce")
+				return InitResponse{}, ErrInvalidResponseMessage
 			}
 
 			r := InitResponse{
@@ -154,7 +153,7 @@ func Init(ctx context.Context, dev Device, cid ChannelID, nonce []byte) (InitRes
 			if err := ensureDataLen(p.data, 1); err != nil {
 				return InitResponse{}, err
 			}
-			return InitResponse{}, errors.New(Error(p.data[0]).String())
+			return InitResponse{}, &ErrorResponse{ErrorCode: Error(p.data[0])}
 		case CTAPHID_KEEPALIVE:
 			continue
 		default:
@@ -195,7 +194,7 @@ read:
 					if err := ensureDataLen(p.data, 1); err != nil {
 						return PingResponse{}, err
 					}
-					return PingResponse{}, errors.New(Error(p.data[0]).String())
+					return PingResponse{}, &ErrorResponse{ErrorCode: Error(p.data[0])}
 				case CTAPHID_KEEPALIVE:
 					continue read
 				default:
@@ -250,7 +249,7 @@ read:
 					if err := ensureDataLen(p.data, 1); err != nil {
 						return VendorResponse{}, err
 					}
-					return VendorResponse{}, errors.New(Error(p.data[0]).String())
+					return VendorResponse{}, &ErrorResponse{ErrorCode: Error(p.data[0])}
 				case CTAPHID_KEEPALIVE:
 					continue read
 				default:
@@ -309,7 +308,7 @@ func Wink(ctx context.Context, dev Device, cid ChannelID) error {
 			if err := ensureDataLen(p.data, 1); err != nil {
 				return err
 			}
-			return errors.New(Error(p.data[0]).String())
+			return &ErrorResponse{ErrorCode: Error(p.data[0])}
 		case CTAPHID_KEEPALIVE:
 			continue
 		default:
@@ -353,7 +352,7 @@ func Lock(ctx context.Context, dev Device, cid ChannelID, seconds uint8) error {
 			if err := ensureDataLen(p.data, 1); err != nil {
 				return err
 			}
-			return errors.New(Error(p.data[0]).String())
+			return &ErrorResponse{ErrorCode: Error(p.data[0])}
 		case CTAPHID_KEEPALIVE:
 			continue
 		default:

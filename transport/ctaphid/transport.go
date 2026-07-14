@@ -38,23 +38,25 @@ func Open(ctx context.Context, device Device) (*Transport, error) {
 	if device == nil {
 		return nil, errors.New("ctaphid: nil device")
 	}
+
 	nonce := make([]byte, 8)
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
 
-	response, err := Init(ctx, device, BROADCAST_CID, nonce)
+	wrapped := ioDevice{Device: device}
+	response, err := Init(ctx, wrapped, BROADCAST_CID, nonce)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewTransport(device, response.CID), nil
+	return &Transport{device: wrapped, cid: response.CID}, nil
 }
 
 // NewTransport wraps an already allocated CTAPHID channel and takes ownership
 // of device.
 func NewTransport(device Device, cid ChannelID) *Transport {
-	return &Transport{device: device, cid: cid}
+	return &Transport{device: ioDevice{Device: device}, cid: cid}
 }
 
 // CBOR exchanges a CBOR command and sends CTAPHID_CANCEL when contextual device
@@ -62,9 +64,6 @@ func NewTransport(device Device, cid ChannelID) *Transport {
 func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORResponse, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return ctaptransport.CBORResponse{}, err
-	}
 
 	command, err := t.writeCBOR(ctx, data)
 	if err != nil {
@@ -72,6 +71,7 @@ func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORRe
 	}
 
 	response, err := readCBORResponse(ctx, t.device, t.cid, command)
+	// A context sentinel returned by the device is not necessarily from ctx.
 	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
 		_ = t.cancel(context.WithoutCancel(ctx))
 	}

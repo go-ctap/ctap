@@ -2,7 +2,6 @@ package ctaphid
 
 import (
 	"encoding/binary"
-	"errors"
 	"io"
 )
 
@@ -45,7 +44,7 @@ func (m *Message) ReadFrom(device io.Reader) (int64, error) {
 			total -= dataCnt
 		} else {
 			if total < 0 {
-				return 0, errors.New("continuation packet before init packet")
+				return 0, ErrInvalidResponseMessage
 			}
 			if p.cid != expectedCID || cmdOrSeq != expectedSequence {
 				return 0, ErrInvalidResponseMessage

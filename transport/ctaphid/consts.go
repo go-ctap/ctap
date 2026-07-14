@@ -1,7 +1,8 @@
-//go:generate go run golang.org/x/tools/cmd/stringer@v0.47.0 -type=Command,CapabilityFlag,Error,KeepaliveStatusCode -output=consts_string.go
 package ctaphid
 
 // Command represents CTAP command.
+//
+//go:generate go tool stringer -type=Command,CapabilityFlag,Error,KeepaliveStatusCode -output=consts_string.go
 type Command byte
 
 const (

@@ -49,6 +49,30 @@ func TestCBORReturnsTypedCTAPError(t *testing.T) {
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CBOR, request)
 }
 
+func TestCBORReturnsTypedCTAPHIDError(t *testing.T) {
+	tests := []struct {
+		name string
+		code Error
+	}{
+		{name: "known", code: ERR_INVALID_CHANNEL},
+		{name: "unknown", code: Error(0xe1)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cid := ChannelID{1, 2, 3, 4}
+			request := []byte{byte(protocol.AuthenticatorGetInfo)}
+			dev := &scriptedDevice{
+				reads: bytes.NewReader(rawResponseMessage(t, cid, CTAPHID_ERROR, []byte{byte(tt.code)})),
+			}
+
+			_, err := CBOR(context.Background(), dev, cid, request)
+			requireCTAPHIDError(t, err, tt.code)
+			assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CBOR, request)
+		})
+	}
+}
+
 func TestCBORRejectsMissingCommandByte(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
 
@@ -94,8 +118,7 @@ func TestInitReturnsCTAPHIDError(t *testing.T) {
 	}
 
 	_, err := Init(context.Background(), dev, BROADCAST_CID, nonce)
-	require.Error(t, err)
-	assert.EqualError(t, err, ERR_INVALID_CHANNEL.String())
+	requireCTAPHIDError(t, err, ERR_INVALID_CHANNEL)
 	assertSingleReportRequest(t, dev.writes.Bytes(), BROADCAST_CID, CTAPHID_INIT, nonce)
 }
 
@@ -106,6 +129,17 @@ func TestInitRejectsInvalidNonceLength(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidRequestMessage))
 	assert.Empty(t, dev.writes.Bytes())
+}
+
+func TestInitRejectsMismatchedResponseNonce(t *testing.T) {
+	nonce := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+	responseData := []byte{8, 7, 6, 5, 4, 3, 2, 1, 1, 2, 3, 4, 2, 3, 4, 5, byte(CAPABILITY_CBOR)}
+	dev := &scriptedDevice{
+		reads: bytes.NewReader(rawResponseMessage(t, BROADCAST_CID, CTAPHID_INIT, responseData)),
+	}
+
+	_, err := Init(context.Background(), dev, BROADCAST_CID, nonce)
+	require.ErrorIs(t, err, ErrInvalidResponseMessage)
 }
 
 func TestPingSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
@@ -131,8 +165,7 @@ func TestPingReturnsCTAPHIDError(t *testing.T) {
 	}
 
 	_, err := Ping(context.Background(), dev, cid, data)
-	require.Error(t, err)
-	assert.EqualError(t, err, ERR_INVALID_LEN.String())
+	requireCTAPHIDError(t, err, ERR_INVALID_LEN)
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_PING, data)
 }
 
@@ -156,6 +189,16 @@ func TestWinkWritesRequestAndAcceptsEmptySuccessResponse(t *testing.T) {
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_WINK, nil)
 }
 
+func TestWinkReturnsTypedCTAPHIDError(t *testing.T) {
+	cid := ChannelID{1, 2, 3, 4}
+	dev := &scriptedDevice{
+		reads: bytes.NewReader(rawResponseMessage(t, cid, CTAPHID_ERROR, []byte{byte(ERR_CHANNEL_BUSY)})),
+	}
+
+	err := Wink(context.Background(), dev, cid)
+	requireCTAPHIDError(t, err, ERR_CHANNEL_BUSY)
+}
+
 func TestLockRejectsInvalidDuration(t *testing.T) {
 	cid := ChannelID{1, 2, 3, 4}
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
@@ -175,6 +218,27 @@ func TestLockWritesDurationAndAcceptsEmptySuccessResponse(t *testing.T) {
 	err := Lock(context.Background(), dev, cid, 10)
 	require.NoError(t, err)
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_LOCK, []byte{10})
+}
+
+func TestLockReturnsTypedCTAPHIDError(t *testing.T) {
+	cid := ChannelID{1, 2, 3, 4}
+	dev := &scriptedDevice{
+		reads: bytes.NewReader(rawResponseMessage(t, cid, CTAPHID_ERROR, []byte{byte(ERR_LOCK_REQUIRED)})),
+	}
+
+	err := Lock(context.Background(), dev, cid, 1)
+	requireCTAPHIDError(t, err, ERR_LOCK_REQUIRED)
+}
+
+func requireCTAPHIDError(t *testing.T, err error, want Error) {
+	t.Helper()
+	require.Error(t, err)
+
+	var response *ErrorResponse
+	require.ErrorAs(t, err, &response)
+	assert.Equal(t, want, response.ErrorCode)
+	assert.Equal(t, byte(want), byte(response.ErrorCode))
+	assert.EqualError(t, err, want.String())
 }
 
 func rawResponseMessage(t *testing.T, cid ChannelID, cmd Command, data []byte) []byte {

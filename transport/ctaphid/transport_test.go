@@ -44,6 +44,21 @@ func TestOpenInitFailureLeavesDeviceOpen(t *testing.T) {
 	_, err := Open(t.Context(), dev)
 
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	var deviceErr *ctaptransport.IOError
+	require.ErrorAs(t, err, &deviceErr)
+	assert.Equal(t, ctaptransport.IORead, deviceErr.Operation)
+	assert.False(t, dev.closed)
+}
+
+func TestOpenInitWriteFailureReturnsTypedIOError(t *testing.T) {
+	dev := &failedOpenDevice{writeErr: io.ErrClosedPipe}
+
+	_, err := Open(t.Context(), dev)
+
+	require.ErrorIs(t, err, io.ErrClosedPipe)
+	var ioErr *ctaptransport.IOError
+	require.ErrorAs(t, err, &ioErr)
+	assert.Equal(t, ctaptransport.IOWrite, ioErr.Operation)
 	assert.False(t, dev.closed)
 }
 
@@ -56,6 +71,45 @@ func TestTransportCBORPreCanceledWritesNothing(t *testing.T) {
 	_, err := transport.CBOR(ctx, []byte{byte(protocol.AuthenticatorSelection)})
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Empty(t, dev.writes)
+}
+
+func TestTransportPreCanceledContextTakesPriorityOverValidation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	tests := []struct {
+		name string
+		call func(*Transport) error
+	}{
+		{
+			name: "CBOR",
+			call: func(transport *Transport) error {
+				_, err := transport.CBOR(ctx, nil)
+				return err
+			},
+		},
+		{
+			name: "Lock",
+			call: func(transport *Transport) error {
+				return transport.Lock(ctx, 11)
+			},
+		},
+		{
+			name: "Vendor",
+			call: func(transport *Transport) error {
+				_, err := transport.Vendor(ctx, 0, nil)
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			transport := NewTransport(&failedOpenDevice{}, transportTestCID)
+
+			require.ErrorIs(t, test.call(transport), context.Canceled)
+		})
+	}
 }
 
 func TestTransportCBORWritesSelectionBeforeCancel(t *testing.T) {
@@ -99,6 +153,20 @@ func TestTransportCBORPreservesReadErrorWhenContextIsCanceledConcurrently(t *tes
 	assert.Equal(t, 1, dev.writes, "an unrelated read error must not trigger CTAPHID_CANCEL")
 }
 
+func TestTransportCBORDoesNotCancelForContextErrorFromActiveContext(t *testing.T) {
+	for _, readErr := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(readErr.Error(), func(t *testing.T) {
+			dev := &readErrorDevice{err: readErr}
+			transport := NewTransport(dev, transportTestCID)
+
+			_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorSelection)})
+
+			require.ErrorIs(t, err, readErr)
+			assert.Equal(t, 1, dev.writes, "an error unrelated to the active context must not trigger CTAPHID_CANCEL")
+		})
+	}
+}
+
 func TestTransportCloseInterruptsBlockedCBOR(t *testing.T) {
 	dev := newBlockingDevice()
 	transport := NewTransport(dev, transportTestCID)
@@ -110,7 +178,24 @@ func TestTransportCloseInterruptsBlockedCBOR(t *testing.T) {
 
 	receive(t, dev.writes, "Selection request was not written")
 	require.NoError(t, transport.Close())
-	require.ErrorIs(t, receive(t, resultc, "Close did not interrupt Selection"), io.ErrClosedPipe)
+	err := receive(t, resultc, "Close did not interrupt Selection")
+	require.ErrorIs(t, err, io.ErrClosedPipe)
+	var deviceErr *ctaptransport.IOError
+	require.ErrorAs(t, err, &deviceErr)
+	assert.Equal(t, ctaptransport.IORead, deviceErr.Operation)
+}
+
+func TestTransportCloseReturnsTypedIOError(t *testing.T) {
+	dev := &failedOpenDevice{closeErr: io.ErrClosedPipe}
+	transport := NewTransport(dev, transportTestCID)
+
+	err := transport.Close()
+
+	require.ErrorIs(t, err, io.ErrClosedPipe)
+	var ioErr *ctaptransport.IOError
+	require.ErrorAs(t, err, &ioErr)
+	assert.Equal(t, ctaptransport.IOClose, ioErr.Operation)
+	assert.True(t, dev.closed)
 }
 
 func receive[T any](t *testing.T, ch <-chan T, message string) T {
@@ -183,6 +268,11 @@ type cancelingErrorDevice struct {
 	writes int
 }
 
+type readErrorDevice struct {
+	err    error
+	writes int
+}
+
 func (d *cancelingErrorDevice) Read(_ context.Context, _ []byte) (int, error) {
 	d.cancel()
 	return 0, io.ErrUnexpectedEOF
@@ -194,6 +284,17 @@ func (d *cancelingErrorDevice) Write(_ context.Context, p []byte) (int, error) {
 }
 
 func (d *cancelingErrorDevice) Close() error { return nil }
+
+func (d *readErrorDevice) Read(_ context.Context, _ []byte) (int, error) {
+	return 0, d.err
+}
+
+func (d *readErrorDevice) Write(_ context.Context, p []byte) (int, error) {
+	d.writes++
+	return len(p), nil
+}
+
+func (d *readErrorDevice) Close() error { return nil }
 
 func newBlockingDevice() *blockingDevice {
 	return &blockingDevice{
@@ -229,21 +330,33 @@ type initOpenDevice struct {
 }
 
 type failedOpenDevice struct {
-	readErr error
-	closed  bool
+	readErr  error
+	writeErr error
+	closeErr error
+	closed   bool
 }
 
-func (d *failedOpenDevice) Read(_ context.Context, _ []byte) (int, error) {
+func (d *failedOpenDevice) Read(ctx context.Context, _ []byte) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	return 0, d.readErr
 }
 
-func (d *failedOpenDevice) Write(_ context.Context, p []byte) (int, error) {
+func (d *failedOpenDevice) Write(ctx context.Context, p []byte) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if d.writeErr != nil {
+		return 0, d.writeErr
+	}
+
 	return len(p), nil
 }
 
 func (d *failedOpenDevice) Close() error {
 	d.closed = true
-	return nil
+	return d.closeErr
 }
 
 func (d *initOpenDevice) Write(_ context.Context, p []byte) (int, error) {

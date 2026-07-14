@@ -105,11 +105,11 @@ const _BioEnrollmentSubCommand_name = "BioEnrollmentSubCommandEnrollBeginBioEnro
 var _BioEnrollmentSubCommand_index = [...]uint16{0, 34, 80, 126, 169, 207, 246, 293}
 
 func (i BioEnrollmentSubCommand) String() string {
-	i -= 1
-	if i >= BioEnrollmentSubCommand(len(_BioEnrollmentSubCommand_index)-1) {
-		return "BioEnrollmentSubCommand(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_BioEnrollmentSubCommand_index)-1 {
+		return "BioEnrollmentSubCommand(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _BioEnrollmentSubCommand_name[_BioEnrollmentSubCommand_index[i]:_BioEnrollmentSubCommand_index[i+1]]
+	return _BioEnrollmentSubCommand_name[_BioEnrollmentSubCommand_index[idx]:_BioEnrollmentSubCommand_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -170,11 +170,11 @@ const _CredentialManagementSubCommand_name = "CredentialManagementSubCommandGetC
 var _CredentialManagementSubCommand_index = [...]uint16{0, 46, 93, 144, 199, 266, 312, 363}
 
 func (i CredentialManagementSubCommand) String() string {
-	i -= 1
-	if i >= CredentialManagementSubCommand(len(_CredentialManagementSubCommand_index)-1) {
-		return "CredentialManagementSubCommand(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_CredentialManagementSubCommand_index)-1 {
+		return "CredentialManagementSubCommand(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _CredentialManagementSubCommand_name[_CredentialManagementSubCommand_index[i]:_CredentialManagementSubCommand_index[i+1]]
+	return _CredentialManagementSubCommand_name[_CredentialManagementSubCommand_index[idx]:_CredentialManagementSubCommand_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -191,11 +191,11 @@ const _ConfigSubCommand_name = "ConfigSubCommandEnableEnterpriseAttestationConfi
 var _ConfigSubCommand_index = [...]uint8{0, 43, 73, 104, 143}
 
 func (i ConfigSubCommand) String() string {
-	i -= 1
-	if i >= ConfigSubCommand(len(_ConfigSubCommand_index)-1) {
-		return "ConfigSubCommand(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_ConfigSubCommand_index)-1 {
+		return "ConfigSubCommand(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _ConfigSubCommand_name[_ConfigSubCommand_index[i]:_ConfigSubCommand_index[i+1]]
+	return _ConfigSubCommand_name[_ConfigSubCommand_index[idx]:_ConfigSubCommand_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.

@@ -1,6 +1,6 @@
-//go:generate go run golang.org/x/tools/cmd/stringer@v0.47.0 -type=StatusCode -output=status_string.go
 package transport
 
+//go:generate go tool stringer -type=StatusCode -output=status_string.go
 type StatusCode byte
 
 const (

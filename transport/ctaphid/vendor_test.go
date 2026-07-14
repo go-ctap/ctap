@@ -22,5 +22,9 @@ func TestVendorReturnsCTAPHIDError(t *testing.T) {
 	transport := ctaphid.NewTransport(fake, cid)
 	_, err := transport.Vendor(context.Background(), ctaphid.CTAPHID_VENDOR_FIRST, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), ctaphid.ERR_INVALID_CMD.String())
+
+	var response *ctaphid.ErrorResponse
+	require.ErrorAs(t, err, &response)
+	assert.Equal(t, ctaphid.ERR_INVALID_CMD, response.ErrorCode)
+	assert.EqualError(t, err, ctaphid.ERR_INVALID_CMD.String())
 }

@@ -24,6 +24,7 @@ type exchange struct {
 type fakeCard struct {
 	t         *testing.T
 	exchanges []exchange
+	closeErr  error
 	closed    bool
 }
 
@@ -45,7 +46,7 @@ func (c *fakeCard) Transmit(ctx context.Context, apdu []byte) ([]byte, error) {
 
 func (c *fakeCard) Close() error {
 	c.closed = true
-	return nil
+	return c.closeErr
 }
 
 func newFakeTransport(t *testing.T, exchanges ...exchange) (*Transport, *fakeCard) {
@@ -134,6 +135,20 @@ func TestCloseDelegatesToCard(t *testing.T) {
 	assert.True(t, card.closed)
 }
 
+func TestCloseReturnsTypedIOError(t *testing.T) {
+	transport, card := newFakeTransport(t)
+	wantErr := errors.New("reader unavailable")
+	card.closeErr = wantErr
+
+	err := transport.Close()
+
+	require.ErrorIs(t, err, wantErr)
+	var ioErr *ctaptransport.IOError
+	require.ErrorAs(t, err, &ioErr)
+	assert.Equal(t, ctaptransport.IOClose, ioErr.Operation)
+	assert.True(t, card.closed)
+}
+
 func TestNewPropagatesTransmitError(t *testing.T) {
 	wantErr := errors.New("transmit failed")
 	card := &fakeCard{t: t, exchanges: []exchange{{
@@ -143,6 +158,9 @@ func TestNewPropagatesTransmitError(t *testing.T) {
 
 	_, err := New(context.Background(), card)
 	require.ErrorIs(t, err, wantErr)
+	var ioErr *ctaptransport.IOError
+	require.ErrorAs(t, err, &ioErr)
+	assert.Equal(t, ctaptransport.IOTransmit, ioErr.Operation)
 }
 
 func TestCBORChecksContextBeforeChainedTransmit(t *testing.T) {
@@ -184,7 +202,7 @@ func TestNewPreCanceledDoesNotTransmit(t *testing.T) {
 
 func TestCloseInterruptsBlockedTransmit(t *testing.T) {
 	card := newBlockingCard()
-	transport := &Transport{card: card}
+	transport := &Transport{card: ioCard{Card: card}}
 	resultc := make(chan error, 1)
 	go func() {
 		_, err := transport.CBOR(context.Background(), []byte{0x04})
@@ -193,7 +211,11 @@ func TestCloseInterruptsBlockedTransmit(t *testing.T) {
 
 	<-card.started
 	require.NoError(t, transport.Close())
-	require.ErrorIs(t, <-resultc, io.ErrClosedPipe)
+	err := <-resultc
+	require.ErrorIs(t, err, io.ErrClosedPipe)
+	var ioErr *ctaptransport.IOError
+	require.ErrorAs(t, err, &ioErr)
+	assert.Equal(t, ctaptransport.IOTransmit, ioErr.Operation)
 }
 
 type blockingCard struct {

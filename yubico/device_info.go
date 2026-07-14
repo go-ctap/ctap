@@ -10,7 +10,7 @@ import (
 	"github.com/go-ctap/ctap/transport/ctaphid"
 )
 
-//go:generate go run golang.org/x/tools/cmd/stringer@v0.47.0 -type=Capability -output=capability_string.go
+//go:generate go tool stringer -type=Capability,FormFactor -output=device_info_string.go
 
 // Capability is a bitmap of applications exposed by a YubiKey interface.
 type Capability uint16
@@ -31,8 +31,6 @@ type FirmwareVersion struct {
 	Minor byte
 	Build byte
 }
-
-//go:generate go run golang.org/x/tools/cmd/stringer@v0.47.0 -type=FormFactor -output=form_factor_string.go
 
 // FormFactor describes the physical shape and connector type of a YubiKey.
 type FormFactor byte

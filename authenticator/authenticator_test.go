@@ -234,6 +234,23 @@ func TestLargeBlobsTreatsCorruptConfigAsInitialEmptyArray(t *testing.T) {
 	assert.Empty(t, blobs)
 }
 
+func TestLargeBlobsReturnsInvalidArrayError(t *testing.T) {
+	invalidArray := []byte{0xff}
+	sum := sha256.Sum256(invalidArray)
+	response := encodeCBOR(t, &protocol.AuthenticatorLargeBlobsResponse{
+		Config: append(invalidArray, sum[:16]...),
+	})
+	fake := testhid.NewCBORDevice(t, testCID, response)
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		Options: map[protocol.Option]bool{
+			protocol.OptionLargeBlobs: true,
+		},
+	})
+
+	_, err := d.GetLargeBlobs(testContext)
+	require.ErrorIs(t, err, SyntaxError)
+}
+
 func TestSetLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
