@@ -17,7 +17,11 @@ import (
 var transportTestCID = ChannelID{1, 2, 3, 4}
 
 func TestOpenAllocatesChannelAndTransfersDevice(t *testing.T) {
-	dev := &initOpenDevice{t: t, cid: transportTestCID}
+	dev := &initOpenDevice{
+		t:        t,
+		cid:      transportTestCID,
+		response: make(chan []byte, 1),
+	}
 
 	transport, err := Open(context.Background(), dev)
 	require.NoError(t, err)
@@ -71,6 +75,26 @@ func TestTransportCBORPreCanceledWritesNothing(t *testing.T) {
 	_, err := transport.CBOR(ctx, []byte{byte(protocol.AuthenticatorSelection)})
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Empty(t, dev.writes)
+}
+
+func TestOpenDrainsReportsForOtherChannelsBeforeAllocation(t *testing.T) {
+	dev := newMultiplexedDevice(transportTestCID)
+	foreignReport := make([]byte, hidPacketSize)
+	foreignCID := ChannelID{5, 6, 7, 8}
+	copy(foreignReport, foreignCID[:])
+	foreignReport[4] = 0 // Invalid without filtering because it is a continuation packet.
+	dev.reads <- foreignReport
+
+	transport, err := Open(t.Context(), dev)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, transport.Close())
+	})
+	assert.Equal(t, dev.cid, transport.cid)
+
+	response, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
+	require.NoError(t, err)
+	assert.Equal(t, ctaptransport.CTAP2_OK, response.StatusCode)
 }
 
 func TestRetryChannelBusyRetriesAfterShortDelay(t *testing.T) {
@@ -169,14 +193,17 @@ func TestTransportCBORWritesSelectionBeforeCancel(t *testing.T) {
 
 	err := receive(t, resultc, "Selection cancellation did not complete")
 	require.ErrorIs(t, err, context.Canceled)
+
+	response, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
+	require.NoError(t, err)
+	assert.Equal(t, ctaptransport.CTAP2_OK, response.StatusCode)
 }
 
-func TestTransportCBORPreservesReadErrorWhenContextIsCanceledConcurrently(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	dev := &cancelingErrorDevice{cancel: cancel}
+func TestTransportCBORPreservesReadError(t *testing.T) {
+	dev := &readErrorDevice{err: io.ErrUnexpectedEOF}
 	transport := NewTransport(dev, transportTestCID)
 
-	_, err := transport.CBOR(ctx, []byte{byte(protocol.AuthenticatorSelection)})
+	_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorSelection)})
 
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	require.NotErrorIs(t, err, context.Canceled)
@@ -242,9 +269,11 @@ func receive[T any](t *testing.T, ch <-chan T, message string) T {
 
 type orderedDevice struct {
 	response       *bytes.Reader
+	responses      chan []byte
 	writes         chan []byte
 	releaseRequest chan struct{}
 	cancelWritten  chan struct{}
+	cborWrites     int
 }
 
 func newOrderedDevice(t *testing.T) *orderedDevice {
@@ -256,6 +285,7 @@ func newOrderedDevice(t *testing.T) *orderedDevice {
 			CTAPHID_CBOR,
 			[]byte{byte(ctaptransport.CTAP2_ERR_KEEPALIVE_CANCEL)},
 		)),
+		responses:      make(chan []byte, 1),
 		writes:         make(chan []byte, 2),
 		releaseRequest: make(chan struct{}),
 		cancelWritten:  make(chan struct{}),
@@ -267,7 +297,15 @@ func (d *orderedDevice) Read(ctx context.Context, p []byte) (int, error) {
 	case <-ctx.Done():
 		return 0, ctx.Err()
 	case <-d.cancelWritten:
-		return d.response.Read(p)
+		if d.response.Len() > 0 {
+			return d.response.Read(p)
+		}
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case response := <-d.responses:
+			return copy(p, response), nil
+		}
 	}
 }
 
@@ -278,7 +316,16 @@ func (d *orderedDevice) Write(ctx context.Context, p []byte) (int, error) {
 	d.writes <- bytes.Clone(p)
 	switch p[5] {
 	case byte(CTAPHID_CBOR) | INIT_PACKET_BIT:
-		<-d.releaseRequest
+		d.cborWrites++
+		if d.cborWrites == 1 {
+			<-d.releaseRequest
+		} else {
+			d.responses <- rawResponseReport(
+				transportTestCID,
+				CTAPHID_CBOR,
+				[]byte{byte(ctaptransport.CTAP2_OK)},
+			)
+		}
 	case byte(CTAPHID_CANCEL) | INIT_PACKET_BIT:
 		close(d.cancelWritten)
 	}
@@ -293,27 +340,10 @@ type blockingDevice struct {
 	once   sync.Once
 }
 
-type cancelingErrorDevice struct {
-	cancel context.CancelFunc
-	writes int
-}
-
 type readErrorDevice struct {
 	err    error
 	writes int
 }
-
-func (d *cancelingErrorDevice) Read(_ context.Context, _ []byte) (int, error) {
-	d.cancel()
-	return 0, io.ErrUnexpectedEOF
-}
-
-func (d *cancelingErrorDevice) Write(_ context.Context, p []byte) (int, error) {
-	d.writes++
-	return len(p), nil
-}
-
-func (d *cancelingErrorDevice) Close() error { return nil }
 
 func (d *readErrorDevice) Read(_ context.Context, _ []byte) (int, error) {
 	return 0, d.err
@@ -355,7 +385,7 @@ func (d *blockingDevice) Close() error {
 type initOpenDevice struct {
 	t        *testing.T
 	cid      ChannelID
-	response *bytes.Reader
+	response chan []byte
 	closed   bool
 }
 
@@ -370,7 +400,10 @@ func (d *failedOpenDevice) Read(ctx context.Context, _ []byte) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	return 0, d.readErr
+	if d.readErr != nil {
+		return 0, d.readErr
+	}
+	return 0, io.EOF
 }
 
 func (d *failedOpenDevice) Write(ctx context.Context, p []byte) (int, error) {
@@ -396,12 +429,21 @@ func (d *initOpenDevice) Write(_ context.Context, p []byte) (int, error) {
 	nonce := bytes.Clone(p[8:16])
 	response := append(bytes.Clone(nonce), d.cid[:]...)
 	response = append(response, 2, 1, 0, 0, byte(CAPABILITY_CBOR))
-	d.response = bytes.NewReader(rawResponseMessage(d.t, BROADCAST_CID, CTAPHID_INIT, response))
+	d.response <- rawResponseMessage(d.t, BROADCAST_CID, CTAPHID_INIT, response)
+	close(d.response)
 	return len(p), nil
 }
 
-func (d *initOpenDevice) Read(_ context.Context, p []byte) (int, error) {
-	return d.response.Read(p)
+func (d *initOpenDevice) Read(ctx context.Context, p []byte) (int, error) {
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case response, ok := <-d.response:
+		if !ok {
+			return 0, io.EOF
+		}
+		return copy(p, response), nil
+	}
 }
 
 func (d *initOpenDevice) Close() error {

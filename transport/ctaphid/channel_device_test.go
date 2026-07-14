@@ -1,0 +1,173 @@
+package ctaphid
+
+import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"io"
+	"sync"
+	"testing"
+	"time"
+
+	ctaptransport "github.com/go-ctap/ctap/transport"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestChannelDeviceFiltersReports(t *testing.T) {
+	cid := ChannelID{1, 2, 3, 4}
+	dev := newMultiplexedDevice(cid)
+	channel := newChannelDevice(dev, cid)
+	t.Cleanup(func() {
+		require.NoError(t, channel.Close())
+	})
+
+	foreignReport := rawResponseReport(
+		ChannelID{5, 6, 7, 8},
+		CTAPHID_CBOR,
+		[]byte{byte(ctaptransport.CTAP2_OK)},
+	)
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for range 64 {
+			dev.reads <- bytes.Clone(foreignReport)
+		}
+	}()
+	receive(t, drained, "foreign reports were not drained")
+
+	want := rawResponseReport(cid, CTAPHID_CBOR, []byte{byte(ctaptransport.CTAP2_OK)})
+	dev.reads <- want
+	assert.Equal(t, want, readChannelReport(t, channel))
+}
+
+func TestChannelDeviceSwitchesCID(t *testing.T) {
+	dev := newMultiplexedDevice(ChannelID{1, 2, 3, 4})
+	channel := newChannelDevice(dev, BROADCAST_CID)
+	t.Cleanup(func() {
+		require.NoError(t, channel.Close())
+	})
+
+	broadcast := rawResponseReport(BROADCAST_CID, CTAPHID_INIT, nil)
+	require.True(t, channel.enqueue(broadcast))
+
+	allocatedCID := ChannelID{9, 8, 7, 6}
+	channel.setCID(allocatedCID)
+	report, err := channel.nextReport()
+	require.NoError(t, err)
+	assert.Nil(t, report, "reports queued for the previous CID must be discarded")
+	assert.False(t, channel.enqueue(broadcast))
+
+	allocated := rawResponseReport(allocatedCID, CTAPHID_CBOR, nil)
+	require.True(t, channel.enqueue(allocated))
+	report, err = channel.nextReport()
+	require.NoError(t, err)
+	assert.Equal(t, allocated, report)
+}
+
+func TestChannelDeviceReadsReportInParts(t *testing.T) {
+	cid := ChannelID{1, 2, 3, 4}
+	dev := newMultiplexedDevice(cid)
+	channel := newChannelDevice(dev, cid)
+	t.Cleanup(func() {
+		require.NoError(t, channel.Close())
+	})
+
+	want := rawResponseReport(cid, CTAPHID_CBOR, []byte{byte(ctaptransport.CTAP2_OK)})
+	dev.reads <- bytes.Clone(want[:17])
+	dev.reads <- bytes.Clone(want[17:])
+
+	assert.Equal(t, want, readChannelReport(t, channel))
+}
+
+func TestChannelDeviceStopLeavesDeviceOpen(t *testing.T) {
+	dev := newMultiplexedDevice(ChannelID{1, 2, 3, 4})
+	channel := newChannelDevice(dev, BROADCAST_CID)
+
+	stopped := make(chan struct{})
+	go func() {
+		channel.stop()
+		close(stopped)
+	}()
+	receive(t, stopped, "channel reader did not stop")
+
+	select {
+	case <-dev.closed:
+		t.Fatal("stop closed the underlying device")
+	default:
+	}
+	require.NoError(t, dev.Close())
+}
+
+func readChannelReport(t *testing.T, channel *channelDevice) []byte {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+
+	report := make([]byte, hidPacketSize)
+	n, err := channel.Read(ctx, report)
+	require.NoError(t, err)
+	require.Equal(t, hidPacketSize, n)
+	return report
+}
+
+type multiplexedDevice struct {
+	reads     chan []byte
+	closed    chan struct{}
+	closeOnce sync.Once
+	cid       ChannelID
+}
+
+func newMultiplexedDevice(cid ChannelID) *multiplexedDevice {
+	return &multiplexedDevice{
+		reads:  make(chan []byte, 1),
+		closed: make(chan struct{}),
+		cid:    cid,
+	}
+}
+
+func (d *multiplexedDevice) Read(ctx context.Context, p []byte) (int, error) {
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-d.closed:
+		return 0, io.ErrClosedPipe
+	case report := <-d.reads:
+		return copy(p, report), nil
+	}
+}
+
+func (d *multiplexedDevice) Write(ctx context.Context, p []byte) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	switch p[5] {
+	case byte(CTAPHID_INIT) | INIT_PACKET_BIT:
+		data := append(bytes.Clone(p[8:16]), d.cid[:]...)
+		data = append(data, 2, 1, 0, 0, byte(CAPABILITY_CBOR))
+		d.reads <- rawResponseReport(BROADCAST_CID, CTAPHID_INIT, data)
+	case byte(CTAPHID_CBOR) | INIT_PACKET_BIT:
+		d.reads <- rawResponseReport(d.cid, CTAPHID_CBOR, []byte{byte(ctaptransport.CTAP2_OK)})
+	}
+
+	return len(p), nil
+}
+
+func (d *multiplexedDevice) Close() error {
+	d.closeOnce.Do(func() {
+		close(d.closed)
+	})
+
+	return nil
+}
+
+func rawResponseReport(cid ChannelID, command Command, data []byte) []byte {
+	report := make([]byte, hidPacketSize)
+	copy(report, cid[:])
+	report[4] = byte(command) | INIT_PACKET_BIT
+	binary.BigEndian.PutUint16(report[5:7], uint16(len(data)))
+	copy(report[7:], data)
+	return report
+}

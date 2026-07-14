@@ -14,8 +14,9 @@ import (
 )
 
 // Transport adapts a CTAPHID channel to the transport-independent CBOR API.
-// CBOR uses CTAPHID_CANCEL when its context is canceled. Device I/O receives
-// the command context directly.
+// CBOR uses CTAPHID_CANCEL when its context is canceled. A background reader
+// continuously drains the shared HID endpoint and retains this channel's
+// reports for contextual command reads.
 type Transport struct {
 	device  Device
 	cid     ChannelID
@@ -74,25 +75,29 @@ func Open(ctx context.Context, device Device) (*Transport, error) {
 		return nil, err
 	}
 
-	wrapped := ioDevice{Device: device}
+	channel := newChannelDevice(device, BROADCAST_CID)
 	response, err := retryChannelBusy(ctx, func() (InitResponse, error) {
-		return Init(ctx, wrapped, BROADCAST_CID, nonce)
+		return Init(ctx, channel, BROADCAST_CID, nonce)
 	})
 	if err != nil {
+		channel.stop()
 		return nil, err
 	}
+	channel.setCID(response.CID)
 
-	return &Transport{device: wrapped, cid: response.CID}, nil
+	return &Transport{device: channel, cid: response.CID}, nil
 }
 
 // NewTransport wraps an already allocated CTAPHID channel and takes ownership
 // of device.
 func NewTransport(device Device, cid ChannelID) *Transport {
-	return &Transport{device: ioDevice{Device: device}, cid: cid}
+	return &Transport{
+		device: newChannelDevice(device, cid),
+		cid:    cid,
+	}
 }
 
-// CBOR exchanges a CBOR command and sends CTAPHID_CANCEL when contextual device
-// I/O reports that ctx is done.
+// CBOR exchanges a CBOR command and cancels it when response waiting is canceled.
 func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORResponse, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -105,12 +110,17 @@ func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORRe
 		if err != nil {
 			return ctaptransport.CBORResponse{}, err
 		}
-		return readCBORResponse(ctx, t.device, t.cid, command)
+
+		response, err := readCBORResponse(ctx, t.device, t.cid, command)
+		if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+			cancelCtx := context.WithoutCancel(ctx)
+			if cancelErr := t.cancel(cancelCtx); cancelErr == nil {
+				// The canceled request still completes with a terminal response.
+				_, _ = readCBORResponse(cancelCtx, t.device, t.cid, command)
+			}
+		}
+		return response, err
 	})
-	// A context sentinel returned by the device is not necessarily from ctx.
-	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
-		_ = t.cancel(context.WithoutCancel(ctx))
-	}
 	return response, err
 }
 
