@@ -30,6 +30,22 @@ func TestCBORSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CBOR, request)
 }
 
+func TestCBORSkipsResponseForAnotherChannel(t *testing.T) {
+	cid := ChannelID{1, 2, 3, 4}
+	otherCID := ChannelID{5, 6, 7, 8}
+	request := []byte{byte(protocol.AuthenticatorGetInfo)}
+	response := []byte{byte(ctaptransport.CTAP2_OK), 0xa1, 0x01, 0x02}
+	reads := bytes.NewBuffer(nil)
+	reads.Write(rawResponseMessage(t, otherCID, CTAPHID_CBOR, response))
+	reads.Write(rawResponseMessage(t, cid, CTAPHID_CBOR, response))
+
+	dev := &scriptedDevice{reads: bytes.NewReader(reads.Bytes())}
+
+	resp, err := CBOR(context.Background(), dev, cid, request)
+	require.NoError(t, err)
+	assert.Equal(t, response[1:], resp.Data)
+}
+
 func TestCBORReturnsTypedCTAPError(t *testing.T) {
 	cid := ChannelID{1, 2, 3, 4}
 	request := []byte{byte(protocol.AuthenticatorGetInfo)}
@@ -131,15 +147,21 @@ func TestInitRejectsInvalidNonceLength(t *testing.T) {
 	assert.Empty(t, dev.writes.Bytes())
 }
 
-func TestInitRejectsMismatchedResponseNonce(t *testing.T) {
+func TestInitSkipsAnotherClientResponse(t *testing.T) {
 	nonce := []byte{1, 2, 3, 4, 5, 6, 7, 8}
-	responseData := []byte{8, 7, 6, 5, 4, 3, 2, 1, 1, 2, 3, 4, 2, 3, 4, 5, byte(CAPABILITY_CBOR)}
+	otherResponse := []byte{8, 7, 6, 5, 4, 3, 2, 1, 1, 2, 3, 4, 2, 3, 4, 5, byte(CAPABILITY_CBOR)}
+	response := append([]byte{}, nonce...)
+	response = append(response, 9, 8, 7, 6, 2, 3, 4, 5, byte(CAPABILITY_CBOR))
+	reads := bytes.NewBuffer(nil)
+	reads.Write(rawResponseMessage(t, BROADCAST_CID, CTAPHID_INIT, otherResponse))
+	reads.Write(rawResponseMessage(t, BROADCAST_CID, CTAPHID_INIT, response))
 	dev := &scriptedDevice{
-		reads: bytes.NewReader(rawResponseMessage(t, BROADCAST_CID, CTAPHID_INIT, responseData)),
+		reads: bytes.NewReader(reads.Bytes()),
 	}
 
-	_, err := Init(context.Background(), dev, BROADCAST_CID, nonce)
-	require.ErrorIs(t, err, ErrInvalidResponseMessage)
+	got, err := Init(context.Background(), dev, BROADCAST_CID, nonce)
+	require.NoError(t, err)
+	assert.Equal(t, ChannelID{9, 8, 7, 6}, got.CID)
 }
 
 func TestPingSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {

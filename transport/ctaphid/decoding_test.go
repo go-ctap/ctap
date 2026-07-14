@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"testing"
 
 	ctaptransport "github.com/go-ctap/ctap/transport"
@@ -63,7 +64,7 @@ func TestMessage_ReadFromRejectsInvalidContinuationCID(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrInvalidResponseMessage))
 }
 
-func TestCBORRejectsUnexpectedResponseCID(t *testing.T) {
+func TestCBORSkipsUnexpectedResponseCID(t *testing.T) {
 	responseCID := ChannelID{9, 9, 9, 9}
 	msg, err := NewMessage(responseCID, CTAPHID_CBOR, []byte{byte(ctaptransport.CTAP2_OK)})
 	require.NoError(t, err)
@@ -77,9 +78,9 @@ func TestCBORRejectsUnexpectedResponseCID(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(reads.Bytes())}
 	_, err = NewTransport(dev, ChannelID{1, 2, 3, 4}).CBOR(context.Background(), []byte{0x04})
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrInvalidResponseMessage))
+	assert.ErrorIs(t, err, io.EOF)
 	var ioErr *ctaptransport.IOError
-	assert.False(t, errors.As(err, &ioErr))
+	assert.True(t, errors.As(err, &ioErr))
 }
 
 func newRawMessage(t *testing.T) []byte {

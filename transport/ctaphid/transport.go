@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
@@ -31,6 +32,35 @@ type Device interface {
 
 var _ ctaptransport.Device = (*Transport)(nil)
 
+const channelBusyRetryDelay = 100 * time.Millisecond
+
+func retryChannelBusy[T any](ctx context.Context, operation func() (T, error)) (T, error) {
+	for {
+		result, err := operation()
+		if response, ok := errors.AsType[*ErrorResponse](err); !ok || response.ErrorCode != ERR_CHANNEL_BUSY {
+			return result, err
+		}
+
+		timer := time.NewTimer(channelBusyRetryDelay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			var zero T
+			return zero, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func retryChannelBusyError(ctx context.Context, operation func() error) error {
+	_, err := retryChannelBusy(ctx, func() (struct{}, error) {
+		return struct{}{}, operation()
+	})
+	return err
+}
+
 // Open allocates a CTAPHID channel on device. The caller retains ownership of
 // device if Open returns an error. The returned Transport owns device on
 // success.
@@ -45,7 +75,9 @@ func Open(ctx context.Context, device Device) (*Transport, error) {
 	}
 
 	wrapped := ioDevice{Device: device}
-	response, err := Init(ctx, wrapped, BROADCAST_CID, nonce)
+	response, err := retryChannelBusy(ctx, func() (InitResponse, error) {
+		return Init(ctx, wrapped, BROADCAST_CID, nonce)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -64,13 +96,17 @@ func NewTransport(device Device, cid ChannelID) *Transport {
 func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORResponse, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	command, err := t.writeCBOR(ctx, data)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return ctaptransport.CBORResponse{}, err
 	}
 
-	response, err := readCBORResponse(ctx, t.device, t.cid, command)
+	response, err := retryChannelBusy(ctx, func() (ctaptransport.CBORResponse, error) {
+		command, err := t.writeCBOR(ctx, data)
+		if err != nil {
+			return ctaptransport.CBORResponse{}, err
+		}
+		return readCBORResponse(ctx, t.device, t.cid, command)
+	})
 	// A context sentinel returned by the device is not necessarily from ctx.
 	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
 		_ = t.cancel(context.WithoutCancel(ctx))
@@ -94,7 +130,9 @@ func (t *Transport) Ping(ctx context.Context, data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	response, err := Ping(ctx, t.device, t.cid, data)
+	response, err := retryChannelBusy(ctx, func() (PingResponse, error) {
+		return Ping(ctx, t.device, t.cid, data)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +145,9 @@ func (t *Transport) Wink(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return Wink(ctx, t.device, t.cid)
+	return retryChannelBusyError(ctx, func() error {
+		return Wink(ctx, t.device, t.cid)
+	})
 }
 
 func (t *Transport) Lock(ctx context.Context, seconds uint8) error {
@@ -116,7 +156,9 @@ func (t *Transport) Lock(ctx context.Context, seconds uint8) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return Lock(ctx, t.device, t.cid, seconds)
+	return retryChannelBusyError(ctx, func() error {
+		return Lock(ctx, t.device, t.cid, seconds)
+	})
 }
 
 func (t *Transport) Cancel(ctx context.Context) error {
@@ -140,7 +182,9 @@ func (t *Transport) Vendor(ctx context.Context, command Command, data []byte) (V
 	if err := ctx.Err(); err != nil {
 		return VendorResponse{}, err
 	}
-	return Vendor(ctx, t.device, t.cid, command, data)
+	return retryChannelBusy(ctx, func() (VendorResponse, error) {
+		return Vendor(ctx, t.device, t.cid, command, data)
+	})
 }
 
 func (t *Transport) Close() error {

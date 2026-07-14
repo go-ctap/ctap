@@ -17,15 +17,12 @@ func ensureDataLen(data []byte, min int) error {
 	return nil
 }
 
-func ensureResponseCID(msg Message, cid ChannelID) error {
+func responseMatchesCID(msg Message, cid ChannelID) (bool, error) {
 	if len(msg) < 1 {
-		return ErrInvalidResponseMessage
-	}
-	if msg[0].cid != cid {
-		return ErrInvalidResponseMessage
+		return false, ErrInvalidResponseMessage
 	}
 
-	return nil
+	return msg[0].cid == cid, nil
 }
 
 func writeCBOR(ctx context.Context, dev Device, cid ChannelID, data []byte) (protocol.Command, error) {
@@ -62,8 +59,12 @@ read:
 			return transport.CBORResponse{}, err
 		}
 
-		if err := ensureResponseCID(respMsg, cid); err != nil {
+		matches, err := responseMatchesCID(respMsg, cid)
+		if err != nil {
 			return transport.CBORResponse{}, err
+		}
+		if !matches {
+			continue
 		}
 
 		var respData []byte
@@ -123,8 +124,12 @@ func Init(ctx context.Context, dev Device, cid ChannelID, nonce []byte) (InitRes
 			return InitResponse{}, err
 		}
 
-		if err := ensureResponseCID(respMsg, cid); err != nil {
+		matches, err := responseMatchesCID(respMsg, cid)
+		if err != nil {
 			return InitResponse{}, err
+		}
+		if !matches {
+			continue
 		}
 
 		p := respMsg[0]
@@ -135,7 +140,8 @@ func Init(ctx context.Context, dev Device, cid ChannelID, nonce []byte) (InitRes
 				return InitResponse{}, err
 			}
 			if subtle.ConstantTimeCompare(p.data[:8], nonce) != 1 {
-				return InitResponse{}, ErrInvalidResponseMessage
+				// Broadcast INIT responses from other clients use the same CID.
+				continue
 			}
 
 			r := InitResponse{
@@ -181,8 +187,12 @@ read:
 			return PingResponse{}, err
 		}
 
-		if err := ensureResponseCID(respMsg, cid); err != nil {
+		matches, err := responseMatchesCID(respMsg, cid)
+		if err != nil {
 			return PingResponse{}, err
+		}
+		if !matches {
+			continue
 		}
 
 		var pong []byte
@@ -236,8 +246,12 @@ read:
 		if _, err := respMsg.ReadFrom(bound); err != nil {
 			return VendorResponse{}, err
 		}
-		if err := ensureResponseCID(respMsg, cid); err != nil {
+		matches, err := responseMatchesCID(respMsg, cid)
+		if err != nil {
 			return VendorResponse{}, err
+		}
+		if !matches {
+			continue
 		}
 
 		var response []byte
@@ -295,8 +309,12 @@ func Wink(ctx context.Context, dev Device, cid ChannelID) error {
 			return err
 		}
 
-		if err := ensureResponseCID(respMsg, cid); err != nil {
+		matches, err := responseMatchesCID(respMsg, cid)
+		if err != nil {
 			return err
+		}
+		if !matches {
+			continue
 		}
 
 		p := respMsg[0]
@@ -339,8 +357,12 @@ func Lock(ctx context.Context, dev Device, cid ChannelID, seconds uint8) error {
 			return err
 		}
 
-		if err := ensureResponseCID(respMsg, cid); err != nil {
+		matches, err := responseMatchesCID(respMsg, cid)
+		if err != nil {
 			return err
+		}
+		if !matches {
+			continue
 		}
 
 		p := respMsg[0]

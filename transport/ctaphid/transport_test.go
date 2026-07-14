@@ -73,6 +73,36 @@ func TestTransportCBORPreCanceledWritesNothing(t *testing.T) {
 	assert.Empty(t, dev.writes)
 }
 
+func TestRetryChannelBusyRetriesAfterShortDelay(t *testing.T) {
+	attempts := 0
+
+	result, err := retryChannelBusy(t.Context(), func() (string, error) {
+		attempts++
+		if attempts == 1 {
+			return "", &ErrorResponse{ErrorCode: ERR_CHANNEL_BUSY}
+		}
+		return "ok", nil
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "ok", result)
+	assert.Equal(t, 2, attempts)
+}
+
+func TestRetryChannelBusyStopsWhenContextExpires(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+	attempts := 0
+
+	_, err := retryChannelBusy(ctx, func() (struct{}, error) {
+		attempts++
+		return struct{}{}, &ErrorResponse{ErrorCode: ERR_CHANNEL_BUSY}
+	})
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Equal(t, 1, attempts)
+}
+
 func TestTransportPreCanceledContextTakesPriorityOverValidation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
