@@ -156,19 +156,19 @@ func TestClientUsesConfiguredDecMode(t *testing.T) {
 		0x09, 0x81, 0x61, 0xff,
 	}
 
-	strictClient, err := NewClient(options.WithTransport(&fakeCBORTransport{
+	lenientClient, err := NewClient(options.WithTransport(&fakeCBORTransport{
 		t:        t,
 		request:  []byte{byte(protocol.AuthenticatorGetInfo)},
 		response: responseCBOR,
 	}))
 	require.NoError(t, err)
-	_, err = strictClient.GetInfo(context.Background())
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid UTF-8")
-
-	decMode, err := cbor.DecOptions{UTF8: cbor.UTF8DecodeInvalid}.DecMode()
+	response, err := lenientClient.GetInfo(context.Background())
 	require.NoError(t, err)
-	lenientClient, err := NewClient(
+	assert.Equal(t, []string{string([]byte{0xff})}, response.Transports)
+
+	decMode, err := cbor.DecOptions{UTF8: cbor.UTF8RejectInvalid}.DecMode()
+	require.NoError(t, err)
+	strictClient, err := NewClient(
 		options.WithDecMode(decMode),
 		options.WithTransport(&fakeCBORTransport{
 			t:        t,
@@ -177,9 +177,9 @@ func TestClientUsesConfiguredDecMode(t *testing.T) {
 		}),
 	)
 	require.NoError(t, err)
-	response, err := lenientClient.GetInfo(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, []string{string([]byte{0xff})}, response.Transports)
+	_, err = strictClient.GetInfo(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid UTF-8")
 }
 
 func TestClientRequiresTransport(t *testing.T) {
