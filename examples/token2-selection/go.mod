@@ -11,7 +11,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
-	github.com/go-ctap/hid v0.9.0 // indirect
+	github.com/go-ctap/hid v0.9.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/ldclabs/cose v1.4.0 // indirect
 	github.com/samber/lo v1.53.0 // indirect
