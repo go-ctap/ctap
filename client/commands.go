@@ -24,6 +24,7 @@ import (
 type Client struct {
 	logger    *slog.Logger
 	encMode   cbor.EncMode
+	decMode   cbor.DecMode
 	transport ctaptransport.CBOR
 }
 
@@ -47,6 +48,7 @@ func NewClient(opts ...options.Option) (*Client, error) {
 	return &Client{
 		logger:    oo.Logger,
 		encMode:   oo.EncMode,
+		decMode:   oo.DecMode,
 		transport: oo.Transport,
 	}, nil
 }
@@ -105,7 +107,7 @@ func (cl *Client) MakeCredential(
 	cl.logger.Debug("MakeCredential CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp protocol.AuthenticatorMakeCredentialResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
 	authData, err := protocol.ParseMakeCredentialAuthData(resp.AuthDataRaw)
@@ -167,7 +169,7 @@ func (cl *Client) GetAssertion(
 		cl.logger.Debug("GetAssertion CBOR response", "hex", hex.EncodeToString(respRawBegin.Data))
 
 		var respBegin protocol.AuthenticatorGetAssertionResponse
-		if err := cbor.Unmarshal(respRawBegin.Data, &respBegin); err != nil {
+		if err := cl.decMode.Unmarshal(respRawBegin.Data, &respBegin); err != nil {
 			yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 			return
 		}
@@ -195,7 +197,7 @@ func (cl *Client) GetAssertion(
 			cl.logger.Debug("GetNextAssertion CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 			var resp protocol.AuthenticatorGetAssertionResponse
-			if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+			if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 				return
 			}
@@ -220,7 +222,7 @@ func (cl *Client) GetInfo(ctx context.Context) (protocol.AuthenticatorGetInfoRes
 	}
 
 	var resp protocol.AuthenticatorGetInfoResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return protocol.AuthenticatorGetInfoResponse{}, err
 	}
 
@@ -250,7 +252,7 @@ func (cl *Client) GetPINRetries(
 	cl.logger.Debug("getPINRetries CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp *protocol.AuthenticatorClientPINResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return 0, nil, err
 	}
 
@@ -283,7 +285,7 @@ func (cl *Client) GetKeyAgreement(
 	cl.logger.Debug("getKeyAgreement CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp *protocol.AuthenticatorClientPINResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return nil, fmt.Errorf("cannot unmarshal keyAgreement CBOR response: %w", err)
 	}
 
@@ -466,7 +468,7 @@ func (cl *Client) GetPinToken(
 	cl.logger.Debug("getPinToken CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp *protocol.AuthenticatorClientPINResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return nil, err
 	}
 
@@ -517,7 +519,7 @@ func (cl *Client) GetPinUvAuthTokenUsingUvWithPermissions(
 	cl.logger.Debug("getPinUvAuthTokenUsingUvWithPermissions CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp *protocol.AuthenticatorClientPINResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return nil, err
 	}
 
@@ -547,7 +549,7 @@ func (cl *Client) GetUVRetries(ctx context.Context) (uint, error) {
 	cl.logger.Debug("getUVRetries CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp *protocol.AuthenticatorClientPINResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return 0, err
 	}
 
@@ -613,7 +615,7 @@ func (cl *Client) GetPinUvAuthTokenUsingPinWithPermissions(
 	cl.logger.Debug("getPinUvAuthTokenUsingPinWithPermissions CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp *protocol.AuthenticatorClientPINResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return nil, err
 	}
 
@@ -655,7 +657,7 @@ func (cl *Client) GetBioModality(
 	cl.logger.Debug("getBioModality CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp protocol.AuthenticatorBioEnrollmentResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
@@ -689,7 +691,7 @@ func (cl *Client) GetFingerprintSensorInfo(
 	cl.logger.Debug("getFingerprintSensorInfo CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp protocol.AuthenticatorBioEnrollmentResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
@@ -750,7 +752,7 @@ func (cl *Client) EnrollBegin(
 	cl.logger.Debug("enrollBegin CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp protocol.AuthenticatorBioEnrollmentResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
@@ -811,7 +813,7 @@ func (cl *Client) EnrollCaptureNextSample(
 	cl.logger.Debug("enrollCaptureNextSample CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp protocol.AuthenticatorBioEnrollmentResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
@@ -882,7 +884,7 @@ func (cl *Client) EnumerateEnrollments(
 	cl.logger.Debug("enumerateEnrollments CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp protocol.AuthenticatorBioEnrollmentResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
@@ -1030,7 +1032,7 @@ func (cl *Client) GetCredsMetadata(
 	cl.logger.Debug("getCredsMetadata CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp protocol.AuthenticatorCredentialManagementResponse
-	if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 		return protocol.AuthenticatorCredentialManagementResponse{}, err
 	}
 
@@ -1087,7 +1089,7 @@ func (cl *Client) EnumerateRPs(
 		cl.logger.Debug("enumerateRPsBegin CBOR response", "hex", hex.EncodeToString(respRawBegin.Data))
 
 		var respBegin protocol.AuthenticatorCredentialManagementResponse
-		if err := cbor.Unmarshal(respRawBegin.Data, &respBegin); err != nil {
+		if err := cl.decMode.Unmarshal(respRawBegin.Data, &respBegin); err != nil {
 			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 			return
 		}
@@ -1120,7 +1122,7 @@ func (cl *Client) EnumerateRPs(
 			cl.logger.Debug("enumerateRPsGetNextRP CBOR response", "hex", hex.EncodeToString(respRawNext.Data))
 
 			var respNext protocol.AuthenticatorCredentialManagementResponse
-			if err := cbor.Unmarshal(respRawNext.Data, &respNext); err != nil {
+			if err := cl.decMode.Unmarshal(respRawNext.Data, &respNext); err != nil {
 				yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 				return
 			}
@@ -1193,7 +1195,7 @@ func (cl *Client) EnumerateCredentials(
 		cl.logger.Debug("enumerateCredentialsBegin CBOR response", "hex", hex.EncodeToString(respRawBegin.Data))
 
 		var respBegin protocol.AuthenticatorCredentialManagementResponse
-		if err := cbor.Unmarshal(respRawBegin.Data, &respBegin); err != nil {
+		if err := cl.decMode.Unmarshal(respRawBegin.Data, &respBegin); err != nil {
 			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 			return
 		}
@@ -1226,7 +1228,7 @@ func (cl *Client) EnumerateCredentials(
 			cl.logger.Debug("enumerateCredentialsGetNextCredential CBOR response", "hex", hex.EncodeToString(respRawNext.Data))
 
 			var respNext protocol.AuthenticatorCredentialManagementResponse
-			if err := cbor.Unmarshal(respRawNext.Data, &respNext); err != nil {
+			if err := cl.decMode.Unmarshal(respRawNext.Data, &respNext); err != nil {
 				yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 				return
 			}
@@ -1397,7 +1399,7 @@ func (cl *Client) LargeBlobs(
 
 	var resp protocol.AuthenticatorLargeBlobsResponse
 	if get > 0 {
-		if err := cbor.Unmarshal(respRaw.Data, &resp); err != nil {
+		if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 			return protocol.AuthenticatorLargeBlobsResponse{}, err
 		}
 	}

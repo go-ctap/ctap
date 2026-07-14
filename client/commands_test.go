@@ -148,6 +148,40 @@ func TestClientUsesConfiguredTransport(t *testing.T) {
 	assert.Equal(t, protocol.Versions{protocol.FIDO_2_1}, response.Versions)
 }
 
+func TestClientUsesConfiguredDecMode(t *testing.T) {
+	// {1: ["FIDO_2_1"], 9: [h'ff' encoded as a CBOR text string]}
+	responseCBOR := []byte{
+		0xa2,
+		0x01, 0x81, 0x68, 'F', 'I', 'D', 'O', '_', '2', '_', '1',
+		0x09, 0x81, 0x61, 0xff,
+	}
+
+	strictClient, err := NewClient(options.WithTransport(&fakeCBORTransport{
+		t:        t,
+		request:  []byte{byte(protocol.AuthenticatorGetInfo)},
+		response: responseCBOR,
+	}))
+	require.NoError(t, err)
+	_, err = strictClient.GetInfo(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid UTF-8")
+
+	decMode, err := cbor.DecOptions{UTF8: cbor.UTF8DecodeInvalid}.DecMode()
+	require.NoError(t, err)
+	lenientClient, err := NewClient(
+		options.WithDecMode(decMode),
+		options.WithTransport(&fakeCBORTransport{
+			t:        t,
+			request:  []byte{byte(protocol.AuthenticatorGetInfo)},
+			response: responseCBOR,
+		}),
+	)
+	require.NoError(t, err)
+	response, err := lenientClient.GetInfo(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{string([]byte{0xff})}, response.Transports)
+}
+
 func TestClientRequiresTransport(t *testing.T) {
 	_, err := NewClient()
 	require.ErrorIs(t, err, ErrTransportNotConfigured)

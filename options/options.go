@@ -10,6 +10,7 @@ import (
 type Options struct {
 	Logger       *slog.Logger
 	EncMode      cbor.EncMode
+	DecMode      cbor.DecMode
 	Paths        []string
 	UseNamedPipe bool
 	Transport    ctaptransport.CBOR
@@ -26,6 +27,14 @@ func WithLogger(logger *slog.Logger) Option {
 func WithEncMode(encMode cbor.EncMode) Option {
 	return func(opts *Options) {
 		opts.EncMode = encMode
+	}
+}
+
+// WithDecMode configures decoding of CBOR responses received from an
+// authenticator.  The default decoder rejects invalid UTF-8 text strings.
+func WithDecMode(decMode cbor.DecMode) Option {
+	return func(opts *Options) {
+		opts.DecMode = decMode
 	}
 }
 
@@ -52,9 +61,13 @@ func WithTransport(transport ctaptransport.CBOR) Option {
 
 func NewOptions(opts ...Option) *Options {
 	encMode, _ := cbor.CTAP2EncOptions().EncMode()
+	decMode, _ := cbor.DecOptions{
+		UTF8: cbor.UTF8DecodeInvalid,
+	}.DecMode()
 	oo := &Options{
 		Logger:  slog.Default(),
 		EncMode: encMode,
+		DecMode: decMode,
 	}
 
 	for _, opt := range opts {
