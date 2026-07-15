@@ -19,7 +19,7 @@ type CreateAuthenticationExtensionsClientOutputs struct {
 	*CreateHMACSecretOutputs
 	*CreateHMACSecretMCOutputs
 	*LargeBlobOutputs
-	*PRFOutputs
+	*CreatePRFOutputs
 }
 
 type GetAuthenticationExtensionsClientInputs struct {
@@ -33,5 +33,5 @@ type GetAuthenticationExtensionsClientOutputs struct {
 	*GetCredentialBlobOutputs
 	*GetHMACSecretOutputs
 	*LargeBlobOutputs
-	*PRFOutputs
+	*GetPRFOutputs
 }

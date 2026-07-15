@@ -314,7 +314,7 @@ func (d *Device) MakeCredential(
 			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrNotSupported, "evalByCredential is not supported during registration")
 		}
 
-		if extInputs.PRF.Eval == nil {
+		if extInputs.PRF.Eval.IsZero() {
 			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(SyntaxError, "eval is empty")
 		}
 		var (
@@ -479,7 +479,7 @@ func (d *Device) MakeCredential(
 	if extInputs.CreateCredentialPropertiesInputs != nil && extInputs.CredentialProperties {
 		extOutputs.CreateCredentialPropertiesOutputs = &webauthn.CreateCredentialPropertiesOutputs{
 			CredentialProperties: webauthn.CredentialPropertiesOutput{
-				ResidentKey: options[protocol.OptionResidentKeys],
+				ResidentKey: new(options[protocol.OptionResidentKeys]),
 			},
 		}
 	}
@@ -511,8 +511,8 @@ func (d *Device) MakeCredential(
 
 		switch len(salt) {
 		case 32:
-			extOutputs.PRFOutputs = &webauthn.PRFOutputs{
-				PRF: webauthn.AuthenticationExtensionsPRFOutputs{
+			extOutputs.CreatePRFOutputs = &webauthn.CreatePRFOutputs{
+				PRF: webauthn.CreateAuthenticationExtensionsPRFOutputs{
 					Enabled: true,
 					Results: webauthn.AuthenticationExtensionsPRFValues{
 						First: salt[:32],
@@ -520,8 +520,8 @@ func (d *Device) MakeCredential(
 				},
 			}
 		case 64:
-			extOutputs.PRFOutputs = &webauthn.PRFOutputs{
-				PRF: webauthn.AuthenticationExtensionsPRFOutputs{
+			extOutputs.CreatePRFOutputs = &webauthn.CreatePRFOutputs{
+				PRF: webauthn.CreateAuthenticationExtensionsPRFOutputs{
 					Enabled: true,
 					Results: webauthn.AuthenticationExtensionsPRFValues{
 						First:  salt[:32],
@@ -639,7 +639,7 @@ func (d *Device) GetAssertion(
 			var ev *webauthn.AuthenticationExtensionsPRFValues
 			var ids [][]byte
 			for idStr := range extInputs.PRF.EvalByCredential {
-				id, err := base64.URLEncoding.DecodeString(idStr)
+				id, err := base64.RawURLEncoding.DecodeString(idStr)
 				if err != nil {
 					yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(SyntaxError, "invalid credential id"))
 					return
@@ -656,15 +656,15 @@ func (d *Device) GetAssertion(
 					return false
 				})
 				if found {
-					v, ok := extInputs.PRF.EvalByCredential[base64.URLEncoding.EncodeToString(desc.ID)]
+					v, ok := extInputs.PRF.EvalByCredential[base64.RawURLEncoding.EncodeToString(desc.ID)]
 					if ok {
 						ev = &v
 					}
 				}
 			}
 
-			if ev == nil && extInputs.PRF.Eval != nil {
-				ev = extInputs.PRF.Eval
+			if ev == nil && !extInputs.PRF.Eval.IsZero() {
+				ev = &extInputs.PRF.Eval
 			}
 			if ev == nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(SyntaxError, "eval is empty"))
@@ -796,9 +796,8 @@ func (d *Device) GetAssertion(
 						}
 					}
 					if extInputs.PRFInputs != nil {
-						assertion.ExtensionOutputs.PRFOutputs = &webauthn.PRFOutputs{
-							PRF: webauthn.AuthenticationExtensionsPRFOutputs{
-								Enabled: true,
+						assertion.ExtensionOutputs.GetPRFOutputs = &webauthn.GetPRFOutputs{
+							PRF: webauthn.GetAuthenticationExtensionsPRFOutputs{
 								Results: webauthn.AuthenticationExtensionsPRFValues{
 									First: salt[:32],
 								},
@@ -815,9 +814,8 @@ func (d *Device) GetAssertion(
 						}
 					}
 					if extInputs.PRFInputs != nil {
-						assertion.ExtensionOutputs.PRFOutputs = &webauthn.PRFOutputs{
-							PRF: webauthn.AuthenticationExtensionsPRFOutputs{
-								Enabled: true,
+						assertion.ExtensionOutputs.GetPRFOutputs = &webauthn.GetPRFOutputs{
+							PRF: webauthn.GetAuthenticationExtensionsPRFOutputs{
 								Results: webauthn.AuthenticationExtensionsPRFValues{
 									First:  salt[:32],
 									Second: salt[32:],

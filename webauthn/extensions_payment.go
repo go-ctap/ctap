@@ -20,19 +20,20 @@ type PaymentCredentialInstrument struct {
 }
 
 type AuthenticationExtensionsPaymentInputs struct {
-	IsPayment                    bool                                       `cbor:"payment"`
-	BrowserBoundPubKeyCredParams []credential.PublicKeyCredentialParameters `cbor:"browserBoundPubKeyCredParams"`
+	IsPayment                    bool                                       `cbor:"payment" json:"payment"`
+	BrowserBoundPubKeyCredParams []credential.PublicKeyCredentialParameters `cbor:"browserBoundPubKeyCredParams" json:"browserBoundPubKeyCredParams"`
 
-	RPID                 string                       `cbor:"rpId"`
-	TopOrigin            string                       `cbor:"topOrigin"`
-	PayeeName            string                       `cbor:"payeeName"`
-	PayeeOrigin          string                       `cbor:"payeeOrigin"`
-	PaymentEntitiesLogos []PaymentEntityLogo          `cbor:"paymentEntitiesLogos"`
-	Total                *PaymentCurrencyAmount       `cbor:"total"`
-	Instrument           *PaymentCredentialInstrument `cbor:"instrument"`
+	RPID                 string                       `cbor:"rpId" json:"rpId"`
+	TopOrigin            string                       `cbor:"topOrigin" json:"topOrigin"`
+	PayeeName            string                       `cbor:"payeeName" json:"payeeName"`
+	PayeeOrigin          string                       `cbor:"payeeOrigin" json:"payeeOrigin"`
+	PaymentEntitiesLogos []PaymentEntityLogo          `cbor:"paymentEntitiesLogos" json:"paymentEntitiesLogos"`
+	Total                *PaymentCurrencyAmount       `cbor:"total" json:"total"`
+	Instrument           *PaymentCredentialInstrument `cbor:"instrument" json:"instrument"`
 }
+
 type PaymentInputs struct {
-	Payment AuthenticationExtensionsPaymentInputs `cbor:"payment"`
+	Payment AuthenticationExtensionsPaymentInputs `cbor:"payment" json:"payment,omitempty"`
 }
 
 type BrowserBoundSignature struct {
@@ -40,9 +41,9 @@ type BrowserBoundSignature struct {
 }
 
 type AuthenticationExtensionsPaymentOutputs struct {
-	BrowserBoundSignature *BrowserBoundSignature `cbor:"browserBoundSignature,omitempty"`
+	BrowserBoundSignature *BrowserBoundSignature `cbor:"browserBoundSignature,omitempty" json:"browserBoundSignature,omitempty"`
 }
 
 type PaymentOutputs struct {
-	Payment AuthenticationExtensionsPaymentOutputs `cbor:"payment"`
+	Payment AuthenticationExtensionsPaymentOutputs `cbor:"payment" json:"payment"`
 }

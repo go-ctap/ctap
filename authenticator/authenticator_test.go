@@ -381,7 +381,8 @@ func TestMakeCredentialCredPropsOutputDependsOnCredPropsInput(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, resp.ExtensionOutputs.CreateCredentialPropertiesOutputs)
-	assert.True(t, resp.ExtensionOutputs.CreateCredentialPropertiesOutputs.CredentialProperties.ResidentKey)
+	require.NotNil(t, resp.ExtensionOutputs.CreateCredentialPropertiesOutputs.CredentialProperties.ResidentKey)
+	assert.True(t, *resp.ExtensionOutputs.CreateCredentialPropertiesOutputs.CredentialProperties.ResidentKey)
 }
 
 func TestMakeCredentialRequiresMaxCredBlobLengthWhenCredBlobExtensionReported(t *testing.T) {
