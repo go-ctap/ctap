@@ -77,6 +77,129 @@ func TestTransportCBORPreCanceledWritesNothing(t *testing.T) {
 	assert.Empty(t, dev.writes)
 }
 
+func TestTransportCommandsCloseDeviceAfterWriteFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*Transport) error
+	}{
+		{
+			name: "CBOR",
+			call: func(transport *Transport) error {
+				_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
+				return err
+			},
+		},
+		{
+			name: "Ping",
+			call: func(transport *Transport) error {
+				_, err := transport.Ping(t.Context(), []byte("ping"))
+				return err
+			},
+		},
+		{name: "Wink", call: func(transport *Transport) error { return transport.Wink(t.Context()) }},
+		{name: "Lock", call: func(transport *Transport) error { return transport.Lock(t.Context(), 1) }},
+		{name: "Cancel", call: func(transport *Transport) error { return transport.Cancel(t.Context()) }},
+		{
+			name: "Vendor",
+			call: func(transport *Transport) error {
+				_, err := transport.Vendor(t.Context(), CTAPHID_VENDOR_FIRST, nil)
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dev := &failedOpenDevice{writeErr: io.ErrClosedPipe}
+			transport := NewTransport(dev, transportTestCID)
+
+			err := test.call(transport)
+
+			require.ErrorIs(t, err, io.ErrClosedPipe)
+			var ioErr *ctaptransport.IOError
+			require.ErrorAs(t, err, &ioErr)
+			assert.Equal(t, ctaptransport.IOWrite, ioErr.Operation)
+			assert.True(t, dev.closed)
+		})
+	}
+}
+
+func TestTransportCBORKeepsDeviceOpenAfterResponseError(t *testing.T) {
+	tests := []struct {
+		name      string
+		command   Command
+		data      []byte
+		wantError error
+		wantCode  Error
+	}{
+		{
+			name:      "invalid response message",
+			command:   CTAPHID_CBOR,
+			wantError: ErrInvalidResponseMessage,
+		},
+		{
+			name:      "unexpected command",
+			command:   CTAPHID_PING,
+			wantError: ErrUnexpectedCommand,
+		},
+		{
+			name:     "invalid channel",
+			command:  CTAPHID_ERROR,
+			data:     []byte{byte(ERR_INVALID_CHANNEL)},
+			wantCode: ERR_INVALID_CHANNEL,
+		},
+		{
+			name:    "CTAP error",
+			command: CTAPHID_CBOR,
+			data:    []byte{byte(ctaptransport.CTAP2_ERR_INVALID_CBOR)},
+		},
+		{
+			name:    "other CTAPHID error",
+			command: CTAPHID_ERROR,
+			data:    []byte{byte(ERR_INVALID_LEN)},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dev := newResponseDevice(rawResponseReport(transportTestCID, test.command, test.data))
+			transport := NewTransport(dev, transportTestCID)
+
+			_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
+
+			if test.wantError != nil {
+				require.ErrorIs(t, err, test.wantError)
+			} else if test.wantCode != 0 {
+				requireCTAPHIDError(t, err, test.wantCode)
+			} else {
+				require.Error(t, err)
+			}
+			assert.False(t, dev.isClosed())
+			require.NoError(t, transport.Close())
+		})
+	}
+}
+
+func TestTransportCBORContinuesOnSameChannelAfterUnexpectedCommand(t *testing.T) {
+	dev := newResponseDevice(
+		rawResponseReport(transportTestCID, CTAPHID_PING, nil),
+		rawResponseReport(transportTestCID, CTAPHID_CBOR, []byte{byte(ctaptransport.CTAP2_OK)}),
+	)
+	transport := NewTransport(dev, transportTestCID)
+	t.Cleanup(func() {
+		require.NoError(t, transport.Close())
+	})
+
+	_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
+	require.ErrorIs(t, err, ErrUnexpectedCommand)
+	assert.False(t, dev.isClosed())
+
+	response, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
+	require.NoError(t, err)
+	assert.Equal(t, ctaptransport.CTAP2_OK, response.StatusCode)
+	assert.False(t, dev.isClosed())
+}
+
 func TestOpenDrainsReportsForOtherChannelsBeforeAllocation(t *testing.T) {
 	dev := newMultiplexedDevice(transportTestCID)
 	foreignReport := make([]byte, hidPacketSize)
@@ -208,6 +331,7 @@ func TestTransportCBORPreservesReadError(t *testing.T) {
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	require.NotErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 1, dev.writes, "an unrelated read error must not trigger CTAPHID_CANCEL")
+	assert.True(t, dev.closed)
 }
 
 func TestTransportCBORDoesNotCancelForContextErrorFromActiveContext(t *testing.T) {
@@ -343,6 +467,7 @@ type blockingDevice struct {
 type readErrorDevice struct {
 	err    error
 	writes int
+	closed bool
 }
 
 func (d *readErrorDevice) Read(_ context.Context, _ []byte) (int, error) {
@@ -354,7 +479,78 @@ func (d *readErrorDevice) Write(_ context.Context, p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (d *readErrorDevice) Close() error { return nil }
+func (d *readErrorDevice) Close() error {
+	d.closed = true
+	return nil
+}
+
+type responseDevice struct {
+	mu        sync.Mutex
+	responses [][]byte
+	reads     chan []byte
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+func newResponseDevice(responses ...[]byte) *responseDevice {
+	return &responseDevice{
+		responses: responses,
+		reads:     make(chan []byte, 1),
+		closed:    make(chan struct{}),
+	}
+}
+
+func (d *responseDevice) Read(ctx context.Context, p []byte) (int, error) {
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-d.closed:
+		return 0, io.ErrClosedPipe
+	case response := <-d.reads:
+		return copy(p, response), nil
+	}
+}
+
+func (d *responseDevice) Write(ctx context.Context, p []byte) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	d.mu.Lock()
+	var response []byte
+	if len(d.responses) > 0 {
+		response = d.responses[0]
+		d.responses = d.responses[1:]
+	}
+	d.mu.Unlock()
+
+	if response != nil {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-d.closed:
+			return 0, io.ErrClosedPipe
+		case d.reads <- bytes.Clone(response):
+		}
+	}
+	return len(p), nil
+}
+
+func (d *responseDevice) Close() error {
+	d.closeOnce.Do(func() {
+		close(d.closed)
+	})
+	return nil
+}
+
+func (d *responseDevice) isClosed() bool {
+	select {
+	case <-d.closed:
+		return true
+	default:
+		return false
+	}
+}
 
 func newBlockingDevice() *blockingDevice {
 	return &blockingDevice{

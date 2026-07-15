@@ -68,8 +68,10 @@ func (e *APDUError) Error() string {
 
 // Transport carries CTAP commands through the Token2 applet.
 type Transport struct {
-	card ioCard
-	mu   sync.Mutex
+	card      ioCard
+	mu        sync.Mutex
+	closeOnce sync.Once
+	closeErr  error
 }
 
 var _ ctaptransport.Device = (*Transport)(nil)
@@ -108,6 +110,7 @@ func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORRe
 
 	response, err := t.exchange(ctx, commandAPDU(data))
 	if err != nil {
+		t.closeOnIOError(ctx, err)
 		return ctaptransport.CBORResponse{}, err
 	}
 	if len(response) < 1 {
@@ -118,6 +121,19 @@ func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORRe
 		StatusCode: ctaptransport.StatusCode(response[0]),
 		Data:       slices.Clone(response[1:]),
 	})
+}
+
+func (t *Transport) closeOnIOError(ctx context.Context, err error) {
+	ioErr, ok := errors.AsType[*ctaptransport.IOError](err)
+	if !ok || ioErr.Operation != ctaptransport.IOTransmit {
+		return
+	}
+
+	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+		return
+	}
+
+	_ = t.Close()
 }
 
 func commandAPDU(data []byte) []byte {
@@ -165,5 +181,8 @@ func (t *Transport) exchange(ctx context.Context, apdu []byte) ([]byte, error) {
 
 // Close closes the underlying card.
 func (t *Transport) Close() error {
-	return t.card.Close()
+	t.closeOnce.Do(func() {
+		t.closeErr = t.card.Close()
+	})
+	return t.closeErr
 }

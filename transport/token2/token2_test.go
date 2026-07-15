@@ -22,10 +22,11 @@ type exchange struct {
 }
 
 type fakeCard struct {
-	t         *testing.T
-	exchanges []exchange
-	closeErr  error
-	closed    bool
+	t          *testing.T
+	exchanges  []exchange
+	closeErr   error
+	closed     bool
+	closeCalls int
 }
 
 func (c *fakeCard) Transmit(ctx context.Context, apdu []byte) ([]byte, error) {
@@ -45,6 +46,7 @@ func (c *fakeCard) Transmit(ctx context.Context, apdu []byte) ([]byte, error) {
 }
 
 func (c *fakeCard) Close() error {
+	c.closeCalls++
 	c.closed = true
 	return c.closeErr
 }
@@ -132,7 +134,9 @@ func TestNewRejectsMalformedSelectResponse(t *testing.T) {
 func TestCloseDelegatesToCard(t *testing.T) {
 	transport, card := newFakeTransport(t)
 	require.NoError(t, transport.Close())
+	require.NoError(t, transport.Close())
 	assert.True(t, card.closed)
+	assert.Equal(t, 1, card.closeCalls)
 }
 
 func TestCloseReturnsTypedIOError(t *testing.T) {
@@ -161,6 +165,37 @@ func TestNewPropagatesTransmitError(t *testing.T) {
 	var ioErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &ioErr)
 	assert.Equal(t, ctaptransport.IOTransmit, ioErr.Operation)
+	assert.False(t, card.closed, "the caller retains ownership when initialization fails")
+}
+
+func TestCBORClosesCardAfterTransmitFailure(t *testing.T) {
+	wantErr := errors.New("transmit failed")
+	transport, card := newFakeTransport(t, exchange{
+		request: []byte{0x80, 0xc5, 0x03, 0x00, 0x01, 0x04},
+		err:     wantErr,
+	})
+
+	_, err := transport.CBOR(context.Background(), []byte{0x04})
+
+	require.ErrorIs(t, err, wantErr)
+	var ioErr *ctaptransport.IOError
+	require.ErrorAs(t, err, &ioErr)
+	assert.Equal(t, ctaptransport.IOTransmit, ioErr.Operation)
+	assert.True(t, card.closed)
+	require.NoError(t, transport.Close())
+	assert.Equal(t, 1, card.closeCalls)
+}
+
+func TestCBORClosesCardAfterContextErrorFromActiveContext(t *testing.T) {
+	transport, card := newFakeTransport(t, exchange{
+		request: []byte{0x80, 0xc5, 0x03, 0x00, 0x01, 0x04},
+		err:     context.DeadlineExceeded,
+	})
+
+	_, err := transport.CBOR(context.Background(), []byte{0x04})
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.True(t, card.closed, "an unrelated context error still means transmit failed")
 }
 
 func TestCBORChecksContextBeforeChainedTransmit(t *testing.T) {
@@ -174,6 +209,7 @@ func TestCBORChecksContextBeforeChainedTransmit(t *testing.T) {
 	_, err := transport.CBOR(ctx, []byte{0x04})
 	require.ErrorIs(t, err, context.Canceled)
 	require.Empty(t, card.exchanges)
+	assert.False(t, card.closed)
 }
 
 func TestCBORPreservesSuccessfulResponseWhenContextIsCanceledConcurrently(t *testing.T) {

@@ -62,6 +62,23 @@ func retryChannelBusyError(ctx context.Context, operation func() error) error {
 	return err
 }
 
+func isDeviceIOError(err error) bool {
+	if ioErr, ok := errors.AsType[*ctaptransport.IOError](err); ok {
+		switch ioErr.Operation {
+		case ctaptransport.IORead, ctaptransport.IOWrite:
+			return true
+		}
+	}
+
+	return false
+}
+
+func (t *Transport) closeOnIOError(err error) {
+	if isDeviceIOError(err) {
+		_ = t.device.Close()
+	}
+}
+
 // Open allocates a CTAPHID channel on device. The caller retains ownership of
 // device if Open returns an error. The returned Transport owns device on
 // success.
@@ -116,11 +133,13 @@ func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORRe
 			cancelCtx := context.WithoutCancel(ctx)
 			if cancelErr := t.cancel(cancelCtx); cancelErr == nil {
 				// The canceled request still completes with a terminal response.
-				_, _ = readCBORResponse(cancelCtx, t.device, t.cid, command)
+				_, drainErr := readCBORResponse(cancelCtx, t.device, t.cid, command)
+				t.closeOnIOError(drainErr)
 			}
 		}
 		return response, err
 	})
+	t.closeOnIOError(err)
 	return response, err
 }
 
@@ -144,6 +163,7 @@ func (t *Transport) Ping(ctx context.Context, data []byte) ([]byte, error) {
 		return Ping(ctx, t.device, t.cid, data)
 	})
 	if err != nil {
+		t.closeOnIOError(err)
 		return nil, err
 	}
 	return response.Bytes, nil
@@ -155,9 +175,11 @@ func (t *Transport) Wink(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return retryChannelBusyError(ctx, func() error {
+	err := retryChannelBusyError(ctx, func() error {
 		return Wink(ctx, t.device, t.cid)
 	})
+	t.closeOnIOError(err)
+	return err
 }
 
 func (t *Transport) Lock(ctx context.Context, seconds uint8) error {
@@ -166,9 +188,11 @@ func (t *Transport) Lock(ctx context.Context, seconds uint8) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return retryChannelBusyError(ctx, func() error {
+	err := retryChannelBusyError(ctx, func() error {
 		return Lock(ctx, t.device, t.cid, seconds)
 	})
+	t.closeOnIOError(err)
+	return err
 }
 
 func (t *Transport) Cancel(ctx context.Context) error {
@@ -177,13 +201,17 @@ func (t *Transport) Cancel(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return Cancel(ctx, t.device, t.cid)
+	err := Cancel(ctx, t.device, t.cid)
+	t.closeOnIOError(err)
+	return err
 }
 
 func (t *Transport) cancel(ctx context.Context) error {
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
-	return Cancel(ctx, t.device, t.cid)
+	err := Cancel(ctx, t.device, t.cid)
+	t.closeOnIOError(err)
+	return err
 }
 
 func (t *Transport) Vendor(ctx context.Context, command Command, data []byte) (VendorResponse, error) {
@@ -192,9 +220,11 @@ func (t *Transport) Vendor(ctx context.Context, command Command, data []byte) (V
 	if err := ctx.Err(); err != nil {
 		return VendorResponse{}, err
 	}
-	return retryChannelBusy(ctx, func() (VendorResponse, error) {
+	response, err := retryChannelBusy(ctx, func() (VendorResponse, error) {
 		return Vendor(ctx, t.device, t.cid, command, data)
 	})
+	t.closeOnIOError(err)
+	return response, err
 }
 
 func (t *Transport) Close() error {
