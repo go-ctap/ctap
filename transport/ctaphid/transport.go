@@ -108,6 +108,10 @@ func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORRe
 	response, err := retryChannelBusy(ctx, func() (ctaptransport.CBORResponse, error) {
 		command, err := t.writeCBOR(ctx, data)
 		if err != nil {
+			if ioErr, ok := errors.AsType[*ctaptransport.IOError](err); ok && ioErr.Operation == ctaptransport.IOWrite {
+				_ = t.device.Close()
+			}
+
 			return ctaptransport.CBORResponse{}, err
 		}
 

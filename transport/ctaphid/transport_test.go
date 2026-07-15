@@ -77,6 +77,19 @@ func TestTransportCBORPreCanceledWritesNothing(t *testing.T) {
 	assert.Empty(t, dev.writes)
 }
 
+func TestTransportCBORClosesDeviceAfterWriteFailure(t *testing.T) {
+	dev := &failedOpenDevice{writeErr: io.ErrClosedPipe}
+	transport := NewTransport(dev, transportTestCID)
+
+	_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
+
+	require.ErrorIs(t, err, io.ErrClosedPipe)
+	var ioErr *ctaptransport.IOError
+	require.ErrorAs(t, err, &ioErr)
+	assert.Equal(t, ctaptransport.IOWrite, ioErr.Operation)
+	assert.True(t, dev.closed)
+}
+
 func TestOpenDrainsReportsForOtherChannelsBeforeAllocation(t *testing.T) {
 	dev := newMultiplexedDevice(transportTestCID)
 	foreignReport := make([]byte, hidPacketSize)
