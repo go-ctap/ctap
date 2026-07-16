@@ -605,6 +605,245 @@ func TestValidateMakeCredentialAuthorization(t *testing.T) {
 	}
 }
 
+func TestValidateGetAssertionAuthorization(t *testing.T) {
+	tests := []struct {
+		name    string
+		info    protocol.AuthenticatorGetInfoResponse
+		token   []byte
+		options map[protocol.Option]bool
+		wantErr error
+	}{
+		{
+			name: "FIDO 2.0 configured PIN does not require authorization",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN: true,
+				},
+			},
+		},
+		{
+			name: "FIDO 2.0 ignores alwaysUv",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0, protocol.U2F_V2},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:  true,
+					protocol.OptionClientPIN: true,
+				},
+			},
+		},
+		{
+			name: "configured PIN without alwaysUv permits UP-only assertion",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN: true,
+				},
+			},
+		},
+		{
+			name: "token and built-in UV are mutually exclusive",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionUserVerification: true,
+				},
+			},
+			token: []byte("token"),
+			options: map[protocol.Option]bool{
+				protocol.OptionUserVerification: true,
+			},
+			wantErr: SyntaxError,
+		},
+		{
+			name: "built-in UV unsupported",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionUserVerification: true,
+			},
+			wantErr: ErrNotSupported,
+		},
+		{
+			name: "built-in UV not configured",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionUserVerification: false,
+				},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionUserVerification: true,
+			},
+			wantErr: ErrUvNotConfigured,
+		},
+		{
+			name: "rk is unsupported even when false",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionResidentKeys: false,
+			},
+			wantErr: ErrNotSupported,
+		},
+		{
+			name: "FIDO 2.1 alwaysUv requires token for PIN-only authenticator",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:  true,
+					protocol.OptionClientPIN: true,
+				},
+			},
+			wantErr: ErrPinUvAuthTokenRequired,
+		},
+		{
+			name: "FIDO 2.3 token satisfies alwaysUv",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:  true,
+					protocol.OptionClientPIN: true,
+				},
+			},
+			token: []byte("token"),
+		},
+		{
+			name: "explicit built-in UV satisfies alwaysUv",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:         true,
+					protocol.OptionUserVerification: true,
+				},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionUserVerification: true,
+			},
+		},
+		{
+			name: "configured built-in UV is used implicitly for alwaysUv",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:         true,
+					protocol.OptionUserVerification: true,
+				},
+			},
+		},
+		{
+			name: "up false bypasses alwaysUv requirement",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:  true,
+					protocol.OptionClientPIN: true,
+				},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionUserPresence: false,
+			},
+		},
+		{
+			name: "alwaysUv reports unconfigured built-in UV",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:         true,
+					protocol.OptionUserVerification: false,
+				},
+			},
+			wantErr: ErrUvNotConfigured,
+		},
+		{
+			name: "alwaysUv without available UV mechanism requires built-in UV",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv: true,
+				},
+			},
+			wantErr: ErrBuiltInUVRequired,
+		},
+		{
+			name: "client PIN without GetAssertion permission cannot satisfy alwaysUv",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:                       true,
+					protocol.OptionClientPIN:                      true,
+					protocol.OptionNoMcGaPermissionsWithClientPin: true,
+				},
+			},
+			wantErr: ErrBuiltInUVRequired,
+		},
+		{
+			name: "device supporting FIDO 2.0 and 2.1 uses modern semantics",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:  true,
+					protocol.OptionClientPIN: true,
+				},
+			},
+			wantErr: ErrPinUvAuthTokenRequired,
+		},
+		{
+			name: "missing versions preserves modern semantics",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:  true,
+					protocol.OptionClientPIN: true,
+				},
+			},
+			wantErr: ErrPinUvAuthTokenRequired,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateGetAssertionAuthorization(test.info, test.token, test.options)
+			if test.wantErr == nil {
+				require.NoError(t, err)
+				return
+			}
+
+			require.ErrorIs(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestGetAssertionValidatesAuthorizationBeforeCommand(t *testing.T) {
+	fake := testhid.NewCBORDevice(t, testCID)
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		Versions: protocol.Versions{protocol.FIDO_2_3},
+		Options: map[protocol.Option]bool{
+			protocol.OptionAlwaysUv:  true,
+			protocol.OptionClientPIN: true,
+		},
+	})
+
+	var count int
+	for assertion, err := range d.GetAssertion(
+		testContext,
+		nil,
+		"example.com",
+		[]byte("client-data"),
+		nil,
+		nil,
+		nil,
+	) {
+		count++
+		assert.Equal(t, protocol.AuthenticatorGetAssertionResponse{}, assertion)
+		require.ErrorIs(t, err, ErrPinUvAuthTokenRequired)
+	}
+
+	assert.Equal(t, 1, count)
+	assert.Empty(t, fake.Writes())
+}
+
 func TestMakeCredentialAllowsFIDO20BuiltInUV(t *testing.T) {
 	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 		Format:      attestation.AttestationStatementFormatIdentifierPacked,

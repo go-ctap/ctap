@@ -195,7 +195,7 @@ func (d *Device) Lock(ctx context.Context, seconds uint) error {
 	return transport.Lock(ctx, uint8(seconds))
 }
 
-func validateMakeCredentialAuthorization(
+func validateUserVerificationRequest(
 	info protocol.AuthenticatorGetInfoResponse,
 	pinUvAuthToken []byte,
 	options map[protocol.Option]bool,
@@ -216,14 +216,33 @@ func validateMakeCredentialAuthorization(
 		}
 	}
 
-	protected := info.Options[protocol.OptionClientPIN] || info.Options[protocol.OptionUserVerification]
-	fido20Only := info.Versions.Supports(protocol.FIDO_2_0)
-	for _, version := range info.Versions {
+	return nil
+}
+
+func isFIDO20Only(versions protocol.Versions) bool {
+	fido20Only := versions.Supports(protocol.FIDO_2_0)
+	for _, version := range versions {
 		if version != protocol.FIDO_2_0 && version != protocol.U2F_V2 {
-			fido20Only = false
-			break
+			return false
 		}
 	}
+
+	return fido20Only
+}
+
+func validateMakeCredentialAuthorization(
+	info protocol.AuthenticatorGetInfoResponse,
+	pinUvAuthToken []byte,
+	options map[protocol.Option]bool,
+) error {
+	if err := validateUserVerificationRequest(info, pinUvAuthToken, options); err != nil {
+		return err
+	}
+
+	hasToken := pinUvAuthToken != nil
+	builtInUVRequested := options[protocol.OptionUserVerification]
+	protected := info.Options[protocol.OptionClientPIN] || info.Options[protocol.OptionUserVerification]
+	fido20Only := isFIDO20Only(info.Versions)
 
 	// CTAP 2.0 authenticators protected by any form of UV always require it
 	// for MakeCredential. makeCredUvNotRqd and alwaysUv were added in CTAP 2.1.
@@ -245,6 +264,42 @@ func validateMakeCredentialAuthorization(
 	}
 
 	return ErrPinUvAuthTokenRequired
+}
+
+func validateGetAssertionAuthorization(
+	info protocol.AuthenticatorGetInfoResponse,
+	pinUvAuthToken []byte,
+	options map[protocol.Option]bool,
+) error {
+	if err := validateUserVerificationRequest(info, pinUvAuthToken, options); err != nil {
+		return err
+	}
+
+	if _, ok := options[protocol.OptionResidentKeys]; ok {
+		return newErrorMessage(ErrNotSupported, "rk option is not supported by GetAssertion")
+	}
+
+	userPresence, ok := options[protocol.OptionUserPresence]
+	userPresenceRequested := !ok || userPresence
+	if isFIDO20Only(info.Versions) || !info.Options[protocol.OptionAlwaysUv] || !userPresenceRequested {
+		return nil
+	}
+
+	if pinUvAuthToken != nil || options[protocol.OptionUserVerification] ||
+		info.Options[protocol.OptionUserVerification] {
+		return nil
+	}
+
+	if info.Options[protocol.OptionClientPIN] &&
+		!info.Options[protocol.OptionNoMcGaPermissionsWithClientPin] {
+		return ErrPinUvAuthTokenRequired
+	}
+
+	if builtInUVConfigured, ok := info.Options[protocol.OptionUserVerification]; ok && !builtInUVConfigured {
+		return newErrorMessage(ErrUvNotConfigured, "please configure UV first (e.g. enroll biometry)")
+	}
+
+	return newErrorMessage(ErrBuiltInUVRequired, "alwaysUv requires user verification for GetAssertion")
 }
 
 // MakeCredential initiates the process of creating a new credential on a device with specified parameters and options.
@@ -603,6 +658,11 @@ func (d *Device) GetAssertion(
 	return func(yield func(protocol.AuthenticatorGetAssertionResponse, error) bool) {
 		d.mu.Lock()
 		defer d.mu.Unlock()
+
+		if err := validateGetAssertionAuthorization(d.info, pinUvAuthToken, options); err != nil {
+			yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+			return
+		}
 
 		var (
 			pinUvAuthProtocol protocol.PinUvAuthProtocol
