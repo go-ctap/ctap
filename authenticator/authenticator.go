@@ -195,6 +195,58 @@ func (d *Device) Lock(ctx context.Context, seconds uint) error {
 	return transport.Lock(ctx, uint8(seconds))
 }
 
+func validateMakeCredentialAuthorization(
+	info protocol.AuthenticatorGetInfoResponse,
+	pinUvAuthToken []byte,
+	options map[protocol.Option]bool,
+) error {
+	hasToken := pinUvAuthToken != nil
+	builtInUVRequested := options[protocol.OptionUserVerification]
+	if hasToken && builtInUVRequested {
+		return newErrorMessage(SyntaxError, "pinUvAuthToken and built-in user verification are mutually exclusive")
+	}
+
+	if builtInUVRequested {
+		builtInUVConfigured, ok := info.Options[protocol.OptionUserVerification]
+		if !ok {
+			return newErrorMessage(ErrNotSupported, "device doesn't support built-in user verification")
+		}
+		if !builtInUVConfigured {
+			return newErrorMessage(ErrUvNotConfigured, "please configure UV first (e.g. enroll biometry)")
+		}
+	}
+
+	protected := info.Options[protocol.OptionClientPIN] || info.Options[protocol.OptionUserVerification]
+	fido20Only := info.Versions.Supports(protocol.FIDO_2_0)
+	for _, version := range info.Versions {
+		if version != protocol.FIDO_2_0 && version != protocol.U2F_V2 {
+			fido20Only = false
+			break
+		}
+	}
+
+	// CTAP 2.0 authenticators protected by any form of UV always require it
+	// for MakeCredential. makeCredUvNotRqd and alwaysUv were added in CTAP 2.1.
+	requiresUV := protected
+	if !fido20Only {
+		alwaysUV := info.Options[protocol.OptionAlwaysUv]
+		requiresUV = alwaysUV || protected && (!info.Options[protocol.OptionMakeCredentialUvNotRequired] ||
+			options[protocol.OptionResidentKeys])
+	}
+	if !requiresUV {
+		return nil
+	}
+
+	// With alwaysUv enabled, an authenticator with configured built-in UV
+	// implicitly treats the request as if the uv option were true.
+	if hasToken || builtInUVRequested ||
+		!fido20Only && info.Options[protocol.OptionAlwaysUv] && info.Options[protocol.OptionUserVerification] {
+		return nil
+	}
+
+	return ErrPinUvAuthTokenRequired
+}
+
 // MakeCredential initiates the process of creating a new credential on a device with specified parameters and options.
 func (d *Device) MakeCredential(
 	ctx context.Context,
@@ -212,9 +264,8 @@ func (d *Device) MakeCredential(
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	notRequired, ok := d.info.Options[protocol.OptionMakeCredentialUvNotRequired]
-	if (!ok || !notRequired) && pinUvAuthToken == nil {
-		return protocol.AuthenticatorMakeCredentialResponse{}, ErrPinUvAuthTokenRequired
+	if err := validateMakeCredentialAuthorization(d.info, pinUvAuthToken, options); err != nil {
+		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
 
 	var (

@@ -349,6 +349,295 @@ func TestUpdateUserInformationUsesPreviewCommandForPreviewOnlyDevice(t *testing.
 	assert.Equal(t, protocol.PrototypeAuthenticatorCredentialManagement, command)
 }
 
+func TestValidateMakeCredentialAuthorization(t *testing.T) {
+	tests := []struct {
+		name    string
+		info    protocol.AuthenticatorGetInfoResponse
+		token   []byte
+		options map[protocol.Option]bool
+		wantErr error
+	}{
+		{
+			name: "FIDO 2.0 unprotected authenticator",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0},
+			},
+		},
+		{
+			name: "FIDO 2.0 configured PIN requires authorization",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN: true,
+				},
+			},
+			wantErr: ErrPinUvAuthTokenRequired,
+		},
+		{
+			name: "FIDO 2.0 configured built-in UV requires authorization",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0},
+				Options: map[protocol.Option]bool{
+					protocol.OptionUserVerification: true,
+				},
+			},
+			wantErr: ErrPinUvAuthTokenRequired,
+		},
+		{
+			name: "FIDO 2.0 token satisfies authorization",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN: true,
+				},
+			},
+			token: []byte("token"),
+		},
+		{
+			name: "FIDO 2.0 built-in UV satisfies authorization",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0},
+				Options: map[protocol.Option]bool{
+					protocol.OptionUserVerification: true,
+				},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionUserVerification: true,
+			},
+		},
+		{
+			name: "FIDO 2.0 ignores makeCredUvNotRqd",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN:                   true,
+					protocol.OptionMakeCredentialUvNotRequired: true,
+				},
+			},
+			wantErr: ErrPinUvAuthTokenRequired,
+		},
+		{
+			name: "FIDO 2.0 ignores alwaysUv",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv: true,
+				},
+			},
+		},
+		{
+			name: "FIDO 2.1 configured PIN requires authorization by default",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN: true,
+				},
+			},
+			wantErr: ErrPinUvAuthTokenRequired,
+		},
+		{
+			name: "FIDO 2.1 token satisfies default requirement",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN: true,
+				},
+			},
+			token: []byte("token"),
+		},
+		{
+			name: "FIDO 2.1 non-discoverable credential may omit authorization",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN:                   true,
+					protocol.OptionMakeCredentialUvNotRequired: true,
+				},
+			},
+		},
+		{
+			name: "FIDO 2.1 discoverable credential still requires authorization",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN:                   true,
+					protocol.OptionMakeCredentialUvNotRequired: true,
+				},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionResidentKeys: true,
+			},
+			wantErr: ErrPinUvAuthTokenRequired,
+		},
+		{
+			name: "FIDO 2.1 always UV requires authorization without built-in UV",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:  true,
+					protocol.OptionClientPIN: true,
+				},
+			},
+			wantErr: ErrPinUvAuthTokenRequired,
+		},
+		{
+			name: "FIDO 2.1 always UV implicitly uses configured built-in UV",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionAlwaysUv:         true,
+					protocol.OptionUserVerification: true,
+				},
+			},
+		},
+		{
+			name: "FIDO 2.3 uses modern makeCredUvNotRqd semantics",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN:                   true,
+					protocol.OptionMakeCredentialUvNotRequired: true,
+				},
+			},
+		},
+		{
+			name: "FIDO 2.3 discoverable credential still requires authorization",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_3},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN:                   true,
+					protocol.OptionMakeCredentialUvNotRequired: true,
+				},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionResidentKeys: true,
+			},
+			wantErr: ErrPinUvAuthTokenRequired,
+		},
+		{
+			name: "device supporting FIDO 2.0 and 2.1 uses modern semantics",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN:                   true,
+					protocol.OptionMakeCredentialUvNotRequired: true,
+				},
+			},
+		},
+		{
+			name: "FIDO 2.1 preview uses modern semantics",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1_PRE},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN:                   true,
+					protocol.OptionMakeCredentialUvNotRequired: true,
+				},
+			},
+		},
+		{
+			name: "unknown future FIDO version uses modern semantics",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_0, protocol.Version("FIDO_2_4")},
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN:                   true,
+					protocol.OptionMakeCredentialUvNotRequired: true,
+				},
+			},
+		},
+		{
+			name: "missing versions preserves modern semantics",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Options: map[protocol.Option]bool{
+					protocol.OptionClientPIN:                   true,
+					protocol.OptionMakeCredentialUvNotRequired: true,
+				},
+			},
+		},
+		{
+			name: "built-in UV unsupported",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionUserVerification: true,
+			},
+			wantErr: ErrNotSupported,
+		},
+		{
+			name: "built-in UV not configured",
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionUserVerification: false,
+				},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionUserVerification: true,
+			},
+			wantErr: ErrUvNotConfigured,
+		},
+		{
+			name:  "token and built-in UV are mutually exclusive",
+			token: []byte("token"),
+			info: protocol.AuthenticatorGetInfoResponse{
+				Versions: protocol.Versions{protocol.FIDO_2_1},
+				Options: map[protocol.Option]bool{
+					protocol.OptionUserVerification: true,
+				},
+			},
+			options: map[protocol.Option]bool{
+				protocol.OptionUserVerification: true,
+			},
+			wantErr: SyntaxError,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateMakeCredentialAuthorization(test.info, test.token, test.options)
+			if test.wantErr == nil {
+				require.NoError(t, err)
+				return
+			}
+
+			require.ErrorIs(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestMakeCredentialAllowsFIDO20BuiltInUV(t *testing.T) {
+	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
+		Format:      attestation.AttestationStatementFormatIdentifierPacked,
+		AuthDataRaw: minimalAuthData(),
+	})
+	fake := testhid.NewCBORDevice(t, testCID, response)
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		Versions: protocol.Versions{protocol.FIDO_2_0},
+		Options: map[protocol.Option]bool{
+			protocol.OptionUserVerification: true,
+		},
+	})
+
+	_, err := d.MakeCredential(
+		testContext,
+		nil,
+		[]byte("client-data"),
+		credential.PublicKeyCredentialRpEntity{ID: "example.com", Name: "Example"},
+		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
+		[]credential.PublicKeyCredentialParameters{{
+			Type:      credential.PublicKeyCredentialTypePublicKey,
+			Algorithm: -7,
+		}},
+		nil,
+		nil,
+		map[protocol.Option]bool{protocol.OptionUserVerification: true},
+		0,
+		nil,
+	)
+	require.NoError(t, err)
+	assert.NotEmpty(t, fake.Writes())
+}
+
 func TestMakeCredentialCredPropsOutputDependsOnCredPropsInput(t *testing.T) {
 	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 		Format:      attestation.AttestationStatementFormatIdentifierPacked,
