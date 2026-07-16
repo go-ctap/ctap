@@ -3,6 +3,7 @@ package ctaphid
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -51,6 +52,8 @@ func TestOpenInitFailureLeavesDeviceOpen(t *testing.T) {
 	var deviceErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &deviceErr)
 	assert.Equal(t, ctaptransport.IORead, deviceErr.Operation)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	assert.False(t, invalidated)
 	assert.False(t, dev.closed)
 }
 
@@ -63,6 +66,8 @@ func TestOpenInitWriteFailureReturnsTypedIOError(t *testing.T) {
 	var ioErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &ioErr)
 	assert.Equal(t, ctaptransport.IOWrite, ioErr.Operation)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	assert.False(t, invalidated)
 	assert.False(t, dev.closed)
 }
 
@@ -119,6 +124,9 @@ func TestTransportCommandsCloseDeviceAfterWriteFailure(t *testing.T) {
 			var ioErr *ctaptransport.IOError
 			require.ErrorAs(t, err, &ioErr)
 			assert.Equal(t, ctaptransport.IOWrite, ioErr.Operation)
+			invalidatedErr, ok := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+			require.True(t, ok)
+			assert.Same(t, ioErr, invalidatedErr.Err)
 			assert.True(t, dev.closed)
 		})
 	}
@@ -174,6 +182,8 @@ func TestTransportCBORKeepsDeviceOpenAfterResponseError(t *testing.T) {
 			} else {
 				require.Error(t, err)
 			}
+			_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+			assert.False(t, invalidated)
 			assert.False(t, dev.isClosed())
 			require.NoError(t, transport.Close())
 		})
@@ -316,10 +326,38 @@ func TestTransportCBORWritesSelectionBeforeCancel(t *testing.T) {
 
 	err := receive(t, resultc, "Selection cancellation did not complete")
 	require.ErrorIs(t, err, context.Canceled)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	assert.False(t, invalidated)
 
 	response, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
 	require.NoError(t, err)
 	assert.Equal(t, ctaptransport.CTAP2_OK, response.StatusCode)
+}
+
+func TestTransportCBORReportsInvalidationWhenCanceledResponseCannotBeDrained(t *testing.T) {
+	dev := newCancelDrainErrorDevice()
+	transport := NewTransport(dev, transportTestCID)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	resultc := make(chan error, 1)
+	go func() {
+		_, err := transport.CBOR(ctx, []byte{byte(protocol.AuthenticatorSelection)})
+		resultc <- err
+	}()
+
+	request := receive(t, dev.writes, "Selection request was not written")
+	assert.Equal(t, byte(CTAPHID_CBOR)|INIT_PACKET_BIT, request[5])
+	cancel()
+
+	cancelRequest := receive(t, dev.writes, "CANCEL was not written")
+	assert.Equal(t, byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5])
+
+	err := receive(t, resultc, "Selection cancellation did not complete")
+	require.ErrorIs(t, err, context.Canceled)
+	invalidatedErr, ok := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	require.True(t, ok)
+	require.ErrorIs(t, invalidatedErr.Err, context.Canceled)
+	assert.True(t, dev.isClosed())
 }
 
 func TestTransportCBORPreservesReadError(t *testing.T) {
@@ -330,6 +368,8 @@ func TestTransportCBORPreservesReadError(t *testing.T) {
 
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	require.NotErrorIs(t, err, context.Canceled)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	require.True(t, invalidated)
 	assert.Equal(t, 1, dev.writes, "an unrelated read error must not trigger CTAPHID_CANCEL")
 	assert.True(t, dev.closed)
 }
@@ -343,7 +383,10 @@ func TestTransportCBORDoesNotCancelForContextErrorFromActiveContext(t *testing.T
 			_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorSelection)})
 
 			require.ErrorIs(t, err, readErr)
+			_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+			require.True(t, invalidated)
 			assert.Equal(t, 1, dev.writes, "an error unrelated to the active context must not trigger CTAPHID_CANCEL")
+			assert.True(t, dev.closed)
 		})
 	}
 }
@@ -364,6 +407,8 @@ func TestTransportCloseInterruptsBlockedCBOR(t *testing.T) {
 	var deviceErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &deviceErr)
 	assert.Equal(t, ctaptransport.IORead, deviceErr.Operation)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	require.True(t, invalidated)
 }
 
 func TestTransportCloseReturnsTypedIOError(t *testing.T) {
@@ -376,6 +421,8 @@ func TestTransportCloseReturnsTypedIOError(t *testing.T) {
 	var ioErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &ioErr)
 	assert.Equal(t, ctaptransport.IOClose, ioErr.Operation)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	assert.False(t, invalidated)
 	assert.True(t, dev.closed)
 }
 
@@ -462,6 +509,57 @@ type blockingDevice struct {
 	writes chan []byte
 	closed chan struct{}
 	once   sync.Once
+}
+
+type cancelDrainErrorDevice struct {
+	writes        chan []byte
+	cancelWritten chan struct{}
+	closed        chan struct{}
+	closeOnce     sync.Once
+}
+
+func newCancelDrainErrorDevice() *cancelDrainErrorDevice {
+	return &cancelDrainErrorDevice{
+		writes:        make(chan []byte, 2),
+		cancelWritten: make(chan struct{}),
+		closed:        make(chan struct{}),
+	}
+}
+
+func (d *cancelDrainErrorDevice) Read(ctx context.Context, _ []byte) (int, error) {
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-d.cancelWritten:
+		return 0, io.ErrUnexpectedEOF
+	case <-d.closed:
+		return 0, io.ErrClosedPipe
+	}
+}
+
+func (d *cancelDrainErrorDevice) Write(ctx context.Context, p []byte) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	d.writes <- bytes.Clone(p)
+	if p[5] == byte(CTAPHID_CANCEL)|INIT_PACKET_BIT {
+		close(d.cancelWritten)
+	}
+	return len(p), nil
+}
+
+func (d *cancelDrainErrorDevice) Close() error {
+	d.closeOnce.Do(func() { close(d.closed) })
+	return nil
+}
+
+func (d *cancelDrainErrorDevice) isClosed() bool {
+	select {
+	case <-d.closed:
+		return true
+	default:
+		return false
+	}
 }
 
 type readErrorDevice struct {

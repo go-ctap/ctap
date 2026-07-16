@@ -110,8 +110,7 @@ func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORRe
 
 	response, err := t.exchange(ctx, commandAPDU(data))
 	if err != nil {
-		t.closeOnIOError(ctx, err)
-		return ctaptransport.CBORResponse{}, err
+		return ctaptransport.CBORResponse{}, t.closeOnIOError(ctx, err)
 	}
 	if len(response) < 1 {
 		return ctaptransport.CBORResponse{}, ErrInvalidResponse
@@ -123,17 +122,18 @@ func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORRe
 	})
 }
 
-func (t *Transport) closeOnIOError(ctx context.Context, err error) {
+func (t *Transport) closeOnIOError(ctx context.Context, err error) error {
 	ioErr, ok := errors.AsType[*ctaptransport.IOError](err)
 	if !ok || ioErr.Operation != ctaptransport.IOTransmit {
-		return
+		return err
 	}
 
 	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
-		return
+		return err
 	}
 
 	_ = t.Close()
+	return &ctaptransport.DeviceInvalidatedError{Err: err}
 }
 
 func commandAPDU(data []byte) []byte {

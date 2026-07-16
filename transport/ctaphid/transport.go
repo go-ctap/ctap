@@ -73,10 +73,13 @@ func isDeviceIOError(err error) bool {
 	return false
 }
 
-func (t *Transport) closeOnIOError(err error) {
+func (t *Transport) closeOnIOError(err error) error {
 	if isDeviceIOError(err) {
 		_ = t.device.Close()
+		return &ctaptransport.DeviceInvalidatedError{Err: err}
 	}
+
+	return err
 }
 
 // Open allocates a CTAPHID channel on device. The caller retains ownership of
@@ -131,16 +134,20 @@ func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORRe
 		response, err := readCBORResponse(ctx, t.device, t.cid, command)
 		if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
 			cancelCtx := context.WithoutCancel(ctx)
-			if cancelErr := t.cancel(cancelCtx); cancelErr == nil {
+			cancelErr := t.closeOnIOError(t.cancel(cancelCtx))
+			if cancelErr == nil {
 				// The canceled request still completes with a terminal response.
 				_, drainErr := readCBORResponse(cancelCtx, t.device, t.cid, command)
-				t.closeOnIOError(drainErr)
+				if _, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](t.closeOnIOError(drainErr)); invalidated {
+					return response, &ctaptransport.DeviceInvalidatedError{Err: err}
+				}
+			} else if _, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](cancelErr); invalidated {
+				return response, &ctaptransport.DeviceInvalidatedError{Err: err}
 			}
 		}
 		return response, err
 	})
-	t.closeOnIOError(err)
-	return response, err
+	return response, t.closeOnIOError(err)
 }
 
 func (t *Transport) writeCBOR(ctx context.Context, data []byte) (protocol.Command, error) {
@@ -163,8 +170,7 @@ func (t *Transport) Ping(ctx context.Context, data []byte) ([]byte, error) {
 		return Ping(ctx, t.device, t.cid, data)
 	})
 	if err != nil {
-		t.closeOnIOError(err)
-		return nil, err
+		return nil, t.closeOnIOError(err)
 	}
 	return response.Bytes, nil
 }
@@ -178,8 +184,7 @@ func (t *Transport) Wink(ctx context.Context) error {
 	err := retryChannelBusyError(ctx, func() error {
 		return Wink(ctx, t.device, t.cid)
 	})
-	t.closeOnIOError(err)
-	return err
+	return t.closeOnIOError(err)
 }
 
 func (t *Transport) Lock(ctx context.Context, seconds uint8) error {
@@ -191,8 +196,7 @@ func (t *Transport) Lock(ctx context.Context, seconds uint8) error {
 	err := retryChannelBusyError(ctx, func() error {
 		return Lock(ctx, t.device, t.cid, seconds)
 	})
-	t.closeOnIOError(err)
-	return err
+	return t.closeOnIOError(err)
 }
 
 func (t *Transport) Cancel(ctx context.Context) error {
@@ -202,16 +206,13 @@ func (t *Transport) Cancel(ctx context.Context) error {
 		return err
 	}
 	err := Cancel(ctx, t.device, t.cid)
-	t.closeOnIOError(err)
-	return err
+	return t.closeOnIOError(err)
 }
 
 func (t *Transport) cancel(ctx context.Context) error {
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
-	err := Cancel(ctx, t.device, t.cid)
-	t.closeOnIOError(err)
-	return err
+	return Cancel(ctx, t.device, t.cid)
 }
 
 func (t *Transport) Vendor(ctx context.Context, command Command, data []byte) (VendorResponse, error) {
@@ -223,8 +224,7 @@ func (t *Transport) Vendor(ctx context.Context, command Command, data []byte) (V
 	response, err := retryChannelBusy(ctx, func() (VendorResponse, error) {
 		return Vendor(ctx, t.device, t.cid, command, data)
 	})
-	t.closeOnIOError(err)
-	return response, err
+	return response, t.closeOnIOError(err)
 }
 
 func (t *Transport) Close() error {

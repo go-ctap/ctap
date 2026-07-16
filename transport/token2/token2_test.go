@@ -150,6 +150,8 @@ func TestCloseReturnsTypedIOError(t *testing.T) {
 	var ioErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &ioErr)
 	assert.Equal(t, ctaptransport.IOClose, ioErr.Operation)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	assert.False(t, invalidated)
 	assert.True(t, card.closed)
 }
 
@@ -165,6 +167,8 @@ func TestNewPropagatesTransmitError(t *testing.T) {
 	var ioErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &ioErr)
 	assert.Equal(t, ctaptransport.IOTransmit, ioErr.Operation)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	assert.False(t, invalidated)
 	assert.False(t, card.closed, "the caller retains ownership when initialization fails")
 }
 
@@ -181,6 +185,9 @@ func TestCBORClosesCardAfterTransmitFailure(t *testing.T) {
 	var ioErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &ioErr)
 	assert.Equal(t, ctaptransport.IOTransmit, ioErr.Operation)
+	invalidatedErr, ok := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	require.True(t, ok)
+	assert.Same(t, ioErr, invalidatedErr.Err)
 	assert.True(t, card.closed)
 	require.NoError(t, transport.Close())
 	assert.Equal(t, 1, card.closeCalls)
@@ -195,6 +202,8 @@ func TestCBORClosesCardAfterContextErrorFromActiveContext(t *testing.T) {
 	_, err := transport.CBOR(context.Background(), []byte{0x04})
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	require.True(t, invalidated)
 	assert.True(t, card.closed, "an unrelated context error still means transmit failed")
 }
 
@@ -209,6 +218,8 @@ func TestCBORChecksContextBeforeChainedTransmit(t *testing.T) {
 	_, err := transport.CBOR(ctx, []byte{0x04})
 	require.ErrorIs(t, err, context.Canceled)
 	require.Empty(t, card.exchanges)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	assert.False(t, invalidated)
 	assert.False(t, card.closed)
 }
 
@@ -252,6 +263,8 @@ func TestCloseInterruptsBlockedTransmit(t *testing.T) {
 	var ioErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &ioErr)
 	assert.Equal(t, ctaptransport.IOTransmit, ioErr.Operation)
+	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
+	require.True(t, invalidated)
 }
 
 type blockingCard struct {

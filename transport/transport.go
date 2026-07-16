@@ -63,6 +63,20 @@ func (e *IOError) Unwrap() error {
 	return e.Err
 }
 
+// DeviceInvalidatedError wraps an operation error when the transport closed
+// the device it owned and the device can no longer be used.
+type DeviceInvalidatedError struct {
+	Err error
+}
+
+func (e *DeviceInvalidatedError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *DeviceInvalidatedError) Unwrap() error {
+	return e.Err
+}
+
 // CBOR exchanges one CTAP command byte followed by its CBOR payload.
 // Implementations return a CTAPError when the authenticator status is not OK.
 type CBOR interface {

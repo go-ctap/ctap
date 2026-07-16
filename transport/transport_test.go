@@ -47,3 +47,19 @@ func TestIOErrorPreservesTypedCause(t *testing.T) {
 
 	require.ErrorIs(t, err, io.ErrClosedPipe)
 }
+
+func TestDeviceInvalidatedErrorPreservesCause(t *testing.T) {
+	cause := &IOError{Operation: IORead, Err: io.ErrUnexpectedEOF}
+	err := &DeviceInvalidatedError{Err: cause}
+
+	assert.EqualError(t, err, "transport read: unexpected EOF")
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+
+	ioErr, ok := errors.AsType[*IOError](err)
+	require.True(t, ok)
+	assert.Same(t, cause, ioErr)
+
+	invalidatedErr, ok := errors.AsType[*DeviceInvalidatedError](err)
+	require.True(t, ok)
+	assert.Same(t, err, invalidatedErr)
+}
