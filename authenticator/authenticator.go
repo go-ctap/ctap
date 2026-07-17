@@ -201,6 +201,8 @@ func (d *Device) Lock(ctx context.Context, seconds uint) error {
 }
 
 // MakeCredential initiates the process of creating a new credential on a device with specified parameters and options.
+// After creating a discoverable credential, it refreshes the cached authenticator information. A refresh failure is
+// returned with the successfully decoded response because the credential may already have been created.
 func (d *Device) MakeCredential(
 	ctx context.Context,
 	pinUvAuthToken []byte,
@@ -438,6 +440,17 @@ func (d *Device) MakeCredential(
 		}
 	}
 
+	// thirdPartyPayment
+	if extInputs.PaymentInputs != nil && extInputs.Payment.IsPayment {
+		if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierThirdPartyPayment) {
+			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support thirdPartyPayment extension")
+		}
+
+		extensions.CreateThirdPartyPaymentInput = &protocol.CreateThirdPartyPaymentInput{
+			ThirdPartyPayment: true,
+		}
+	}
+
 	clientDataHash := sha256.Sum256(clientData)
 	resp, err := d.ctapClient.MakeCredential(
 		ctx,
@@ -489,6 +502,11 @@ func (d *Device) MakeCredential(
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
 	if authenticatorExtensions == nil {
+		if options[protocol.OptionResidentKeys] {
+			if err := d.refreshInfoLocked(ctx); err != nil {
+				return resp, err
+			}
+		}
 		return resp, nil
 	}
 
@@ -559,6 +577,11 @@ func (d *Device) MakeCredential(
 		}
 	}
 
+	if options[protocol.OptionResidentKeys] {
+		if err := d.refreshInfoLocked(ctx); err != nil {
+			return resp, err
+		}
+	}
 	return resp, nil
 }
 
@@ -759,6 +782,18 @@ func (d *Device) GetAssertion(
 
 			extensions.GetCredBlobInput = &protocol.GetCredBlobInput{
 				CredBlob: extInputs.GetCredBlob,
+			}
+		}
+
+		// thirdPartyPayment
+		if extInputs.PaymentInputs != nil && extInputs.Payment.IsPayment {
+			if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierThirdPartyPayment) {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support thirdPartyPayment extension"))
+				return
+			}
+
+			extensions.GetThirdPartyPaymentInput = &protocol.GetThirdPartyPaymentInput{
+				ThirdPartyPayment: true,
 			}
 		}
 
@@ -1001,7 +1036,7 @@ func (d *Device) SetPIN(ctx context.Context, pin string) error {
 	}
 
 	if err := d.ctapClient.SetPIN(ctx, pinUvAuthProtocol, keyAgreement, pin); err != nil {
-		return err
+		return d.pinPolicyError(err)
 	}
 
 	return d.refreshInfoLocked(ctx)
@@ -1042,7 +1077,7 @@ func (d *Device) ChangePIN(ctx context.Context, currentPin, newPin string) error
 		currentPin,
 		newPin,
 	); err != nil {
-		return err
+		return d.pinPolicyError(err)
 	}
 
 	return d.refreshInfoLocked(ctx)
@@ -1059,6 +1094,14 @@ func (d *Device) GetPinUvAuthTokenUsingPIN(
 ) ([]byte, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	if d.info.ForcePINChange != nil && *d.info.ForcePINChange {
+		message := "change PIN before obtaining a pinUvAuthToken"
+		if len(d.info.PinComplexityPolicyURL) != 0 {
+			message += "; PIN policy details: " + d.info.PinComplexityPolicyURLString()
+		}
+		return nil, newErrorMessage(ErrPinChangeRequired, message)
+	}
 
 	pin, err := d.normalizeAndValidateCurrentPIN(pin)
 	if err != nil {
@@ -1457,7 +1500,8 @@ func (d *Device) EnumerateCredentials(ctx context.Context, pinUvAuthToken []byte
 }
 
 // DeleteCredential removes a specified credential from the device using the given authentication token.
-// It returns an error if credential management is not supported or the operation fails.
+// It returns an error if credential management is not supported or the operation fails. After the credential is
+// deleted, it refreshes cached authenticator information; a refresh error does not roll back the deletion.
 func (d *Device) DeleteCredential(
 	ctx context.Context,
 	pinUvAuthToken []byte,
@@ -1476,18 +1520,23 @@ func (d *Device) DeleteCredential(
 		return err
 	}
 
-	return d.ctapClient.DeleteCredential(
+	if err := d.ctapClient.DeleteCredential(
 		ctx,
 		preview,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 		credentialID,
-	)
+	); err != nil {
+		return err
+	}
+
+	return d.refreshInfoLocked(ctx)
 }
 
 // UpdateUserInformation updates information of an existing user credential on the device.
 // Requires the device to support credential management features.
-// Returns an error if the operation is not supported or fails.
+// Returns an error if the operation is not supported or fails. After the credential is updated, it refreshes cached
+// authenticator information; a refresh error does not roll back the update.
 func (d *Device) UpdateUserInformation(
 	ctx context.Context,
 	pinUvAuthToken []byte,
@@ -1507,14 +1556,18 @@ func (d *Device) UpdateUserInformation(
 		return err
 	}
 
-	return d.ctapClient.UpdateUserInformation(
+	if err := d.ctapClient.UpdateUserInformation(
 		ctx,
 		preview,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 		credentialID,
 		user,
-	)
+	); err != nil {
+		return err
+	}
+
+	return d.refreshInfoLocked(ctx)
 }
 
 // Selection is a higher-level version of ctap.Selection. CTAPHID commands are
@@ -1765,6 +1818,9 @@ func (d *Device) SetMinPINLength(
 	if !d.info.Options[protocol.OptionSetMinPINLength] {
 		return newErrorMessage(ErrNotSupported, "device doesn't support setMinPINLength")
 	}
+	if err := validateSetMinPINLength(d.info, params); err != nil {
+		return err
+	}
 
 	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(
 		pinUvAuthToken,
@@ -1780,8 +1836,47 @@ func (d *Device) SetMinPINLength(
 		pinUvAuthToken,
 		params,
 	); err != nil {
-		return err
+		return d.pinPolicyError(err)
 	}
 
 	return d.refreshInfoLocked(ctx)
+}
+
+// EnableLongTouchForReset enables the requirement for a long touch before the
+// authenticator accepts a reset command.
+func (d *Device) EnableLongTouchForReset(ctx context.Context, pinUvAuthToken []byte) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	const subCommand = protocol.ConfigSubCommandEnableLongTouchForReset
+	if err := validateAuthenticatorConfigCommand(d.info, subCommand); err != nil {
+		return err
+	}
+	if d.info.LongTouchForReset == nil {
+		return newErrorMessage(ErrNotSupported, "device doesn't support longTouchForReset")
+	}
+
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(
+		pinUvAuthToken,
+		configAuthorizationRequired(d.info, subCommand),
+	)
+	if err != nil {
+		return err
+	}
+
+	if err := d.ctapClient.EnableLongTouchForReset(
+		ctx,
+		pinUvAuthProtocol,
+		pinUvAuthToken,
+	); err != nil {
+		return err
+	}
+	if err := d.refreshInfoLocked(ctx); err != nil {
+		return err
+	}
+	if d.info.LongTouchForReset == nil || !*d.info.LongTouchForReset {
+		return newErrorMessage(ErrSpecViolation, "device did not enable longTouchForReset")
+	}
+
+	return nil
 }

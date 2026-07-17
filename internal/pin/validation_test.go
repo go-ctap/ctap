@@ -1,13 +1,15 @@
-package client
+package pin
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/go-ctap/ctap/protocol"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidatePinUvAuthToken(t *testing.T) {
+func TestValidateUvAuthToken(t *testing.T) {
 	tests := []struct {
 		name     string
 		protocol protocol.PinUvAuthProtocol
@@ -26,7 +28,7 @@ func TestValidatePinUvAuthToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidatePinUvAuthToken(tt.protocol, make([]byte, tt.length))
+			err := ValidateUvAuthToken(tt.protocol, make([]byte, tt.length))
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -35,4 +37,30 @@ func TestValidatePinUvAuthToken(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestNormalizeAndValidate(t *testing.T) {
+	t.Run("rejects PIN below explicit minimum", func(t *testing.T) {
+		_, err := NormalizeAndValidate("12345", 6)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "at least 6")
+	})
+
+	t.Run("rejects PIN over UTF-8 limit", func(t *testing.T) {
+		_, err := NormalizeAndValidate(strings.Repeat("a", 64), protocol.DefaultMinPINCodePoints)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "63 UTF-8 bytes")
+	})
+
+	t.Run("normalizes PIN to NFC", func(t *testing.T) {
+		value, err := NormalizeAndValidate("Cafe\u0301123", protocol.DefaultMinPINCodePoints)
+		require.NoError(t, err)
+		assert.Equal(t, "Caf\u00e9123", value)
+	})
+
+	t.Run("rejects PIN ending in NUL byte", func(t *testing.T) {
+		_, err := NormalizeAndValidate("1234\x00", protocol.DefaultMinPINCodePoints)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "0x00")
+	})
 }

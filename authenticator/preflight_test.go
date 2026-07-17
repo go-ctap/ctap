@@ -556,6 +556,120 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		assert.NotContains(t, request, uint64(3))
 		assert.NotContains(t, request, uint64(4))
 	})
+
+	t.Run("enables long touch and refreshes getInfo", func(t *testing.T) {
+		info := protocol.AuthenticatorGetInfoResponse{
+			Versions: protocol.Versions{protocol.FIDO_2_3},
+			Options: map[protocol.Option]bool{
+				protocol.OptionAuthenticatorConfig: true,
+			},
+			LongTouchForReset: lo.ToPtr(false),
+			AuthenticatorConfigCommands: []protocol.ConfigSubCommand{
+				protocol.ConfigSubCommandEnableLongTouchForReset,
+			},
+		}
+		updatedInfo := info
+		updatedInfo.LongTouchForReset = lo.ToPtr(true)
+		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, updatedInfo))
+		d := newTestDevice(fake, info)
+
+		require.NoError(t, d.EnableLongTouchForReset(testContext, nil))
+		assert.True(t, *d.GetInfo().LongTouchForReset)
+
+		command, request := fake.FirstCTAPRequestMap(t)
+		assert.Equal(t, protocol.AuthenticatorConfig, command)
+		assert.Len(t, request, 1)
+		assert.Contains(t, request, uint64(1))
+	})
+
+	t.Run("long touch requires feature field", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID)
+		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			Versions: protocol.Versions{protocol.FIDO_2_3},
+			Options: map[protocol.Option]bool{
+				protocol.OptionAuthenticatorConfig: true,
+			},
+			AuthenticatorConfigCommands: []protocol.ConfigSubCommand{
+				protocol.ConfigSubCommandEnableLongTouchForReset,
+			},
+		})
+
+		err := d.EnableLongTouchForReset(testContext, nil)
+		require.ErrorIs(t, err, ErrNotSupported)
+		assert.Empty(t, fake.Writes())
+	})
+
+	t.Run("long touch verifies refreshed state", func(t *testing.T) {
+		info := protocol.AuthenticatorGetInfoResponse{
+			Versions: protocol.Versions{protocol.FIDO_2_3},
+			Options: map[protocol.Option]bool{
+				protocol.OptionAuthenticatorConfig: true,
+			},
+			LongTouchForReset: lo.ToPtr(false),
+			AuthenticatorConfigCommands: []protocol.ConfigSubCommand{
+				protocol.ConfigSubCommandEnableLongTouchForReset,
+			},
+		}
+		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, info))
+		d := newTestDevice(fake, info)
+
+		err := d.EnableLongTouchForReset(testContext, nil)
+		require.ErrorIs(t, err, ErrSpecViolation)
+	})
+
+	t.Run("setMinPINLength rejects decreasing minimum", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID)
+		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			Versions:     protocol.Versions{protocol.FIDO_2_1},
+			MinPINLength: lo.ToPtr(uint(8)),
+			Options: map[protocol.Option]bool{
+				protocol.OptionAuthenticatorConfig: true,
+				protocol.OptionSetMinPINLength:     true,
+			},
+		})
+
+		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+			NewMinPINLength: lo.ToPtr(uint(7)),
+		})
+		require.ErrorIs(t, err, SyntaxError)
+		assert.Empty(t, fake.Writes())
+	})
+
+	t.Run("setMinPINLength validates RP ID limit", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID)
+		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			Versions:                   protocol.Versions{protocol.FIDO_2_1},
+			Extensions:                 []extension.ExtensionIdentifier{extension.ExtensionIdentifierMinPinLength},
+			MaxRPIDsForSetMinPINLength: lo.ToPtr(uint(1)),
+			Options: map[protocol.Option]bool{
+				protocol.OptionAuthenticatorConfig: true,
+				protocol.OptionSetMinPINLength:     true,
+			},
+		})
+
+		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+			MinPINLengthRPIDs: []string{"one.example", "two.example"},
+		})
+		require.ErrorIs(t, err, SyntaxError)
+		assert.Empty(t, fake.Writes())
+	})
+
+	t.Run("setMinPINLength requires complexity feature", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID)
+		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			Versions: protocol.Versions{protocol.FIDO_2_1},
+			Options: map[protocol.Option]bool{
+				protocol.OptionAuthenticatorConfig: true,
+				protocol.OptionSetMinPINLength:     true,
+			},
+		})
+
+		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+			PINComplexityPolicy: lo.ToPtr(true),
+		})
+		require.ErrorIs(t, err, ErrNotSupported)
+		assert.Empty(t, fake.Writes())
+	})
 }
 
 func TestGetAssertionRejectsUnadvertisedExtensions(t *testing.T) {

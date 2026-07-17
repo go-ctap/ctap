@@ -26,6 +26,7 @@ type GetAuthenticationExtensionsClientInputs struct {
 	*GetCredentialBlobInputs
 	*GetHMACSecretInputs
 	*LargeBlobInputs
+	*PaymentInputs
 	*PRFInputs
 }
 

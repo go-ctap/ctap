@@ -14,6 +14,7 @@ var (
 	ErrInvalidSaltSize          = errors.New("device: invalid salt size")
 	ErrPinNotSet                = errors.New("device: pin not set")
 	ErrPinAlreadySet            = errors.New("device: pin already set")
+	ErrPinChangeRequired        = errors.New("device: pin change required")
 	ErrUvNotConfigured          = errors.New("device: UV not configured")
 	ErrLargeBlobsIntegrityCheck = errors.New("device: large blobs integrity check failed")
 	ErrLargeBlobsTooBig         = errors.New("device: size of serialized large blobs is too big that token")

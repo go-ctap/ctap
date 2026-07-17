@@ -151,6 +151,9 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 			CreateHMACSecretInputs:          &webauthn.CreateHMACSecretInputs{HMACCreateSecret: false},
 			CreateMinPinLengthInputs:        &webauthn.CreateMinPinLengthInputs{MinPinLength: false},
 			CreatePinComplexityPolicyInputs: &webauthn.CreatePinComplexityPolicyInputs{PinComplexityPolicy: false},
+			PaymentInputs: &webauthn.PaymentInputs{
+				Payment: webauthn.AuthenticationExtensionsPaymentInputs{IsPayment: false},
+			},
 		})
 		require.NoError(t, err)
 
@@ -161,6 +164,7 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 		assert.Nil(t, request.Extensions.CreateHMACSecretInput)
 		assert.Nil(t, request.Extensions.CreateMinPinLengthInput)
 		assert.Nil(t, request.Extensions.CreatePinComplexityPolicyInput)
+		assert.Nil(t, request.Extensions.CreateThirdPartyPaymentInput)
 	})
 
 	t.Run("GetAssertion", func(t *testing.T) {
@@ -180,6 +184,9 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 			nil,
 			&webauthn.GetAuthenticationExtensionsClientInputs{
 				GetCredentialBlobInputs: &webauthn.GetCredentialBlobInputs{GetCredBlob: false},
+				PaymentInputs: &webauthn.PaymentInputs{
+					Payment: webauthn.AuthenticationExtensionsPaymentInputs{IsPayment: false},
+				},
 			},
 			nil,
 		) {
@@ -193,6 +200,95 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
 		require.NotNil(t, request.Extensions)
 		assert.Nil(t, request.Extensions.GetCredBlobInput)
+		assert.Nil(t, request.Extensions.GetThirdPartyPaymentInput)
+	})
+}
+
+func TestThirdPartyPaymentExtension(t *testing.T) {
+	t.Run("MakeCredential", func(t *testing.T) {
+		response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
+			Format:      attestation.AttestationStatementFormatIdentifierPacked,
+			AuthDataRaw: minimalAuthData(),
+		})
+		fake := testhid.NewCBORDevice(t, testCID, response)
+		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierThirdPartyPayment},
+			Options: map[protocol.Option]bool{
+				protocol.OptionMakeCredentialUvNotRequired: true,
+			},
+		})
+
+		_, err := makeCredentialWithExtensions(d, &webauthn.CreateAuthenticationExtensionsClientInputs{
+			PaymentInputs: &webauthn.PaymentInputs{
+				Payment: webauthn.AuthenticationExtensionsPaymentInputs{IsPayment: true},
+			},
+		})
+		require.NoError(t, err)
+
+		command, requestCBOR := fake.FirstCTAPPayload(t)
+		assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
+		var request protocol.AuthenticatorMakeCredentialRequest
+		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
+		require.NotNil(t, request.Extensions.CreateThirdPartyPaymentInput)
+		assert.True(t, request.Extensions.CreateThirdPartyPaymentInput.ThirdPartyPayment)
+	})
+
+	t.Run("GetAssertion preserves false output", func(t *testing.T) {
+		response := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
+			AuthDataRaw: authDataWithExtensionOutputs(t, protocol.GetExtensionOutputs{
+				GetThirdPartyPaymentOutput: &protocol.GetThirdPartyPaymentOutput{ThirdPartyPayment: false},
+			}),
+			Signature: []byte("signature"),
+		})
+		fake := testhid.NewCBORDevice(t, testCID, response)
+		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierThirdPartyPayment},
+		})
+
+		var assertions []protocol.AuthenticatorGetAssertionResponse
+		for assertion, err := range d.GetAssertion(
+			testContext,
+			nil,
+			"example.com",
+			[]byte("client-data"),
+			nil,
+			&webauthn.GetAuthenticationExtensionsClientInputs{
+				PaymentInputs: &webauthn.PaymentInputs{
+					Payment: webauthn.AuthenticationExtensionsPaymentInputs{IsPayment: true},
+				},
+			},
+			nil,
+		) {
+			require.NoError(t, err)
+			assertions = append(assertions, assertion)
+		}
+		require.Len(t, assertions, 1)
+		require.NotNil(t, assertions[0].AuthData.Extensions.GetThirdPartyPaymentOutput)
+		assert.False(t, assertions[0].AuthData.Extensions.GetThirdPartyPaymentOutput.ThirdPartyPayment)
+
+		command, requestCBOR := fake.FirstCTAPPayload(t)
+		assert.Equal(t, protocol.AuthenticatorGetAssertion, command)
+		var request protocol.AuthenticatorGetAssertionRequest
+		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
+		require.NotNil(t, request.Extensions.GetThirdPartyPaymentInput)
+		assert.True(t, request.Extensions.GetThirdPartyPaymentInput.ThirdPartyPayment)
+	})
+
+	t.Run("requires advertised support", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID)
+		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			Options: map[protocol.Option]bool{
+				protocol.OptionMakeCredentialUvNotRequired: true,
+			},
+		})
+
+		_, err := makeCredentialWithExtensions(d, &webauthn.CreateAuthenticationExtensionsClientInputs{
+			PaymentInputs: &webauthn.PaymentInputs{
+				Payment: webauthn.AuthenticationExtensionsPaymentInputs{IsPayment: true},
+			},
+		})
+		require.ErrorIs(t, err, ErrNotSupported)
+		assert.Empty(t, fake.Writes())
 	})
 }
 

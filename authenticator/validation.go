@@ -1,8 +1,15 @@
 package authenticator
 
 import (
-	"github.com/go-ctap/ctap/client"
+	"errors"
+	"fmt"
+	"slices"
+	"unicode/utf8"
+
+	"github.com/go-ctap/ctap/extension"
+	"github.com/go-ctap/ctap/internal/pin"
 	"github.com/go-ctap/ctap/protocol"
+	ctaptransport "github.com/go-ctap/ctap/transport"
 	"github.com/go-ctap/ctap/webauthn"
 )
 
@@ -17,10 +24,77 @@ func validateHMACGetSecretSalts(input webauthn.HMACGetSecretInput) error {
 	return nil
 }
 
-func (d *Device) normalizeAndValidateCurrentPIN(pin string) (string, error) {
-	return client.NormalizeAndValidatePIN(pin, protocol.DefaultMinPINCodePoints)
+func (d *Device) normalizeAndValidateCurrentPIN(value string) (string, error) {
+	return pin.NormalizeAndValidate(value, protocol.DefaultMinPINCodePoints)
 }
 
-func (d *Device) normalizeAndValidateNewPIN(pin string) (string, error) {
-	return client.NormalizeAndValidatePIN(pin, d.info.EffectiveMinPINLength())
+func (d *Device) normalizeAndValidateNewPIN(value string) (string, error) {
+	minPINLength := d.info.EffectiveMinPINLength()
+	maxPINLength := d.info.EffectiveMaxPINLength()
+	if maxPINLength < minPINLength {
+		return "", newErrorMessage(
+			ErrSpecViolation,
+			fmt.Sprintf("maximum PIN length %d is less than minimum PIN length %d", maxPINLength, minPINLength),
+		)
+	}
+
+	value, err := pin.NormalizeAndValidate(value, minPINLength)
+	if err != nil {
+		return "", err
+	}
+	if uint(utf8.RuneCountInString(value)) > maxPINLength {
+		return "", fmt.Errorf("pin must contain at most %d Unicode code points", maxPINLength)
+	}
+
+	return value, nil
+}
+
+func (d *Device) pinPolicyError(err error) error {
+	if err == nil || len(d.info.PinComplexityPolicyURL) == 0 {
+		return err
+	}
+
+	if ctapErr, ok := errors.AsType[*ctaptransport.CTAPError](err); !ok || ctapErr.StatusCode != ctaptransport.CTAP2_ERR_PIN_POLICY_VIOLATION {
+		return err
+	}
+
+	return newErrorMessage(
+		err,
+		"PIN policy details: "+d.info.PinComplexityPolicyURLString(),
+	)
+}
+
+func validateSetMinPINLength(
+	info protocol.AuthenticatorGetInfoResponse,
+	params protocol.SetMinPINLengthConfigSubCommandParams,
+) error {
+	if params.NewMinPINLength != nil {
+		if *params.NewMinPINLength < info.EffectiveMinPINLength() {
+			return newErrorMessage(SyntaxError, "new minimum PIN length cannot decrease the current minimum")
+		}
+		if *params.NewMinPINLength > info.EffectiveMaxPINLength() {
+			return newErrorMessage(SyntaxError, "new minimum PIN length exceeds the maximum PIN length")
+		}
+	}
+
+	if params.MinPINLengthRPIDs != nil {
+		if info.MaxRPIDsForSetMinPINLength != nil &&
+			uint(len(params.MinPINLengthRPIDs)) > *info.MaxRPIDsForSetMinPINLength {
+			return newErrorMessage(SyntaxError, "too many RP IDs for setMinPINLength")
+		}
+		if !slices.Contains(info.Extensions, extension.ExtensionIdentifierMinPinLength) &&
+			!slices.Contains(info.Extensions, extension.ExtensionIdentifierPinComplexityPolicy) {
+			return newErrorMessage(ErrNotSupported, "device doesn't support PIN policy RP IDs")
+		}
+	}
+
+	if params.PINComplexityPolicy != nil && info.PinComplexityPolicy == nil {
+		return newErrorMessage(ErrNotSupported, "device doesn't support pinComplexityPolicy")
+	}
+	if params.ForceChangePIN != nil && *params.ForceChangePIN &&
+		!info.Options[protocol.OptionClientPIN] {
+		return newErrorMessage(ErrPinNotSet, "cannot force a PIN change before a PIN is set")
+	}
+
+	return nil
 }

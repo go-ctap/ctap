@@ -61,8 +61,9 @@ func TestLegacyLargeBlobMakeCredential(t *testing.T) {
 		AuthDataRaw:  minimalAuthData(),
 		LargeBlobKey: key,
 	})
-	fake := testhid.NewCBORDevice(t, testCID, response)
-	d := newTestDevice(fake, legacyLargeBlobInfo())
+	info := legacyLargeBlobInfo()
+	fake := testhid.NewCBORDevice(t, testCID, response, encodeCBOR(t, info))
+	d := newTestDevice(fake, info)
 
 	result, err := makeCredentialWithLargeBlob(t, d, &webauthn.LargeBlobInputs{
 		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{

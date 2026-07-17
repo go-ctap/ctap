@@ -418,14 +418,15 @@ func TestCredentialManagementUnsupportedIteratorsReturnBeforeCommand(t *testing.
 }
 
 func TestUpdateUserInformationUsesPreviewCommandForPreviewOnlyDevice(t *testing.T) {
-	fake := testhid.NewCBORDevice(t, testCID, nil)
-	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+	info := protocol.AuthenticatorGetInfoResponse{
 		Versions:           protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1_PRE},
 		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
 		Options: map[protocol.Option]bool{
 			protocol.OptionCredentialManagementPreview: true,
 		},
-	})
+	}
+	fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, info))
+	d := newTestDevice(fake, info)
 
 	err := d.UpdateUserInformation(
 		testContext,
@@ -972,12 +973,13 @@ func TestMakeCredentialCredPropsOutputDependsOnCredPropsInput(t *testing.T) {
 		Format:      attestation.AttestationStatementFormatIdentifierPacked,
 		AuthDataRaw: minimalAuthData(),
 	})
-	fake := testhid.NewCBORDevice(t, testCID, response)
-	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+	info := protocol.AuthenticatorGetInfoResponse{
 		Options: map[protocol.Option]bool{
 			protocol.OptionMakeCredentialUvNotRequired: true,
 		},
-	})
+	}
+	fake := testhid.NewCBORDevice(t, testCID, response, encodeCBOR(t, info))
+	d := newTestDevice(fake, info)
 
 	resp, err := d.MakeCredential(
 		testContext,
@@ -1063,6 +1065,24 @@ func TestGetPinUvAuthTokenUsingPINValidatesPINBeforeCommand(t *testing.T) {
 	assert.Empty(t, fake.Writes())
 }
 
+func TestGetPinUvAuthTokenUsingPINRequiresPINChangeBeforeCommand(t *testing.T) {
+	fake := testhid.NewCBORDevice(t, testCID)
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		ForcePINChange:         lo.ToPtr(true),
+		PinComplexityPolicyURL: []byte("https://example.com/pin-policy"),
+	})
+
+	_, err := d.GetPinUvAuthTokenUsingPIN(
+		testContext,
+		"1234",
+		protocol.PermissionCredentialManagement,
+		"",
+	)
+	require.ErrorIs(t, err, ErrPinChangeRequired)
+	assert.Contains(t, err.Error(), "https://example.com/pin-policy")
+	assert.Empty(t, fake.Writes())
+}
+
 func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 	t.Run("rejects too short PIN", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
@@ -1090,6 +1110,57 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 		assert.Contains(t, err.Error(), "at least 8")
 		assert.Empty(t, fake.Writes())
 	})
+
+	t.Run("honors maxPINLength", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID)
+		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+			MaxPINLength:       lo.ToPtr(uint(8)),
+			Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
+		})
+
+		err := d.SetPIN(testContext, "123456789")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "at most 8")
+		assert.Empty(t, fake.Writes())
+	})
+}
+
+func TestNormalizeAndValidateNewPINAppliesMaximumAfterNFCNormalization(t *testing.T) {
+	d := &Device{info: protocol.AuthenticatorGetInfoResponse{
+		MaxPINLength: lo.ToPtr(uint(4)),
+	}}
+
+	pin, err := d.normalizeAndValidateNewPIN("e\u0301123")
+	require.NoError(t, err)
+	assert.Equal(t, "\u00e9123", pin)
+
+	_, err = d.normalizeAndValidateNewPIN("12345")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at most 4")
+}
+
+func TestSetPINAddsPINPolicyURLToAuthenticatorError(t *testing.T) {
+	keyAgreement := encodeCBOR(t, &protocol.AuthenticatorClientPINResponse{
+		KeyAgreement: testKeyAgreement(t),
+	})
+	fake := testhid.New(
+		t,
+		testhid.CBOROK(testCID, keyAgreement),
+		testhid.CBORStatus(testCID, ctaptransport.CTAP2_ERR_PIN_POLICY_VIOLATION),
+	)
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		PinUvAuthProtocols:     []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinComplexityPolicyURL: []byte("https://example.com/pin-policy"),
+		Options:                map[protocol.Option]bool{protocol.OptionClientPIN: false},
+	})
+
+	err := d.SetPIN(testContext, "1234")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "https://example.com/pin-policy")
+	var ctapErr *ctaptransport.CTAPError
+	require.ErrorAs(t, err, &ctapErr)
+	assert.Equal(t, ctaptransport.CTAP2_ERR_PIN_POLICY_VIOLATION, ctapErr.StatusCode)
 }
 
 func TestSetPINRefreshesCachedGetInfo(t *testing.T) {
@@ -1125,6 +1196,26 @@ func TestChangePINValidatesNewPINBeforeCommand(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least 8")
 	assert.Empty(t, fake.Writes())
+}
+
+func TestChangePINRemainsAvailableWhenPINChangeIsRequired(t *testing.T) {
+	keyAgreement := encodeCBOR(t, &protocol.AuthenticatorClientPINResponse{
+		KeyAgreement: testKeyAgreement(t),
+	})
+	updatedInfo := protocol.AuthenticatorGetInfoResponse{
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		ForcePINChange:     lo.ToPtr(false),
+		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
+	}
+	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil, encodeCBOR(t, updatedInfo))
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		ForcePINChange:     lo.ToPtr(true),
+		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
+	})
+
+	require.NoError(t, d.ChangePIN(testContext, "1234", "5678"))
+	assert.False(t, *d.GetInfo().ForcePINChange)
 }
 
 func TestGetAssertionValidatesHMACSecretSalts(t *testing.T) {

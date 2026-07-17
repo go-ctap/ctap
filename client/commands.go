@@ -16,6 +16,7 @@ import (
 	"github.com/go-ctap/ctap/cose"
 	"github.com/go-ctap/ctap/credential"
 	"github.com/go-ctap/ctap/crypto"
+	pinvalidation "github.com/go-ctap/ctap/internal/pin"
 	"github.com/go-ctap/ctap/options"
 	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
@@ -67,7 +68,7 @@ func (cl *Client) MakeCredential(
 	enterpriseAttestation uint,
 	attestationFormatsPreference []attestation.AttestationStatementFormatIdentifier,
 ) (protocol.AuthenticatorMakeCredentialResponse, error) {
-	if err := ValidateClientDataHash(clientDataHash); err != nil {
+	if err := validateClientDataHash(clientDataHash); err != nil {
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
 
@@ -84,7 +85,7 @@ func (cl *Client) MakeCredential(
 	}
 
 	if pinUvAuthToken != nil {
-		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
 
@@ -134,7 +135,7 @@ func (cl *Client) GetAssertion(
 	options map[protocol.Option]bool,
 ) iter.Seq2[protocol.AuthenticatorGetAssertionResponse, error] {
 	return func(yield func(protocol.AuthenticatorGetAssertionResponse, error) bool) {
-		if err := ValidateClientDataHash(clientDataHash); err != nil {
+		if err := validateClientDataHash(clientDataHash); err != nil {
 			yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 			return
 		}
@@ -148,7 +149,7 @@ func (cl *Client) GetAssertion(
 		}
 
 		if pinUvAuthToken != nil {
-			if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+			if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 				return
 			}
@@ -336,7 +337,7 @@ func (cl *Client) SetPIN(
 	keyAgreement cose.Key,
 	pin string,
 ) error {
-	pin, err := normalizeAndValidatePIN(pin)
+	pin, err := pinvalidation.NormalizeAndValidate(pin, protocol.DefaultMinPINCodePoints)
 	if err != nil {
 		return err
 	}
@@ -391,11 +392,11 @@ func (cl *Client) ChangePIN(
 	currentPin string,
 	newPin string,
 ) error {
-	currentPin, err := normalizeAndValidatePIN(currentPin)
+	currentPin, err := pinvalidation.NormalizeAndValidate(currentPin, protocol.DefaultMinPINCodePoints)
 	if err != nil {
 		return err
 	}
-	newPin, err = normalizeAndValidatePIN(newPin)
+	newPin, err = pinvalidation.NormalizeAndValidate(newPin, protocol.DefaultMinPINCodePoints)
 	if err != nil {
 		return err
 	}
@@ -462,7 +463,7 @@ func (cl *Client) GetPinToken(
 	keyAgreement cose.Key,
 	pin string,
 ) ([]byte, error) {
-	pin, err := normalizeAndValidatePIN(pin)
+	pin, err := pinvalidation.NormalizeAndValidate(pin, protocol.DefaultMinPINCodePoints)
 	if err != nil {
 		return nil, err
 	}
@@ -527,7 +528,7 @@ func (cl *Client) GetPinUvAuthTokenUsingPinWithPermissions(
 	permissions protocol.Permission,
 	rpID string,
 ) ([]byte, error) {
-	pin, err := normalizeAndValidatePIN(pin)
+	pin, err := pinvalidation.NormalizeAndValidate(pin, protocol.DefaultMinPINCodePoints)
 	if err != nil {
 		return nil, err
 	}
@@ -714,7 +715,7 @@ func (cl *Client) EnrollBegin(
 	pinUvAuthToken []byte,
 	timeoutMilliseconds uint,
 ) (protocol.AuthenticatorBioEnrollmentResponse, error) {
-	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+	if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
@@ -780,7 +781,7 @@ func (cl *Client) EnrollCaptureNextSample(
 	templateID []byte,
 	timeoutMilliseconds uint,
 ) (protocol.AuthenticatorBioEnrollmentResponse, error) {
-	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+	if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
@@ -870,7 +871,7 @@ func (cl *Client) EnumerateEnrollments(
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 ) (protocol.AuthenticatorBioEnrollmentResponse, error) {
-	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+	if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
@@ -920,7 +921,7 @@ func (cl *Client) SetFriendlyName(
 	templateID []byte,
 	friendlyName string,
 ) error {
-	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+	if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 		return err
 	}
 
@@ -977,7 +978,7 @@ func (cl *Client) RemoveEnrollment(
 	pinUvAuthToken []byte,
 	templateID []byte,
 ) error {
-	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+	if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 		return err
 	}
 
@@ -1031,7 +1032,7 @@ func (cl *Client) GetCredsMetadata(
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 ) (protocol.AuthenticatorCredentialManagementResponse, error) {
-	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+	if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 		return protocol.AuthenticatorCredentialManagementResponse{}, err
 	}
 
@@ -1084,7 +1085,7 @@ func (cl *Client) EnumerateRPs(
 	pinUvAuthToken []byte,
 ) iter.Seq2[protocol.AuthenticatorCredentialManagementResponse, error] {
 	return func(yield func(protocol.AuthenticatorCredentialManagementResponse, error) bool) {
-		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 			return
 		}
@@ -1190,7 +1191,7 @@ func (cl *Client) EnumerateCredentials(
 	rpIDHash []byte,
 ) iter.Seq2[protocol.AuthenticatorCredentialManagementResponse, error] {
 	return func(yield func(protocol.AuthenticatorCredentialManagementResponse, error) bool) {
-		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 			return
 		}
@@ -1300,7 +1301,7 @@ func (cl *Client) DeleteCredential(
 	pinUvAuthToken []byte,
 	credentialID credential.PublicKeyCredentialDescriptor,
 ) error {
-	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+	if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 		return err
 	}
 
@@ -1353,7 +1354,7 @@ func (cl *Client) UpdateUserInformation(
 	credentialID credential.PublicKeyCredentialDescriptor,
 	user credential.PublicKeyCredentialUserEntity,
 ) error {
-	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+	if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 		return err
 	}
 
@@ -1433,7 +1434,7 @@ func (cl *Client) LargeBlobs(
 	}
 
 	if pinUvAuthToken != nil {
-		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 			return protocol.AuthenticatorLargeBlobsResponse{}, err
 		}
 
@@ -1495,7 +1496,7 @@ func (cl *Client) EnableEnterpriseAttestation(
 		SubCommand: protocol.ConfigSubCommandEnableEnterpriseAttestation,
 	}
 	if pinUvAuthToken != nil {
-		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 			return err
 		}
 
@@ -1537,7 +1538,7 @@ func (cl *Client) ToggleAlwaysUV(
 		SubCommand: protocol.ConfigSubCommandToggleAlwaysUv,
 	}
 	if pinUvAuthToken != nil {
-		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 			return err
 		}
 
@@ -1589,7 +1590,7 @@ func (cl *Client) SetMinPINLength(
 		SubCommandParams: subCommandParams,
 	}
 	if pinUvAuthToken != nil {
-		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 			return err
 		}
 
@@ -1615,6 +1616,49 @@ func (cl *Client) SetMinPINLength(
 		return err
 	}
 	cl.logger.Debug("SetMinPINLength CBOR request", "hex", hex.EncodeToString(b))
+
+	if _, err := cl.cbor(ctx, slices.Concat([]byte{byte(protocol.AuthenticatorConfig)}, b)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// EnableLongTouchForReset enables the long-touch requirement for authenticatorReset.
+func (cl *Client) EnableLongTouchForReset(
+	ctx context.Context,
+	pinUvAuthProtocol protocol.PinUvAuthProtocol,
+	pinUvAuthToken []byte,
+) error {
+	req := &protocol.AuthenticatorConfigRequest{
+		SubCommand: protocol.ConfigSubCommandEnableLongTouchForReset,
+	}
+	if pinUvAuthToken != nil {
+		if err := pinvalidation.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+			return err
+		}
+
+		padding := make([]byte, 32)
+		for i := range padding {
+			padding[i] = 0xff
+		}
+
+		req.PinUvAuthProtocol = pinUvAuthProtocol
+		req.PinUvAuthParam = crypto.Authenticate(
+			pinUvAuthProtocol,
+			pinUvAuthToken,
+			slices.Concat(
+				padding,
+				[]byte{0x0d, byte(protocol.ConfigSubCommandEnableLongTouchForReset)},
+			),
+		)
+	}
+
+	b, err := cl.encMode.Marshal(req)
+	if err != nil {
+		return err
+	}
+	cl.logger.Debug("enableLongTouchForReset CBOR request", "hex", hex.EncodeToString(b))
 
 	if _, err := cl.cbor(ctx, slices.Concat([]byte{byte(protocol.AuthenticatorConfig)}, b)); err != nil {
 		return err

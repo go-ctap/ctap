@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/go-ctap/ctap/client"
+	"github.com/go-ctap/ctap/internal/pin"
 	"github.com/go-ctap/ctap/protocol"
 )
 
@@ -99,7 +99,7 @@ func (d *Device) pinUvAuthProtocolForRequest(
 			"pinUvAuthToken must be 16 or 32 bytes for PIN/UV auth protocol 1 on CTAP 2.1 or later",
 		)
 	}
-	if err := client.ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+	if err := pin.ValidateUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
 		return 0, newErrorMessage(SyntaxError, err.Error())
 	}
 

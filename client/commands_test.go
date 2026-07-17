@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -93,39 +92,6 @@ func pinUvAuthToken() []byte {
 func testClientDataHash() []byte {
 	clientDataHash := sha256.Sum256([]byte("client-data"))
 	return clientDataHash[:]
-}
-
-func TestNormalizeAndValidatePIN(t *testing.T) {
-	t.Run("rejects too short PIN", func(t *testing.T) {
-		_, err := normalizeAndValidatePIN("123")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "at least 4")
-	})
-
-	t.Run("rejects PIN below explicit minimum", func(t *testing.T) {
-		_, err := NormalizeAndValidatePIN("12345", 6)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "at least 6")
-	})
-
-	t.Run("rejects PIN over 63 UTF-8 bytes", func(t *testing.T) {
-		_, err := normalizeAndValidatePIN(strings.Repeat("a", 64))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "63 UTF-8 bytes")
-	})
-
-	t.Run("normalizes PIN to NFC", func(t *testing.T) {
-		pin, err := normalizeAndValidatePIN("Cafe\u0301123")
-		require.NoError(t, err)
-		assert.Equal(t, "Caf\u00e9123", pin)
-		assert.LessOrEqual(t, len([]byte(pin)), 63)
-	})
-
-	t.Run("rejects PIN ending in NUL byte", func(t *testing.T) {
-		_, err := normalizeAndValidatePIN("1234\x00")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "0x00")
-	})
 }
 
 func TestClientUsesConfiguredTransport(t *testing.T) {
@@ -954,6 +920,46 @@ func TestSetMinPINLengthPreservesExplicitZeroFalseAndEmptyValues(t *testing.T) {
 	assert.Empty(t, params[uint64(2)])
 	assert.Equal(t, false, params[uint64(3)])
 	assert.Equal(t, false, params[uint64(4)])
+}
+
+func TestEnableLongTouchForResetRequestShape(t *testing.T) {
+	t.Run("without authorization", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID, nil)
+
+		err := newTestClient(fake).EnableLongTouchForReset(context.Background(), 0, nil)
+		require.NoError(t, err)
+
+		command, request := fake.FirstCTAPRequestMap(t)
+		assert.Equal(t, protocol.AuthenticatorConfig, command)
+		assertRequestKeys(t, request, 1)
+		assert.Equal(t, uint64(protocol.ConfigSubCommandEnableLongTouchForReset), request[uint64(1)])
+	})
+
+	t.Run("with authorization", func(t *testing.T) {
+		token := pinUvAuthToken()
+		fake := testhid.NewCBORDevice(t, testCID, nil)
+
+		err := newTestClient(fake).EnableLongTouchForReset(
+			context.Background(),
+			protocol.PinUvAuthProtocolOne,
+			token,
+		)
+		require.NoError(t, err)
+
+		command, request := fake.FirstCTAPRequestMap(t)
+		assert.Equal(t, protocol.AuthenticatorConfig, command)
+		assertRequestKeys(t, request, 1, 3, 4)
+		assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(3)])
+		expectedParam := crypto.Authenticate(
+			protocol.PinUvAuthProtocolOne,
+			token,
+			slices.Concat(
+				bytes.Repeat([]byte{0xff}, 32),
+				[]byte{0x0d, byte(protocol.ConfigSubCommandEnableLongTouchForReset)},
+			),
+		)
+		assert.Equal(t, expectedParam, request[uint64(4)])
+	})
 }
 
 func TestProtectedCommandsRejectInvalidTokenBeforeTransport(t *testing.T) {

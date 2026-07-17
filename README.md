@@ -12,10 +12,84 @@ commands and a higher-level, stateful authenticator API.
 This is not a WebAuthn relying-party implementation. The `webauthn` package only provides WebAuthn-shaped extension
 types used by the library.
 
-## Status
+## Protocol support
 
-The main CTAP 2.1 command set is implemented, including PIN/UV Auth Protocols One and Two, credential management,
-biometric enrollment, large-blob storage, and selected CTAP 2.2/2.3 fields.
+`go-ctap` supports CTAP 2.0 through CTAP 2.3 at both the command and stateful workflow levels. CTAP 2.3 support follows
+the [February 2026 Proposed Standard](https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html).
+Optional features are selected from `authenticatorGetInfo`; an authenticator does not need to implement every feature
+in order to work with the library.
+
+CTAP 2.2 did not define a `FIDO_2_2` value for the `versions` member. Its additions are therefore detected through
+advertised fields, options, extensions, and commands rather than a version string.
+
+| Authenticator generation | Support   | Validation                  | Compatibility behavior                                                                 |
+|--------------------------|-----------|-----------------------------|----------------------------------------------------------------------------------------|
+| `FIDO_2_0`               | Supported | Automated and hardware      | Core commands and the legacy `getPinToken` authorization flow                          |
+| `FIDO_2_1_PRE`           | Supported | Automated                   | Preview biometric-enrollment and credential-management command identifiers             |
+| `FIDO_2_1`               | Supported | Automated; hardware subset  | Standard 2.1 commands, permissioned PIN/UV tokens, large blobs, and configuration      |
+| CTAP 2.2                 | Supported | Specification and automated | Capability-driven additions; the specification defines no `FIDO_2_2` identifier        |
+| `FIDO_2_3`               | Supported | Specification and automated | Typed 2.3 `getInfo` data, extensions, PIN policy, persistent state, and reset settings |
+
+### Command and workflow matrix
+
+| Capability                        | `client.Client` | `authenticator.Device` | Notes                                                                                  |
+|-----------------------------------|-----------------|------------------------|----------------------------------------------------------------------------------------|
+| Make credential and get assertion | Yes             | Yes                    | Multiple assertions are exposed as an iterator                                         |
+| Get info and reset                | Yes             | Yes                    | `Device` caches capabilities and refreshes them after state-changing operations        |
+| Client PIN and built-in UV        | Yes             | Yes                    | PIN/UV Auth Protocols One and Two, including permissioned and persistent tokens        |
+| Credential management             | Yes             | Yes                    | Standard and FIDO 2.1 preview command identifiers                                      |
+| Biometric enrollment              | Yes             | Yes                    | Standard and FIDO 2.1 preview command identifiers                                      |
+| Authenticator selection           | Yes             | Yes                    | Rejected before I/O when unavailable on CTAP 2.0                                       |
+| Large-blob array                  | Yes             | Yes                    | Fragmented reads/writes and integrity validation; orphan garbage collection is omitted |
+| Authenticator configuration       | Yes             | Yes                    | Enterprise attestation, `alwaysUv`, minimum PIN length, and long-touch reset           |
+| Persistent credential store state | Raw `getInfo`   | Yes                    | Decrypts `encIdentifier` and `encCredStoreState` using a standalone `pcmr` token       |
+| CTAP 2.3 `getInfo` members        | Yes             | Yes                    | Optional scalar presence and effective defaults are preserved                          |
+
+### Extension matrix
+
+| Extension             | Wire types | High-level workflow | Notes                                                       |
+|-----------------------|------------|---------------------|-------------------------------------------------------------|
+| `credProtect`         | Yes        | Yes                 | Credential protection policy                                |
+| `credBlob`            | Yes        | Yes                 | Create and read credential blobs                            |
+| `largeBlobKey`        | Yes        | Yes                 | Legacy large-blob storage                                   |
+| `largeBlob`           | Yes        | Yes                 | Direct CTAP 2.3 large-blob reads and writes                 |
+| `minPinLength`        | Yes        | Yes                 | Minimum PIN length output                                   |
+| `pinComplexityPolicy` | Yes        | Yes                 | Policy status and policy URL propagation                    |
+| `hmac-secret`         | Yes        | Yes                 | One or two encrypted salt values                            |
+| `hmac-secret-mc`      | Yes        | Yes                 | Creation-time evaluation                                    |
+| `thirdPartyPayment`   | Yes        | Yes                 | Credential tagging and get-assertion confirmation           |
+| WebAuthn `prf`        | Mapped     | Yes                 | Maps to `hmac-secret` and, when available, `hmac-secret-mc` |
+
+### Hardware validation
+
+> [!IMPORTANT]
+> Hardware coverage is narrower than the implemented protocol surface. No physical CTAP 2.3 authenticator has been
+> used for end-to-end testing yet. CTAP 2.2/2.3-only behavior is implemented from the specification and verified with
+> automated wire-format, validation, state-transition, and simulated-transport tests.
+
+The library has been exercised with the following physical authenticators:
+
+| Authenticator                       | Firmware | Live-tested scope                                                                     | Features absent from the device                                       |
+|-------------------------------------|----------|---------------------------------------------------------------------------------------|-----------------------------------------------------------------------|
+| YubiKey 5 Series, FIPS and non-FIPS | 5.7.4    | USB HID, its advertised CTAP 2.1 subset, and legacy large-blob array reads            | Enterprise attestation, direct `largeBlob`, and CTAP 2.3 capabilities |
+| Token2 PIN+ Dual                    | R3.3     | USB HID, proprietary CTAP-over-APDU, its CTAP 2.1 subset, and legacy large-blob reads | Enterprise attestation, direct `largeBlob`, and CTAP 2.3 capabilities |
+
+Both product families advertise the same CTAP 2 capability families relevant here: `FIDO_2_0`, `FIDO_2_1`, and
+`FIDO_2_1_PRE`; PIN/UV Auth Protocols One and Two; credential management; authenticator configuration; the legacy
+large-blob array; and the `credBlob`, `credProtect`, `hmac-secret`, `largeBlobKey`, and `minPinLength` extensions.
+Individual limits, algorithms, transports, and option values differ between the devices.
+
+Features unavailable on this hardware or omitted from the live test runs are not claimed as physically validated. In
+particular, enterprise attestation, the direct `largeBlob` workflow, the CTAP 2.3 `getInfo` members, persistent
+credential store state, `hmac-secret-mc`, `thirdPartyPayment`, PIN complexity and maximum-length policy, and long-touch
+reset support currently have specification-driven and automated coverage only. The legacy `largeBlobKey` plus
+`authenticatorLargeBlobs` read path has been exercised on both product families; write behavior remains automated-test
+coverage.
+
+Support in these tables means that the corresponding types, commands, and high-level flows are implemented. Runtime
+availability still depends on the authenticator's advertised capabilities.
+
+## Transports
 
 Supported transports:
 
@@ -108,6 +182,39 @@ commands follow the same rule, with the CTAP exception that lets an unprotected 
 enabled `alwaysUv` without authorization. Otherwise these methods return `authenticator.ErrPinUvAuthTokenRequired`
 before sending a command.
 
+### Persistent credential store state
+
+Authenticators advertising `perCredMgmtRO` can issue a persistent token with the standalone `pcmr` permission. Use it
+to decrypt `encIdentifier` and `encCredStoreState` from a fresh `authenticatorGetInfo` response:
+
+```go
+token, err := device.GetPinUvAuthTokenUsingPIN(
+	ctx,
+	pin,
+	protocol.PermissionPersistentCredentialManagementReadOnly,
+	"",
+)
+if err != nil {
+	return err
+}
+
+persistentState, err := device.GetPersistentCredentialStoreState(ctx, token)
+```
+
+`PersistentCredentialStoreState` is comparable. Compare its decrypted fields rather than the encrypted `getInfo`
+values, whose IV changes on every response. Treat the persistent token as a long-lived secret and do not store it in
+logs.
+
+### PIN policy and reset configuration
+
+New PINs are checked against the effective `minPINLength` and `maxPINLength` in addition to the CTAP UTF-8 size limit.
+When `forcePINChange` is true, `GetPinUvAuthTokenUsingPIN` returns `authenticator.ErrPinChangeRequired`; `ChangePIN`
+remains available. Authenticator complexity-policy failures retain their `*transport.CTAPError` and include
+`pinComplexityPolicyURL` when the authenticator supplies one.
+
+`EnableLongTouchForReset` enables the CTAP 2.3 long-touch requirement and refreshes cached authenticator information.
+Applications can inspect `LongTouchForReset` and `TransportsForReset` through `Device.GetInfo()` before calling `Reset`.
+
 ## PRF extension
 
 The high-level `authenticator.Device` API maps the WebAuthn Level 3
@@ -154,6 +261,8 @@ proxy. The library connects to the proxy but does not launch or manage it. See
 - Device I/O accepts `context.Context`; CTAPHID cancellation sends `CTAPHID_CANCEL` when possible.
 - `authenticator.Device` owns its transport, serializes commands, and must be closed.
 - `Device.GetInfo()` returns cached authenticator information.
+- Successful discoverable credential creation, deletion, update, PIN changes, reset, and authenticator configuration
+  refresh the cached authenticator information.
 - Fully consume assertion and credential-management iterators before sending another command; authenticators keep
   enumeration state only until the next command.
 - CTAP failures can be matched as `*transport.CTAPError`; Token2 ISO 7816 failures as `*token2.APDUError`.
