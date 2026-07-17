@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"iter"
@@ -14,6 +13,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/attestation"
 	"github.com/go-ctap/ctap/client"
+	"github.com/go-ctap/ctap/cose"
 	"github.com/go-ctap/ctap/credential"
 	"github.com/go-ctap/ctap/crypto"
 	"github.com/go-ctap/ctap/extension"
@@ -23,7 +23,6 @@ import (
 	"github.com/go-ctap/ctap/transport/ctaphid"
 	"github.com/go-ctap/ctap/webauthn"
 	"github.com/go-ctap/ctap/yubico"
-	"github.com/ldclabs/cose/key"
 	"github.com/samber/lo"
 )
 
@@ -34,7 +33,6 @@ type Device struct {
 	info              protocol.AuthenticatorGetInfoResponse
 	pinUvAuthProtocol protocol.PinUvAuthProtocol
 	ctapClient        *client.Client
-	encMode           cbor.EncMode
 	mu                sync.Mutex // global mutex to serialize requests to the device
 }
 
@@ -52,13 +50,13 @@ type locker interface {
 
 func (d *Device) requirePinUvAuthProtocol() (protocol.PinUvAuthProtocol, error) {
 	if d.pinUvAuthProtocol == 0 {
-		return 0, newErrorMessage(ErrNotSupported, "device didn't report pinUvAuthProtocols")
+		return 0, newErrorMessage(ErrNotSupported, "device didn't report a supported pinUvAuthProtocol")
 	}
 
 	return d.pinUvAuthProtocol, nil
 }
 
-func (d *Device) pinUvAuthProtocolWithKeyAgreement(ctx context.Context) (protocol.PinUvAuthProtocol, key.Key, error) {
+func (d *Device) pinUvAuthProtocolWithKeyAgreement(ctx context.Context) (protocol.PinUvAuthProtocol, cose.Key, error) {
 	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
 	if err != nil {
 		return 0, nil, err
@@ -85,8 +83,12 @@ func (d *Device) refreshInfoLocked(ctx context.Context) error {
 func (d *Device) cacheInfo(info protocol.AuthenticatorGetInfoResponse) {
 	d.info = info
 	d.pinUvAuthProtocol = 0
-	if len(info.PinUvAuthProtocols) > 0 {
-		d.pinUvAuthProtocol = info.PinUvAuthProtocols[0]
+	for _, candidate := range info.PinUvAuthProtocols {
+		switch candidate {
+		case protocol.PinUvAuthProtocolOne, protocol.PinUvAuthProtocolTwo:
+			d.pinUvAuthProtocol = candidate
+			return
+		}
 	}
 }
 
@@ -102,7 +104,6 @@ func New(ctx context.Context, transport ctaptransport.Device, opts ...options.Op
 		return nil, errors.New("device: nil transport")
 	}
 
-	oo := options.NewOptions(opts...)
 	clientOpts := append(slices.Clone(opts), options.WithTransport(transport))
 	ctapClient, err := client.NewClient(clientOpts...)
 	if err != nil {
@@ -112,7 +113,6 @@ func New(ctx context.Context, transport ctaptransport.Device, opts ...options.Op
 	d := &Device{
 		transport:  transport,
 		ctapClient: ctapClient,
-		encMode:    oo.EncMode,
 	}
 	info, err := d.ctapClient.GetInfo(ctx)
 	if err != nil {
@@ -217,6 +217,16 @@ func (d *Device) MakeCredential(
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	if extInputs == nil {
+		extInputs = &webauthn.CreateAuthenticationExtensionsClientInputs{}
+	}
+	if extInputs.CreateHMACSecretMCInputs != nil && extInputs.PRFInputs != nil {
+		return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(SyntaxError, "you cannot use hmac-secret-mc and prf extensions at the same time")
+	}
+	createPRFEvaluation, err := validateCreatePRF(d.info, pinUvAuthToken, extInputs, options)
+	if err != nil {
+		return protocol.AuthenticatorMakeCredentialResponse{}, err
+	}
 	if err := validateMakeCredentialAuthorization(d.info, pinUvAuthToken, options); err != nil {
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
@@ -235,20 +245,13 @@ func (d *Device) MakeCredential(
 	}
 
 	extensions := new(protocol.CreateExtensionInputs)
-	if extInputs == nil {
-		extInputs = &webauthn.CreateAuthenticationExtensionsClientInputs{}
-	}
 
 	if extInputs.LargeBlobInputs != nil {
 		return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(SyntaxError, "largeBlob extension is not supported yet")
 	}
 
-	if extInputs.CreateHMACSecretMCInputs != nil && extInputs.PRFInputs != nil {
-		return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(SyntaxError, "you cannot use hmac-secret and prf extensions at the same time")
-	}
-
 	// hmac-secret
-	if extInputs.CreateHMACSecretInputs != nil {
+	if extInputs.CreateHMACSecretInputs != nil && extInputs.HMACCreateSecret {
 		if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierHMACSecret) {
 			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support hmac-secret extension")
 		}
@@ -260,15 +263,15 @@ func (d *Device) MakeCredential(
 
 	// hmac-secret-mc
 	if extInputs.CreateHMACSecretMCInputs != nil {
-		if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierHMACSecretMC) {
-			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support hmac-secret-mc extension")
+		if err := validateHMACSecretMCSupport(d.info); err != nil {
+			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
 		if err := validateHMACGetSecretSalts(extInputs.CreateHMACSecretMCInputs.HMACGetSecret); err != nil {
 			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
 		var (
 			err          error
-			keyAgreement key.Key
+			keyAgreement cose.Key
 		)
 		pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement(ctx)
 		if err != nil {
@@ -285,7 +288,7 @@ func (d *Device) MakeCredential(
 			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
 
-		var platformCoseKey key.Key
+		var platformCoseKey cose.Key
 		platformCoseKey, sharedSecret, err = pinProtocol.Encapsulate(keyAgreement)
 		if err != nil {
 			return protocol.AuthenticatorMakeCredentialResponse{}, err
@@ -316,89 +319,60 @@ func (d *Device) MakeCredential(
 	}
 
 	// prf
-	if extInputs.PRFInputs != nil {
-		if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierHMACSecretMC) {
-			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support prf extension during registration")
-		}
-
-		if extInputs.PRF.EvalByCredential != nil {
-			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrNotSupported, "evalByCredential is not supported during registration")
-		}
-
-		if extInputs.PRF.Eval.IsZero() {
-			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(SyntaxError, "eval is empty")
-		}
-		var (
-			err          error
-			keyAgreement key.Key
-		)
-		pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement(ctx)
-		if err != nil {
-			return protocol.AuthenticatorMakeCredentialResponse{}, err
-		}
-
-		hasher := sha256.New()
-		hasher.Write([]byte("WebAuthn PRF"))
-		hasher.Write([]byte{0x00})
-		hasher.Write(extInputs.PRF.Eval.First)
-		salt := hasher.Sum(nil)
-
-		if extInputs.PRF.Eval.Second != nil {
-			hasher.Reset()
-			hasher.Write([]byte("WebAuthn PRF"))
-			hasher.Write([]byte{0x00})
-			hasher.Write(extInputs.PRF.Eval.Second)
-			salt = slices.Concat(salt, hasher.Sum(nil))
-		}
-
-		pinProtocol, err = crypto.NewPinUvAuthProtocol(pinUvAuthProtocol)
-		if err != nil {
-			return protocol.AuthenticatorMakeCredentialResponse{}, err
-		}
-
-		var platformCoseKey key.Key
-		platformCoseKey, sharedSecret, err = pinProtocol.Encapsulate(keyAgreement)
-		if err != nil {
-			return protocol.AuthenticatorMakeCredentialResponse{}, err
-		}
-
-		saltEnc, err := pinProtocol.Encrypt(sharedSecret, salt)
-		if err != nil {
-			return protocol.AuthenticatorMakeCredentialResponse{}, err
-		}
-
-		saltAuth := crypto.Authenticate(
-			pinUvAuthProtocol,
-			sharedSecret,
-			saltEnc,
-		)
-
+	if extInputs.PRFInputs != nil && slices.Contains(d.info.Extensions, extension.ExtensionIdentifierHMACSecret) {
 		extensions.CreateHMACSecretInput = &protocol.CreateHMACSecretInput{
 			HMACSecret: true,
 		}
-		extensions.CreateHMACSecretMCInput = &protocol.CreateHMACSecretMCInput{
-			HMACSecret: protocol.HMACSecret{
-				KeyAgreement:      platformCoseKey,
-				SaltEnc:           saltEnc,
-				SaltAuth:          saltAuth,
-				PinUvAuthProtocol: pinUvAuthProtocol,
-			},
+		if createPRFEvaluation != nil {
+			var (
+				err          error
+				keyAgreement cose.Key
+			)
+			pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement(ctx)
+			if err != nil {
+				return protocol.AuthenticatorMakeCredentialResponse{}, err
+			}
+
+			salt := prfSalts(*createPRFEvaluation)
+
+			pinProtocol, err = crypto.NewPinUvAuthProtocol(pinUvAuthProtocol)
+			if err != nil {
+				return protocol.AuthenticatorMakeCredentialResponse{}, err
+			}
+
+			var platformCoseKey cose.Key
+			platformCoseKey, sharedSecret, err = pinProtocol.Encapsulate(keyAgreement)
+			if err != nil {
+				return protocol.AuthenticatorMakeCredentialResponse{}, err
+			}
+
+			saltEnc, err := pinProtocol.Encrypt(sharedSecret, salt)
+			if err != nil {
+				return protocol.AuthenticatorMakeCredentialResponse{}, err
+			}
+
+			saltAuth := crypto.Authenticate(
+				pinUvAuthProtocol,
+				sharedSecret,
+				saltEnc,
+			)
+
+			extensions.CreateHMACSecretMCInput = &protocol.CreateHMACSecretMCInput{
+				HMACSecret: protocol.HMACSecret{
+					KeyAgreement:      platformCoseKey,
+					SaltEnc:           saltEnc,
+					SaltAuth:          saltAuth,
+					PinUvAuthProtocol: pinUvAuthProtocol,
+				},
+			}
 		}
 	}
 
 	// credProtection
 	if extInputs.CreateCredentialProtectionInputs != nil {
-		var credProtect int
-
-		switch extInputs.CredentialProtectionPolicy {
-		case extension.CredentialProtectionPolicyUserVerificationOptional:
-			credProtect = 0x01
-		case extension.CredentialProtectionPolicyUserVerificationOptionalWithCredentialIDList:
-			credProtect = 0x02
-		case extension.CredentialProtectionPolicyUserVerificationRequired:
-			credProtect = 0x03
-		default:
-			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrNotSupported, "invalid credential protection policy")
+		credProtect, err := credentialProtectionValue(extInputs.CredentialProtectionPolicy)
+		if err != nil {
+			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
 
 		if extInputs.EnforceCredentialProtectionPolicy &&
@@ -414,31 +388,24 @@ func (d *Device) MakeCredential(
 
 	// credBlob
 	if extInputs.CreateCredentialBlobInputs != nil {
-		if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierCredentialBlob) {
-			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support credBlob extension")
+		maxCredBlobLength, err := validateCredentialBlobSupport(d.info)
+		if err != nil {
+			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
 
-		maxCredBlobLength, ok := d.info.MaxCredBlobLengthValue()
-		if !ok {
-			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(
-				ErrNotSupported,
-				"device reports credBlob extension without maxCredBlobLength",
-			)
-		}
-		if uint(len(extInputs.CredBlob)) > maxCredBlobLength {
-			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(
-				ErrNotSupported,
-				fmt.Sprintf("credBlob length must be less than %d bytes", maxCredBlobLength),
-			)
-		}
-
-		extensions.CreateCredBlobInput = &protocol.CreateCredBlobInput{
-			CredBlob: extInputs.CredBlob,
+		if uint(len(extInputs.CredBlob)) <= maxCredBlobLength {
+			credBlob := extInputs.CredBlob
+			if credBlob == nil {
+				credBlob = []byte{}
+			}
+			extensions.CreateCredBlobInput = &protocol.CreateCredBlobInput{
+				CredBlob: credBlob,
+			}
 		}
 	}
 
 	// minPinLength
-	if extInputs.CreateMinPinLengthInputs != nil {
+	if extInputs.CreateMinPinLengthInputs != nil && extInputs.MinPinLength {
 		if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierMinPinLength) {
 			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support minPinLength extension")
 		}
@@ -447,7 +414,7 @@ func (d *Device) MakeCredential(
 			MinPinLength: extInputs.MinPinLength,
 		}
 	}
-	if extInputs.CreatePinComplexityPolicyInputs != nil {
+	if extInputs.CreatePinComplexityPolicyInputs != nil && extInputs.PinComplexityPolicy {
 		if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierPinComplexityPolicy) {
 			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support pinComplexityPolicy extension")
 		}
@@ -478,6 +445,9 @@ func (d *Device) MakeCredential(
 
 	extOutputs := new(webauthn.CreateAuthenticationExtensionsClientOutputs)
 	resp.ExtensionOutputs = extOutputs
+	if extInputs.PRFInputs != nil {
+		extOutputs.CreatePRFOutputs = &webauthn.CreatePRFOutputs{}
+	}
 
 	if extInputs.CreateCredentialPropertiesInputs != nil && extInputs.CredentialProperties {
 		extOutputs.CreateCredentialPropertiesOutputs = &webauthn.CreateCredentialPropertiesOutputs{
@@ -487,53 +457,83 @@ func (d *Device) MakeCredential(
 		}
 	}
 
-	if !resp.AuthData.Flags.ExtensionDataIncluded() {
+	var authenticatorExtensions *protocol.CreateExtensionOutputs
+	if resp.AuthData.Flags.ExtensionDataIncluded() {
+		authenticatorExtensions = resp.AuthData.Extensions
+	}
+	if err := validateMakeCredentialExtensionOutputs(extensions, extInputs, authenticatorExtensions); err != nil {
+		return protocol.AuthenticatorMakeCredentialResponse{}, err
+	}
+	if authenticatorExtensions == nil {
 		return resp, nil
 	}
 
 	// credBlob
-	if resp.AuthData.Extensions.CreateCredBlobOutput != nil {
+	if authenticatorExtensions.CreateCredBlobOutput != nil {
 		extOutputs.CreateCredentialBlobOutputs = &webauthn.CreateCredentialBlobOutputs{
-			CredBlob: resp.AuthData.Extensions.CreateCredBlobOutput.CredBlob,
+			CredBlob: authenticatorExtensions.CreateCredBlobOutput.CredBlob,
 		}
 	}
 
 	// hmac-secret
-	if resp.AuthData.Extensions.CreateHMACSecretOutput != nil {
-		extOutputs.CreateHMACSecretOutputs = &webauthn.CreateHMACSecretOutputs{
-			HMACCreateSecret: resp.AuthData.Extensions.CreateHMACSecretOutput.HMACSecret,
+	if authenticatorExtensions.CreateHMACSecretOutput != nil {
+		if extInputs.CreateHMACSecretInputs != nil && extInputs.HMACCreateSecret {
+			extOutputs.CreateHMACSecretOutputs = &webauthn.CreateHMACSecretOutputs{
+				HMACCreateSecret: authenticatorExtensions.CreateHMACSecretOutput.HMACSecret,
+			}
+		}
+		if extOutputs.CreatePRFOutputs != nil {
+			extOutputs.CreatePRFOutputs.PRF.Enabled = authenticatorExtensions.CreateHMACSecretOutput.HMACSecret
 		}
 	}
 
 	// hmac-secret-mc (it needs tests, thought I cannot find any devices that support it yet)
-	if resp.AuthData.Extensions.CreateHMACSecretMCOutput != nil {
-		salt, err := pinProtocol.Decrypt(sharedSecret, resp.AuthData.Extensions.CreateHMACSecretMCOutput.HMACSecret)
+	if authenticatorExtensions.CreateHMACSecretMCOutput != nil {
+		if extInputs.PRFInputs != nil && !resp.AuthData.Flags.UserVerified() {
+			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrSpecViolation, "device returned PRF results without user verification")
+		}
+		if extInputs.PRFInputs != nil &&
+			(authenticatorExtensions.CreateHMACSecretOutput == nil ||
+				!authenticatorExtensions.CreateHMACSecretOutput.HMACSecret) {
+			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrSpecViolation, "device returned PRF results for a credential without enabled hmac-secret")
+		}
+		if pinProtocol == nil {
+			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrSpecViolation, "device returned hmac-secret-mc output without an established shared secret")
+		}
+		salt, err := pinProtocol.Decrypt(sharedSecret, authenticatorExtensions.CreateHMACSecretMCOutput.HMACSecret)
 		if err != nil {
 			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
+		if createPRFEvaluation != nil {
+			if err := validatePRFResultLength(*createPRFEvaluation, salt); err != nil {
+				return protocol.AuthenticatorMakeCredentialResponse{}, err
+			}
+		}
 
+		var results webauthn.AuthenticationExtensionsPRFValues
 		switch len(salt) {
 		case 32:
-			extOutputs.CreatePRFOutputs = &webauthn.CreatePRFOutputs{
-				PRF: webauthn.CreateAuthenticationExtensionsPRFOutputs{
-					Enabled: true,
-					Results: webauthn.AuthenticationExtensionsPRFValues{
-						First: salt[:32],
-					},
-				},
+			results = webauthn.AuthenticationExtensionsPRFValues{
+				First: salt[:32],
 			}
 		case 64:
-			extOutputs.CreatePRFOutputs = &webauthn.CreatePRFOutputs{
-				PRF: webauthn.CreateAuthenticationExtensionsPRFOutputs{
-					Enabled: true,
-					Results: webauthn.AuthenticationExtensionsPRFValues{
-						First:  salt[:32],
-						Second: salt[32:],
-					},
-				},
+			results = webauthn.AuthenticationExtensionsPRFValues{
+				First:  salt[:32],
+				Second: salt[32:],
 			}
 		default:
 			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrInvalidSaltSize, "salt must be 32 or 64 bytes")
+		}
+		if extOutputs.CreatePRFOutputs != nil {
+			extOutputs.CreatePRFOutputs.PRF.Results = results
+		} else {
+			// Preserve the existing raw hmac-secret-mc client mapping.
+			extOutputs.CreatePRFOutputs = &webauthn.CreatePRFOutputs{
+				PRF: webauthn.CreateAuthenticationExtensionsPRFOutputs{
+					Enabled: true,
+					Results: results,
+				},
+			}
 		}
 	}
 
@@ -556,6 +556,22 @@ func (d *Device) GetAssertion(
 		d.mu.Lock()
 		defer d.mu.Unlock()
 
+		if extInputs == nil {
+			extInputs = &webauthn.GetAuthenticationExtensionsClientInputs{}
+		}
+		if extInputs.LargeBlobInputs != nil {
+			yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(SyntaxError, "largeBlob extension is not supported yet"))
+			return
+		}
+		if extInputs.PRFInputs != nil && extInputs.GetHMACSecretInputs != nil {
+			yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(SyntaxError, "you cannot use hmac-secret and prf extensions at the same time"))
+			return
+		}
+		getPRFEvaluation, err := validateGetPRF(d.info, pinUvAuthToken, allowList, extInputs, options)
+		if err != nil {
+			yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+			return
+		}
 		if err := validateGetAssertionAuthorization(d.info, pinUvAuthToken, options); err != nil {
 			yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 			return
@@ -576,22 +592,13 @@ func (d *Device) GetAssertion(
 		}
 
 		extensions := new(protocol.GetExtensionInputs)
-		if extInputs == nil {
-			extInputs = &webauthn.GetAuthenticationExtensionsClientInputs{}
-		}
-
-		if extInputs.LargeBlobInputs != nil {
-			yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(SyntaxError, "largeBlob extension is not supported yet"))
-			return
-		}
-
-		if extInputs.PRFInputs != nil && extInputs.GetHMACSecretInputs != nil {
-			yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(SyntaxError, "you cannot use hmac-secret and prf extensions at the same time"))
-			return
-		}
 
 		// hmac-secret
 		if extInputs.GetHMACSecretInputs != nil {
+			if err := validateHMACSecretUserPresence(options); err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+				return
+			}
 			if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierHMACSecret) {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support hmac-secret extension"))
 				return
@@ -603,7 +610,7 @@ func (d *Device) GetAssertion(
 			}
 			var (
 				err          error
-				keyAgreement key.Key
+				keyAgreement cose.Key
 			)
 			pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement(ctx)
 			if err != nil {
@@ -621,7 +628,7 @@ func (d *Device) GetAssertion(
 				return
 			}
 
-			var platformCoseKey key.Key
+			var platformCoseKey cose.Key
 			platformCoseKey, sharedSecret, err = pinProtocol.Encapsulate(keyAgreement)
 			if err != nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
@@ -651,54 +658,10 @@ func (d *Device) GetAssertion(
 		}
 
 		// prf
-		if extInputs.PRFInputs != nil {
-			if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierHMACSecret) {
-				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support prf extension during authentication"))
-				return
-			}
-
-			if extInputs.PRF.EvalByCredential != nil && (allowList == nil || len(allowList) == 0) {
-				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrNotSupported, "evalByCredential works only in conjunction with allowList"))
-				return
-			}
-
-			var ev *webauthn.AuthenticationExtensionsPRFValues
-			var ids [][]byte
-			for idStr := range extInputs.PRF.EvalByCredential {
-				id, err := base64.RawURLEncoding.DecodeString(idStr)
-				if err != nil {
-					yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(SyntaxError, "invalid credential id"))
-					return
-				}
-
-				ids = append(ids, id)
-			}
-
-			for _, id := range ids {
-				desc, found := lo.Find(allowList, func(descriptor credential.PublicKeyCredentialDescriptor) bool {
-					if slices.Equal(descriptor.ID, id) {
-						return true
-					}
-					return false
-				})
-				if found {
-					v, ok := extInputs.PRF.EvalByCredential[base64.RawURLEncoding.EncodeToString(desc.ID)]
-					if ok {
-						ev = &v
-					}
-				}
-			}
-
-			if ev == nil && !extInputs.PRF.Eval.IsZero() {
-				ev = &extInputs.PRF.Eval
-			}
-			if ev == nil {
-				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(SyntaxError, "eval is empty"))
-				return
-			}
+		if getPRFEvaluation != nil {
 			var (
 				err          error
-				keyAgreement key.Key
+				keyAgreement cose.Key
 			)
 			pinUvAuthProtocol, keyAgreement, err = d.pinUvAuthProtocolWithKeyAgreement(ctx)
 			if err != nil {
@@ -706,19 +669,7 @@ func (d *Device) GetAssertion(
 				return
 			}
 
-			hasher := sha256.New()
-			hasher.Write([]byte("WebAuthn PRF"))
-			hasher.Write([]byte{0x00})
-			hasher.Write(ev.First)
-			salt := hasher.Sum(nil)
-
-			if ev.Second != nil {
-				hasher.Reset()
-				hasher.Write([]byte("WebAuthn PRF"))
-				hasher.Write([]byte{0x00})
-				hasher.Write(ev.Second)
-				salt = slices.Concat(salt, hasher.Sum(nil))
-			}
+			salt := prfSalts(*getPRFEvaluation)
 
 			pinProtocol, err = crypto.NewPinUvAuthProtocol(pinUvAuthProtocol)
 			if err != nil {
@@ -726,7 +677,7 @@ func (d *Device) GetAssertion(
 				return
 			}
 
-			var platformCoseKey key.Key
+			var platformCoseKey cose.Key
 			platformCoseKey, sharedSecret, err = pinProtocol.Encapsulate(keyAgreement)
 			if err != nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
@@ -756,9 +707,9 @@ func (d *Device) GetAssertion(
 		}
 
 		// credBlob
-		if extInputs.GetCredentialBlobInputs != nil {
-			if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierCredentialBlob) {
-				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support credBlob extension"))
+		if extInputs.GetCredentialBlobInputs != nil && extInputs.GetCredBlob {
+			if _, err := validateCredentialBlobSupport(d.info); err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 				return
 			}
 
@@ -784,9 +735,21 @@ func (d *Device) GetAssertion(
 			}
 
 			assertion.ExtensionOutputs = new(webauthn.GetAuthenticationExtensionsClientOutputs)
+			if extInputs.PRFInputs != nil {
+				assertion.ExtensionOutputs.GetPRFOutputs = &webauthn.GetPRFOutputs{}
+			}
+
+			var authenticatorExtensions *protocol.GetExtensionOutputs
+			if assertion.AuthData.Flags.ExtensionDataIncluded() {
+				authenticatorExtensions = assertion.AuthData.Extensions
+			}
+			if err := validateGetAssertionExtensionOutputs(extensions, authenticatorExtensions); err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+				return
+			}
 
 			// Yield assertions without extension data
-			if !assertion.AuthData.Flags.ExtensionDataIncluded() {
+			if authenticatorExtensions == nil {
 				if !yield(assertion, nil) {
 					return
 				}
@@ -794,18 +757,32 @@ func (d *Device) GetAssertion(
 			}
 
 			// credBlob
-			if assertion.AuthData.Extensions.GetCredBlobOutput != nil {
+			if authenticatorExtensions.GetCredBlobOutput != nil {
 				assertion.ExtensionOutputs.GetCredentialBlobOutputs = &webauthn.GetCredentialBlobOutputs{
-					GetCredBlob: assertion.AuthData.Extensions.GetCredBlobOutput.CredBlob,
+					GetCredBlob: authenticatorExtensions.GetCredBlobOutput.CredBlob,
 				}
 			}
 
 			// hmac-secret or prf
-			if assertion.AuthData.Extensions.GetHMACSecretOutput != nil {
-				salt, err := pinProtocol.Decrypt(sharedSecret, assertion.AuthData.Extensions.HMACSecret)
+			if authenticatorExtensions.GetHMACSecretOutput != nil {
+				if extInputs.PRFInputs != nil && !assertion.AuthData.Flags.UserVerified() {
+					yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrSpecViolation, "device returned PRF results without user verification"))
+					return
+				}
+				if pinProtocol == nil {
+					yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrSpecViolation, "device returned hmac-secret output without an established shared secret"))
+					return
+				}
+				salt, err := pinProtocol.Decrypt(sharedSecret, authenticatorExtensions.HMACSecret)
 				if err != nil {
 					yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 					return
+				}
+				if getPRFEvaluation != nil {
+					if err := validatePRFResultLength(*getPRFEvaluation, salt); err != nil {
+						yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+						return
+					}
 				}
 
 				switch len(salt) {
@@ -1535,16 +1512,15 @@ func (d *Device) SetLargeBlobs(ctx context.Context, pinUvAuthToken []byte, blobs
 	if !ok || !largeBlobs {
 		return newErrorMessage(ErrNotSupported, "device doesn't support largeBlobs")
 	}
+	set, err := marshalLargeBlobArray(blobs)
+	if err != nil {
+		return err
+	}
 
 	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(
 		pinUvAuthToken,
 		largeBlobsAuthorizationRequired(d.info),
 	)
-	if err != nil {
-		return err
-	}
-
-	set, err := d.encMode.Marshal(blobs)
 	if err != nil {
 		return err
 	}

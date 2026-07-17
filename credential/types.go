@@ -1,6 +1,6 @@
 package credential
 
-import "github.com/ldclabs/cose/key"
+import "github.com/go-ctap/ctap/cose"
 
 type (
 	// PublicKeyCredentialType defines the valid credential types.
@@ -63,5 +63,5 @@ type PublicKeyCredentialDescriptor struct {
 // https://www.w3.org/TR/webauthn-3/#dictdef-publickeycredentialparameters
 type PublicKeyCredentialParameters struct {
 	Type      PublicKeyCredentialType `cbor:"type" json:"type"`
-	Algorithm key.Alg                 `cbor:"alg" json:"alg"`
+	Algorithm cose.Algorithm          `cbor:"alg" json:"alg"`
 }

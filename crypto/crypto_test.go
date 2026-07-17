@@ -9,8 +9,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/go-ctap/ctap/cose"
 	"github.com/go-ctap/ctap/protocol"
-	"github.com/ldclabs/cose/iana"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -111,9 +111,8 @@ func TestPinUvAuthProtocolEncapsulateAndEncryptDecrypt(t *testing.T) {
 			platformPublicKey, sharedSecret, err := platform.Encapsulate(authenticator.platformCoseKey)
 			require.NoError(t, err)
 			require.Len(t, sharedSecret, tc.sharedSecretLen)
-			assert.EqualValues(t, -25, platformPublicKey[iana.KeyParameterAlg])
-			_, hasKID := platformPublicKey[iana.KeyParameterKid]
-			assert.False(t, hasKID)
+			assert.EqualValues(t, cose.AlgorithmECDHESHKDF256, platformPublicKey[cose.KeyParameterAlg])
+			require.Len(t, platformPublicKey, 5)
 
 			authenticatorSharedSecret, err := authenticator.ECDH(platformPublicKey)
 			require.NoError(t, err)

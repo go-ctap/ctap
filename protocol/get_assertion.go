@@ -54,10 +54,12 @@ func ParseGetAssertionAuthData(data []byte) (GetAssertionAuthData, error) {
 	}
 
 	if d.Extensions != nil {
+		var extensions GetExtensionOutputs
 		if err := cbor.NewDecoder(bytes.NewReader(d.Extensions)).
-			Decode(&getAssertionAuthData.Extensions); err != nil {
+			Decode(&extensions); err != nil {
 			return GetAssertionAuthData{}, err
 		}
+		getAssertionAuthData.Extensions = &extensions
 	}
 
 	return getAssertionAuthData, nil

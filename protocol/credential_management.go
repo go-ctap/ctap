@@ -1,8 +1,8 @@
 package protocol
 
 import (
+	"github.com/go-ctap/ctap/cose"
 	"github.com/go-ctap/ctap/credential"
-	"github.com/ldclabs/cose/key"
 )
 
 type AuthenticatorCredentialManagementRequest struct {
@@ -26,7 +26,7 @@ type AuthenticatorCredentialManagementResponse struct {
 	TotalRPs                                     uint                                     `cbor:"5,keyasint"`
 	User                                         credential.PublicKeyCredentialUserEntity `cbor:"6,keyasint"`
 	CredentialID                                 credential.PublicKeyCredentialDescriptor `cbor:"7,keyasint"`
-	PublicKey                                    *key.Key                                 `cbor:"8,keyasint"`
+	PublicKey                                    *cose.Key                                `cbor:"8,keyasint"`
 	TotalCredentials                             uint                                     `cbor:"9,keyasint"`
 	CredProtect                                  uint                                     `cbor:"10,keyasint"`
 	LargeBlobKey                                 []byte                                   `cbor:"11,keyasint"`

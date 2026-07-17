@@ -13,12 +13,12 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/attestation"
+	"github.com/go-ctap/ctap/cose"
 	"github.com/go-ctap/ctap/credential"
 	"github.com/go-ctap/ctap/crypto"
 	"github.com/go-ctap/ctap/options"
 	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
-	"github.com/ldclabs/cose/key"
 )
 
 type Client struct {
@@ -275,7 +275,7 @@ func (cl *Client) GetPINRetries(
 func (cl *Client) GetKeyAgreement(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
-) (key.Key, error) {
+) (cose.Key, error) {
 	req := &protocol.AuthenticatorClientPINRequest{
 		PinUvAuthProtocol: pinUvAuthProtocol,
 		SubCommand:        protocol.ClientPINSubCommandGetKeyAgreement,
@@ -304,7 +304,7 @@ func (cl *Client) GetKeyAgreement(
 func (cl *Client) SetPIN(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
-	keyAgreement key.Key,
+	keyAgreement cose.Key,
 	pin string,
 ) error {
 	pin, err := normalizeAndValidatePIN(pin)
@@ -358,7 +358,7 @@ func (cl *Client) SetPIN(
 func (cl *Client) ChangePIN(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
-	keyAgreement key.Key,
+	keyAgreement cose.Key,
 	currentPin string,
 	newPin string,
 ) error {
@@ -430,7 +430,7 @@ func (cl *Client) ChangePIN(
 func (cl *Client) GetPinToken(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
-	keyAgreement key.Key,
+	keyAgreement cose.Key,
 	pin string,
 ) ([]byte, error) {
 	pin, err := normalizeAndValidatePIN(pin)
@@ -493,7 +493,7 @@ func (cl *Client) GetPinToken(
 func (cl *Client) GetPinUvAuthTokenUsingUvWithPermissions(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
-	keyAgreement key.Key,
+	keyAgreement cose.Key,
 	permissions protocol.Permission,
 	rpID string,
 ) ([]byte, error) {
@@ -573,7 +573,7 @@ func (cl *Client) GetUVRetries(ctx context.Context) (uint, error) {
 func (cl *Client) GetPinUvAuthTokenUsingPinWithPermissions(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
-	keyAgreement key.Key,
+	keyAgreement cose.Key,
 	pin string,
 	permissions protocol.Permission,
 	rpID string,

@@ -57,10 +57,12 @@ func ParseMakeCredentialAuthData(data []byte) (MakeCredentialAuthData, error) {
 	}
 
 	if d.Extensions != nil {
+		var extensions CreateExtensionOutputs
 		if err := cbor.NewDecoder(bytes.NewReader(d.Extensions)).
-			Decode(&makeCredentialAuthData.Extensions); err != nil {
+			Decode(&extensions); err != nil {
 			return MakeCredentialAuthData{}, err
 		}
+		makeCredentialAuthData.Extensions = &extensions
 	}
 
 	return makeCredentialAuthData, nil

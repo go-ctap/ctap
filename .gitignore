@@ -28,5 +28,8 @@ go.work.sum
 # Goland
 .idea/
 
+# macOS metadata
+.DS_Store
+
 # go tool cgo -godefs temporary files
 _obj/

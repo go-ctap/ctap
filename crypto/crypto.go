@@ -9,18 +9,16 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/go-ctap/ctap/cose"
 	"github.com/go-ctap/ctap/crypto/protocolone"
 	"github.com/go-ctap/ctap/crypto/protocoltwo"
 	"github.com/go-ctap/ctap/protocol"
-	"github.com/ldclabs/cose/iana"
-	"github.com/ldclabs/cose/key"
-	ecdhkey "github.com/ldclabs/cose/key/ecdh"
 )
 
 type PinUvAuthProtocol struct {
 	Number             protocol.PinUvAuthProtocol
 	platformPrivateKey *ecdh.PrivateKey
-	platformCoseKey    key.Key
+	platformCoseKey    cose.Key
 }
 
 func NewPinUvAuthProtocol(number protocol.PinUvAuthProtocol) (*PinUvAuthProtocol, error) {
@@ -29,17 +27,10 @@ func NewPinUvAuthProtocol(number protocol.PinUvAuthProtocol) (*PinUvAuthProtocol
 		return nil, fmt.Errorf("cannot generate platform P-256 keypair: %w", err)
 	}
 
-	platformPubkey, err := ecdhkey.KeyFromPublic(platformPrivkey.Public().(*ecdh.PublicKey))
+	platformPubkey, err := cose.KeyFromP256PublicKey(platformPrivkey.PublicKey())
 	if err != nil {
 		return nil, fmt.Errorf("cannot convert platform public key to COSE_Key: %w", err)
 	}
-	if err := platformPubkey.Set(iana.KeyParameterAlg, -25); err != nil {
-		return nil, fmt.Errorf("cannot set alg parameter for COSE_Key: %w", err)
-	}
-
-	// Specification explicitly requires COSE_Key to contain only the necessary parameters.
-	// Some keys accept it anyway, but some are not, e.g., SoloKeys Solo 2.
-	delete(platformPubkey, iana.KeyParameterKid)
 
 	return &PinUvAuthProtocol{
 		Number:             number,
@@ -48,8 +39,8 @@ func NewPinUvAuthProtocol(number protocol.PinUvAuthProtocol) (*PinUvAuthProtocol
 	}, nil
 }
 
-func (p *PinUvAuthProtocol) ECDH(peerCoseKey key.Key) ([]byte, error) {
-	peerPubkey, err := ecdhkey.KeyToPublic(peerCoseKey)
+func (p *PinUvAuthProtocol) ECDH(peerCoseKey cose.Key) ([]byte, error) {
+	peerPubkey, err := peerCoseKey.P256PublicKey()
 	if err != nil {
 		return nil, fmt.Errorf("cannot convert peer public key to Go *ecdh.PublicKey: %w", err)
 	}
@@ -95,7 +86,7 @@ func (p *PinUvAuthProtocol) Decrypt(sharedSecret []byte, demCiphertext []byte) (
 	}
 }
 
-func (p *PinUvAuthProtocol) Encapsulate(peerCoseKey key.Key) (key.Key, []byte, error) {
+func (p *PinUvAuthProtocol) Encapsulate(peerCoseKey cose.Key) (cose.Key, []byte, error) {
 	sharedSecret, err := p.ECDH(peerCoseKey)
 	if err != nil {
 		return nil, nil, err

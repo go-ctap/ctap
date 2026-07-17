@@ -13,6 +13,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/attestation"
 	"github.com/go-ctap/ctap/client"
+	"github.com/go-ctap/ctap/cose"
 	"github.com/go-ctap/ctap/credential"
 	"github.com/go-ctap/ctap/extension"
 	"github.com/go-ctap/ctap/internal/testhid"
@@ -22,9 +23,6 @@ import (
 	"github.com/go-ctap/ctap/transport/ctaphid"
 	"github.com/go-ctap/ctap/webauthn"
 	"github.com/go-ctap/ctap/yubico"
-	"github.com/ldclabs/cose/iana"
-	"github.com/ldclabs/cose/key"
-	ecdhkey "github.com/ldclabs/cose/key/ecdh"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,7 +77,6 @@ func (t *optionTransport) Close() error {
 }
 
 func newTestDevice(fake *testhid.Device, info protocol.AuthenticatorGetInfoResponse) *Device {
-	encMode, _ := cbor.CTAP2EncOptions().EncMode()
 	transport := ctaphid.NewTransport(fake, testCID)
 	ctapClient, err := client.NewClient(options.WithTransport(transport))
 	if err != nil {
@@ -87,13 +84,9 @@ func newTestDevice(fake *testhid.Device, info protocol.AuthenticatorGetInfoRespo
 	}
 	d := &Device{
 		transport:  transport,
-		info:       info,
 		ctapClient: ctapClient,
-		encMode:    encMode,
 	}
-	if len(info.PinUvAuthProtocols) > 0 {
-		d.pinUvAuthProtocol = info.PinUvAuthProtocols[0]
-	}
+	d.cacheInfo(info)
 
 	return d
 }
@@ -119,6 +112,43 @@ func TestNewUsesConfiguredTransport(t *testing.T) {
 
 	require.NoError(t, device.Close())
 	assert.True(t, transport.closed)
+}
+
+func TestCacheInfoSelectsFirstSupportedPinUvAuthProtocol(t *testing.T) {
+	tests := []struct {
+		name       string
+		advertised []protocol.PinUvAuthProtocol
+		want       protocol.PinUvAuthProtocol
+	}{
+		{
+			name:       "skips a newer protocol",
+			advertised: []protocol.PinUvAuthProtocol{3, protocol.PinUvAuthProtocolTwo},
+			want:       protocol.PinUvAuthProtocolTwo,
+		},
+		{
+			name:       "preserves authenticator preference",
+			advertised: []protocol.PinUvAuthProtocol{3, protocol.PinUvAuthProtocolOne, protocol.PinUvAuthProtocolTwo},
+			want:       protocol.PinUvAuthProtocolOne,
+		},
+		{
+			name:       "uses the first supported protocol",
+			advertised: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo, protocol.PinUvAuthProtocolOne},
+			want:       protocol.PinUvAuthProtocolTwo,
+		},
+		{
+			name:       "rejects unsupported protocols",
+			advertised: []protocol.PinUvAuthProtocol{3, 4},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &Device{}
+			d.cacheInfo(protocol.AuthenticatorGetInfoResponse{PinUvAuthProtocols: tt.advertised})
+
+			assert.Equal(t, tt.want, d.pinUvAuthProtocol)
+		})
+	}
 }
 
 func TestNewLeavesConfiguredTransportOpenAfterGetInfoFailure(t *testing.T) {
@@ -151,16 +181,14 @@ func TestUnsupportedTransportRejectsHIDCommands(t *testing.T) {
 	require.ErrorIs(t, d.Lock(testContext, 1), ErrNotSupported)
 }
 
-func testKeyAgreement(t *testing.T) key.Key {
+func testKeyAgreement(t *testing.T) cose.Key {
 	t.Helper()
 
 	privateKey, err := ecdh.P256().GenerateKey(rand.Reader)
 	require.NoError(t, err)
 
-	coseKey, err := ecdhkey.KeyFromPublic(privateKey.Public().(*ecdh.PublicKey))
+	coseKey, err := cose.KeyFromP256PublicKey(privateKey.PublicKey())
 	require.NoError(t, err)
-	require.NoError(t, coseKey.Set(iana.KeyParameterAlg, -25))
-	delete(coseKey, iana.KeyParameterKid)
 
 	return coseKey
 }
@@ -262,7 +290,7 @@ func TestSetLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
 	})
 	blob := protocol.LargeBlob{
 		Ciphertext: bytes.Repeat([]byte{0xaa}, 1000),
-		Nonce:      []byte("nonce"),
+		Nonce:      bytes.Repeat([]byte{0xbb}, 12),
 	}
 
 	err := d.SetLargeBlobs(testContext, make([]byte, 32), []protocol.LargeBlob{blob})
@@ -865,7 +893,7 @@ func TestMakeCredentialAllowsFIDO20BuiltInUV(t *testing.T) {
 		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
 		[]credential.PublicKeyCredentialParameters{{
 			Type:      credential.PublicKeyCredentialTypePublicKey,
-			Algorithm: -7,
+			Algorithm: cose.AlgorithmES256,
 		}},
 		nil,
 		nil,
@@ -897,7 +925,7 @@ func TestMakeCredentialCredPropsOutputDependsOnCredPropsInput(t *testing.T) {
 		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
 		[]credential.PublicKeyCredentialParameters{{
 			Type:      credential.PublicKeyCredentialTypePublicKey,
-			Algorithm: -7,
+			Algorithm: cose.AlgorithmES256,
 		}},
 		nil,
 		&webauthn.CreateAuthenticationExtensionsClientInputs{
@@ -918,6 +946,7 @@ func TestMakeCredentialRequiresMaxCredBlobLengthWhenCredBlobExtensionReported(t 
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 		Extensions: []extension.ExtensionIdentifier{
 			extension.ExtensionIdentifierCredentialBlob,
+			extension.ExtensionIdentifierCredentialProtection,
 		},
 		Options: map[protocol.Option]bool{
 			protocol.OptionMakeCredentialUvNotRequired: true,
@@ -932,7 +961,7 @@ func TestMakeCredentialRequiresMaxCredBlobLengthWhenCredBlobExtensionReported(t 
 		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
 		[]credential.PublicKeyCredentialParameters{{
 			Type:      credential.PublicKeyCredentialTypePublicKey,
-			Algorithm: -7,
+			Algorithm: cose.AlgorithmES256,
 		}},
 		nil,
 		&webauthn.CreateAuthenticationExtensionsClientInputs{
@@ -1069,7 +1098,10 @@ func TestGetAssertionValidatesHMACSecretSalts(t *testing.T) {
 func TestMakeCredentialValidatesHMACSecretMCSalts(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID)
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
-		Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecretMC},
+		Extensions: []extension.ExtensionIdentifier{
+			extension.ExtensionIdentifierHMACSecret,
+			extension.ExtensionIdentifierHMACSecretMC,
+		},
 		Options: map[protocol.Option]bool{
 			protocol.OptionMakeCredentialUvNotRequired: true,
 		},
@@ -1083,7 +1115,7 @@ func TestMakeCredentialValidatesHMACSecretMCSalts(t *testing.T) {
 		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
 		[]credential.PublicKeyCredentialParameters{{
 			Type:      credential.PublicKeyCredentialTypePublicKey,
-			Algorithm: -7,
+			Algorithm: cose.AlgorithmES256,
 		}},
 		nil,
 		&webauthn.CreateAuthenticationExtensionsClientInputs{

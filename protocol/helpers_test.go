@@ -129,3 +129,21 @@ func TestParseMakeCredentialAuthDataRejectsTruncatedAttestedCredentialData(t *te
 	_, err = ParseMakeCredentialAuthData(data)
 	require.Error(t, err)
 }
+
+func TestParseAuthDataRejectsMissingOrNonMapExtensionData(t *testing.T) {
+	for _, suffix := range [][]byte{
+		nil,
+		{0xf6}, // null
+		{0x80}, // array
+	} {
+		data := make([]byte, 37)
+		data[32] = byte(AuthDataFlagExtensionDataIncluded)
+		data = append(data, suffix...)
+
+		_, err := ParseMakeCredentialAuthData(data)
+		require.Error(t, err)
+
+		_, err = ParseGetAssertionAuthData(data)
+		require.Error(t, err)
+	}
+}

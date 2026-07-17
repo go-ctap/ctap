@@ -14,6 +14,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/attestation"
+	"github.com/go-ctap/ctap/cose"
 	"github.com/go-ctap/ctap/credential"
 	"github.com/go-ctap/ctap/crypto"
 	"github.com/go-ctap/ctap/internal/testhid"
@@ -21,9 +22,6 @@ import (
 	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
 	"github.com/go-ctap/ctap/transport/ctaphid"
-	"github.com/ldclabs/cose/iana"
-	"github.com/ldclabs/cose/key"
-	ecdhkey "github.com/ldclabs/cose/key/ecdh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,16 +74,14 @@ func assertRequestKeys(t *testing.T, request map[uint64]any, keys ...uint64) {
 	assert.ElementsMatch(t, keys, actual)
 }
 
-func testKeyAgreement(t *testing.T) key.Key {
+func testKeyAgreement(t *testing.T) cose.Key {
 	t.Helper()
 
 	privateKey, err := ecdh.P256().GenerateKey(rand.Reader)
 	require.NoError(t, err)
 
-	coseKey, err := ecdhkey.KeyFromPublic(privateKey.Public().(*ecdh.PublicKey))
+	coseKey, err := cose.KeyFromP256PublicKey(privateKey.PublicKey())
 	require.NoError(t, err)
-	require.NoError(t, coseKey.Set(iana.KeyParameterAlg, -25))
-	delete(coseKey, iana.KeyParameterKid)
 
 	return coseKey
 }
@@ -220,7 +216,7 @@ func TestMakeCredentialRequestShapeAndPINAuthParam(t *testing.T) {
 		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
 		[]credential.PublicKeyCredentialParameters{{
 			Type:      credential.PublicKeyCredentialTypePublicKey,
-			Algorithm: -7,
+			Algorithm: cose.AlgorithmES256,
 		}},
 		nil,
 		nil,
@@ -256,7 +252,7 @@ func TestMakeCredentialMinimalRequestOmitsEmptyExcludeList(t *testing.T) {
 		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id")},
 		[]credential.PublicKeyCredentialParameters{{
 			Type:      credential.PublicKeyCredentialTypePublicKey,
-			Algorithm: -7,
+			Algorithm: cose.AlgorithmES256,
 		}},
 		[]credential.PublicKeyCredentialDescriptor{},
 		nil,
@@ -289,7 +285,7 @@ func TestMakeCredentialFullRequestShape(t *testing.T) {
 		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
 		[]credential.PublicKeyCredentialParameters{{
 			Type:      credential.PublicKeyCredentialTypePublicKey,
-			Algorithm: -7,
+			Algorithm: cose.AlgorithmES256,
 		}},
 		[]credential.PublicKeyCredentialDescriptor{{
 			Type: credential.PublicKeyCredentialTypePublicKey,
@@ -331,7 +327,7 @@ func TestMakeCredentialRejectsInvalidClientDataHashBeforeCommand(t *testing.T) {
 		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id")},
 		[]credential.PublicKeyCredentialParameters{{
 			Type:      credential.PublicKeyCredentialTypePublicKey,
-			Algorithm: -7,
+			Algorithm: cose.AlgorithmES256,
 		}},
 		nil,
 		nil,
@@ -356,7 +352,7 @@ func TestMakeCredentialReturnsResponseDecodeErrors(t *testing.T) {
 			credential.PublicKeyCredentialUserEntity{ID: []byte("user-id")},
 			[]credential.PublicKeyCredentialParameters{{
 				Type:      credential.PublicKeyCredentialTypePublicKey,
-				Algorithm: -7,
+				Algorithm: cose.AlgorithmES256,
 			}},
 			nil,
 			nil,
@@ -382,7 +378,7 @@ func TestMakeCredentialReturnsResponseDecodeErrors(t *testing.T) {
 			credential.PublicKeyCredentialUserEntity{ID: []byte("user-id")},
 			[]credential.PublicKeyCredentialParameters{{
 				Type:      credential.PublicKeyCredentialTypePublicKey,
-				Algorithm: -7,
+				Algorithm: cose.AlgorithmES256,
 			}},
 			nil,
 			nil,

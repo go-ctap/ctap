@@ -1,11 +1,11 @@
 package protocol
 
-import "github.com/ldclabs/cose/key"
+import "github.com/go-ctap/ctap/cose"
 
 type AuthenticatorClientPINRequest struct {
 	PinUvAuthProtocol PinUvAuthProtocol   `cbor:"1,keyasint,omitzero"`
 	SubCommand        ClientPINSubCommand `cbor:"2,keyasint"`
-	KeyAgreement      key.Key             `cbor:"3,keyasint,omitzero"`
+	KeyAgreement      cose.Key            `cbor:"3,keyasint,omitzero"`
 	PinUvAuthParam    []byte              `cbor:"4,keyasint,omitempty"`
 	NewPinEnc         []byte              `cbor:"5,keyasint,omitempty"`
 	PinHashEnc        []byte              `cbor:"6,keyasint,omitempty"`
@@ -14,9 +14,9 @@ type AuthenticatorClientPINRequest struct {
 }
 
 type AuthenticatorClientPINResponse struct {
-	KeyAgreement    key.Key `cbor:"1,keyasint"`
-	PinUvAuthToken  []byte  `cbor:"2,keyasint"`
-	PinRetries      *uint   `cbor:"3,keyasint"`
-	PowerCycleState *bool   `cbor:"4,keyasint"`
-	UvRetries       *uint   `cbor:"5,keyasint"`
+	KeyAgreement    cose.Key `cbor:"1,keyasint"`
+	PinUvAuthToken  []byte   `cbor:"2,keyasint"`
+	PinRetries      *uint    `cbor:"3,keyasint"`
+	PowerCycleState *bool    `cbor:"4,keyasint"`
+	UvRetries       *uint    `cbor:"5,keyasint"`
 }

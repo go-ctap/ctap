@@ -1,8 +1,8 @@
 package protocol
 
 import (
+	"github.com/go-ctap/ctap/cose"
 	"github.com/google/uuid"
-	"github.com/ldclabs/cose/key"
 )
 
 type AuthDataFlag byte
@@ -21,5 +21,5 @@ const (
 type AttestedCredentialData struct {
 	AAGUID              uuid.UUID
 	CredentialID        []byte
-	CredentialPublicKey key.Key
+	CredentialPublicKey cose.Key
 }

@@ -1,6 +1,6 @@
 package attestation
 
-import "github.com/ldclabs/cose/key"
+import "github.com/go-ctap/ctap/cose"
 
 // AttestationStatementFormatIdentifier is an enum consisting of IANA registered Attestation Statement Format Identifiers.
 // https://www.iana.org/assignments/webauthn/webauthn.xhtml
@@ -19,9 +19,9 @@ const (
 // PackedAttestationStatementFormat is a WebAuthn optimized attestation statement format.
 // https://www.w3.org/TR/webauthn-3/#sctn-packed-attestation
 type PackedAttestationStatementFormat struct {
-	Algorithm key.Alg  `cbor:"alg" json:"alg"`
-	Signature []byte   `cbor:"sig" json:"sig"`
-	X509Chain [][]byte `cbor:"x5c" json:"x5c"`
+	Algorithm cose.Algorithm `cbor:"alg" json:"alg"`
+	Signature []byte         `cbor:"sig" json:"sig"`
+	X509Chain [][]byte       `cbor:"x5c" json:"x5c"`
 }
 
 // FIDOU2FAttestationStatementFormat is attestation statement format is used with FIDO U2F authenticators.
@@ -35,11 +35,11 @@ type FIDOU2FAttestationStatementFormat struct {
 // as their cryptographic engine.
 // https://www.w3.org/TR/webauthn-3/#sctn-tpm-attestation
 type TPMAttestationStatementFormat struct {
-	Version   string   `cbor:"ver" json:"ver"`
-	Algorithm key.Alg  `cbor:"alg" json:"alg"`
-	X509Chain [][]byte `cbor:"x5c" json:"x5c"`
-	AIKCert   []byte   `cbor:"aikCert" json:"aikCert"`
-	Signature []byte   `cbor:"sig" json:"sig"`
-	CertInfo  []byte   `cbor:"certInfo" json:"certInfo"` // TPMS_ATTEST structure
-	PubArea   []byte   `cbor:"pubArea" json:"pubArea"`   // TPMT_PUBLIC structure
+	Version   string         `cbor:"ver" json:"ver"`
+	Algorithm cose.Algorithm `cbor:"alg" json:"alg"`
+	X509Chain [][]byte       `cbor:"x5c" json:"x5c"`
+	AIKCert   []byte         `cbor:"aikCert" json:"aikCert"`
+	Signature []byte         `cbor:"sig" json:"sig"`
+	CertInfo  []byte         `cbor:"certInfo" json:"certInfo"` // TPMS_ATTEST structure
+	PubArea   []byte         `cbor:"pubArea" json:"pubArea"`   // TPMT_PUBLIC structure
 }

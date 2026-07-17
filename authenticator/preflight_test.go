@@ -560,16 +560,6 @@ func TestGetAssertionRejectsUnadvertisedExtensions(t *testing.T) {
 			},
 		},
 		{
-			name: "prf",
-			extInputs: &webauthn.GetAuthenticationExtensionsClientInputs{
-				PRFInputs: &webauthn.PRFInputs{
-					PRF: webauthn.AuthenticationExtensionsPRFInputs{
-						Eval: webauthn.AuthenticationExtensionsPRFValues{First: []byte("first")},
-					},
-				},
-			},
-		},
-		{
 			name: "credBlob",
 			extInputs: &webauthn.GetAuthenticationExtensionsClientInputs{
 				GetCredentialBlobInputs: &webauthn.GetCredentialBlobInputs{GetCredBlob: true},

@@ -7,8 +7,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/attestation"
+	"github.com/go-ctap/ctap/cose"
 	"github.com/google/uuid"
-	"github.com/ldclabs/cose/key"
 )
 
 func (f AuthDataFlag) UserPresent() bool {
@@ -79,6 +79,12 @@ func parseAuthData(data []byte) (authData, error) {
 	}
 
 	if d.Flags.ExtensionDataIncluded() {
+		if len(data) == offset {
+			return authData{}, fmt.Errorf("auth data is missing extension data")
+		}
+		if data[offset]>>5 != 5 {
+			return authData{}, fmt.Errorf("auth data extension data must be a CBOR map")
+		}
 		d.Extensions = data[offset:]
 	}
 
@@ -154,7 +160,7 @@ func (r *AuthenticatorMakeCredentialResponse) PackedAttestationStatementFormat()
 	}
 
 	return attestation.PackedAttestationStatementFormat{
-		Algorithm: key.Alg(alg),
+		Algorithm: cose.Algorithm(alg),
 		Signature: sig,
 		X509Chain: x5c,
 	}, true
@@ -259,7 +265,7 @@ func (r *AuthenticatorMakeCredentialResponse) TPMAttestationStatementFormat() (a
 
 	return attestation.TPMAttestationStatementFormat{
 		Version:   ver,
-		Algorithm: key.Alg(alg),
+		Algorithm: cose.Algorithm(alg),
 		X509Chain: x5c,
 		AIKCert:   aikCert,
 		Signature: sig,

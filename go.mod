@@ -9,7 +9,6 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/go-ctap/hid v0.9.1
 	github.com/google/uuid v1.6.0
-	github.com/ldclabs/cose v1.4.0
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.54.0

@@ -1,6 +1,6 @@
 package protocol
 
-import "github.com/ldclabs/cose/key"
+import "github.com/go-ctap/ctap/cose"
 
 type CreateCredProtectInput struct {
 	CredProtect int `cbor:"credProtect"`
@@ -66,7 +66,7 @@ type GetCredBlobInput struct {
 	CredBlob bool `cbor:"credBlob"`
 }
 type HMACSecret struct {
-	KeyAgreement      key.Key           `cbor:"1,keyasint"`
+	KeyAgreement      cose.Key          `cbor:"1,keyasint"`
 	SaltEnc           []byte            `cbor:"2,keyasint"`
 	SaltAuth          []byte            `cbor:"3,keyasint"`
 	PinUvAuthProtocol PinUvAuthProtocol `cbor:"4,keyasint,omitempty"`
