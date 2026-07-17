@@ -8,6 +8,9 @@ type CreateCredProtectInput struct {
 type CreateCredBlobInput struct {
 	CredBlob []byte `cbor:"credBlob"`
 }
+type CreateLargeBlobKeyInput struct {
+	LargeBlobKey bool `cbor:"largeBlobKey"`
+}
 type CreateMinPinLengthInput struct {
 	MinPinLength bool `cbor:"minPinLength"`
 }
@@ -27,6 +30,7 @@ type CreateThirdPartyPaymentInput struct {
 type CreateExtensionInputs struct {
 	*CreateCredProtectInput
 	*CreateCredBlobInput
+	*CreateLargeBlobKeyInput
 	*CreateMinPinLengthInput
 	*CreatePinComplexityPolicyInput
 	*CreateHMACSecretInput
@@ -65,6 +69,9 @@ type CreateExtensionOutputs struct {
 type GetCredBlobInput struct {
 	CredBlob bool `cbor:"credBlob"`
 }
+type GetLargeBlobKeyInput struct {
+	LargeBlobKey bool `cbor:"largeBlobKey"`
+}
 type HMACSecret struct {
 	KeyAgreement      cose.Key          `cbor:"1,keyasint"`
 	SaltEnc           []byte            `cbor:"2,keyasint"`
@@ -80,6 +87,7 @@ type GetThirdPartyPaymentInput struct {
 
 type GetExtensionInputs struct {
 	*GetCredBlobInput
+	*GetLargeBlobKeyInput
 	*GetHMACSecretInput
 	*GetThirdPartyPaymentInput
 }

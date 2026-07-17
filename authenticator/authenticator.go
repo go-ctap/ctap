@@ -1502,6 +1502,10 @@ func (d *Device) GetLargeBlobs(ctx context.Context) ([]protocol.LargeBlob, error
 // SetLargeBlobs stores large blobs on the device, ensuring compatibility with its supported capabilities and limits.
 // It validates device support, fragments the blob data if needed, and sends it in chunks to the device.
 // Returns an error if the device does not support large blobs, the data exceeds size limits, or if any other failure occurs.
+//
+// SetLargeBlobs replaces the device's entire large-blob array. Callers must serialize the complete read-modify-write
+// operation across all writers that access the authenticator. Device serializes individual method calls, but separate
+// GetLargeBlobs and SetLargeBlobs calls are not atomic; concurrent writers can overwrite each other's changes.
 func (d *Device) SetLargeBlobs(ctx context.Context, pinUvAuthToken []byte, blobs []protocol.LargeBlob) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

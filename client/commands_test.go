@@ -292,7 +292,8 @@ func TestMakeCredentialFullRequestShape(t *testing.T) {
 			ID:   []byte("credential-id"),
 		}},
 		&protocol.CreateExtensionInputs{
-			CreateCredProtectInput: &protocol.CreateCredProtectInput{CredProtect: 2},
+			CreateCredProtectInput:  &protocol.CreateCredProtectInput{CredProtect: 2},
+			CreateLargeBlobKeyInput: &protocol.CreateLargeBlobKeyInput{LargeBlobKey: true},
 		},
 		map[protocol.Option]bool{
 			protocol.OptionResidentKeys:     true,
@@ -313,6 +314,9 @@ func TestMakeCredentialFullRequestShape(t *testing.T) {
 	assert.Equal(t, crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, clientDataHash), request[uint64(8)])
 	assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(9)])
 	assert.Equal(t, uint64(1), request[uint64(10)])
+	extensions, ok := request[uint64(6)].(map[any]any)
+	require.True(t, ok)
+	assert.Equal(t, true, extensions["largeBlobKey"])
 }
 
 func TestMakeCredentialRejectsInvalidClientDataHashBeforeCommand(t *testing.T) {
@@ -474,7 +478,8 @@ func TestGetAssertionFullRequestShape(t *testing.T) {
 			ID:   []byte("credential-id"),
 		}},
 		&protocol.GetExtensionInputs{
-			GetCredBlobInput: &protocol.GetCredBlobInput{CredBlob: true},
+			GetCredBlobInput:     &protocol.GetCredBlobInput{CredBlob: true},
+			GetLargeBlobKeyInput: &protocol.GetLargeBlobKeyInput{LargeBlobKey: true},
 		},
 		map[protocol.Option]bool{
 			protocol.OptionUserPresence:     true,
@@ -492,6 +497,9 @@ func TestGetAssertionFullRequestShape(t *testing.T) {
 	assertRequestKeys(t, request, 1, 2, 3, 4, 5, 6, 7)
 	assert.Equal(t, crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, clientDataHash), request[uint64(6)])
 	assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(7)])
+	extensions, ok := request[uint64(4)].(map[any]any)
+	require.True(t, ok)
+	assert.Equal(t, true, extensions["largeBlobKey"])
 }
 
 func TestGetAssertionRejectsInvalidClientDataHashBeforeCommand(t *testing.T) {
