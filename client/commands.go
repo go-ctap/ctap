@@ -84,6 +84,10 @@ func (cl *Client) MakeCredential(
 	}
 
 	if pinUvAuthToken != nil {
+		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+			return protocol.AuthenticatorMakeCredentialResponse{}, err
+		}
+
 		pinUvAuthParam := crypto.Authenticate(
 			pinUvAuthProtocol,
 			pinUvAuthToken,
@@ -144,6 +148,11 @@ func (cl *Client) GetAssertion(
 		}
 
 		if pinUvAuthToken != nil {
+			if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+				return
+			}
+
 			pinUvAuthParamBegin := crypto.Authenticate(
 				pinUvAuthProtocol,
 				pinUvAuthToken,
@@ -705,6 +714,10 @@ func (cl *Client) EnrollBegin(
 	pinUvAuthToken []byte,
 	timeoutMilliseconds uint,
 ) (protocol.AuthenticatorBioEnrollmentResponse, error) {
+	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		return protocol.AuthenticatorBioEnrollmentResponse{}, err
+	}
+
 	bSubCommandParams, err := cl.encMode.Marshal(protocol.BioEnrollmentSubCommandParams{
 		TimeoutMilliseconds: timeoutMilliseconds,
 	})
@@ -767,6 +780,10 @@ func (cl *Client) EnrollCaptureNextSample(
 	templateID []byte,
 	timeoutMilliseconds uint,
 ) (protocol.AuthenticatorBioEnrollmentResponse, error) {
+	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		return protocol.AuthenticatorBioEnrollmentResponse{}, err
+	}
+
 	bSubCommandParams, err := cl.encMode.Marshal(protocol.BioEnrollmentSubCommandParams{
 		TemplateID:          templateID,
 		TimeoutMilliseconds: timeoutMilliseconds,
@@ -853,6 +870,10 @@ func (cl *Client) EnumerateEnrollments(
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 ) (protocol.AuthenticatorBioEnrollmentResponse, error) {
+	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		return protocol.AuthenticatorBioEnrollmentResponse{}, err
+	}
+
 	pinUvAuthParam := crypto.Authenticate(
 		pinUvAuthProtocol,
 		pinUvAuthToken,
@@ -899,6 +920,10 @@ func (cl *Client) SetFriendlyName(
 	templateID []byte,
 	friendlyName string,
 ) error {
+	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		return err
+	}
+
 	bSubCommandParams, err := cl.encMode.Marshal(protocol.BioEnrollmentSubCommandParams{
 		TemplateID:           templateID,
 		TemplateFriendlyName: friendlyName,
@@ -952,6 +977,10 @@ func (cl *Client) RemoveEnrollment(
 	pinUvAuthToken []byte,
 	templateID []byte,
 ) error {
+	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		return err
+	}
+
 	bSubCommandParams, err := cl.encMode.Marshal(protocol.BioEnrollmentSubCommandParams{
 		TemplateID: templateID,
 	})
@@ -1002,6 +1031,10 @@ func (cl *Client) GetCredsMetadata(
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 ) (protocol.AuthenticatorCredentialManagementResponse, error) {
+	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		return protocol.AuthenticatorCredentialManagementResponse{}, err
+	}
+
 	pinUvAuthParam := crypto.Authenticate(
 		pinUvAuthProtocol,
 		pinUvAuthToken,
@@ -1051,6 +1084,11 @@ func (cl *Client) EnumerateRPs(
 	pinUvAuthToken []byte,
 ) iter.Seq2[protocol.AuthenticatorCredentialManagementResponse, error] {
 	return func(yield func(protocol.AuthenticatorCredentialManagementResponse, error) bool) {
+		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
+			return
+		}
+
 		pinUvAuthParamBegin := crypto.Authenticate(
 			pinUvAuthProtocol,
 			pinUvAuthToken,
@@ -1147,6 +1185,11 @@ func (cl *Client) EnumerateCredentials(
 	rpIDHash []byte,
 ) iter.Seq2[protocol.AuthenticatorCredentialManagementResponse, error] {
 	return func(yield func(protocol.AuthenticatorCredentialManagementResponse, error) bool) {
+		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
+			return
+		}
+
 		bSubCommandParams, err := cl.encMode.Marshal(protocol.CredentialManagementSubCommandParams{RPIDHash: rpIDHash})
 		if err != nil {
 			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
@@ -1247,6 +1290,10 @@ func (cl *Client) DeleteCredential(
 	pinUvAuthToken []byte,
 	credentialID credential.PublicKeyCredentialDescriptor,
 ) error {
+	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		return err
+	}
+
 	bSubCommandParams, err := cl.encMode.Marshal(protocol.CredentialManagementSubCommandParams{
 		CredentialID: credentialID,
 	})
@@ -1296,6 +1343,10 @@ func (cl *Client) UpdateUserInformation(
 	credentialID credential.PublicKeyCredentialDescriptor,
 	user credential.PublicKeyCredentialUserEntity,
 ) error {
+	if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+		return err
+	}
+
 	bSubCommandParams, err := cl.encMode.Marshal(protocol.CredentialManagementSubCommandParams{
 		CredentialID: credentialID,
 		User:         user,
@@ -1358,6 +1409,10 @@ func (cl *Client) LargeBlobs(
 	}
 
 	if pinUvAuthToken != nil {
+		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+			return protocol.AuthenticatorLargeBlobsResponse{}, err
+		}
+
 		padding := make([]byte, 32)
 		for i := range padding {
 			padding[i] = 0xff
@@ -1412,24 +1467,28 @@ func (cl *Client) EnableEnterpriseAttestation(
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 ) error {
-	padding := make([]byte, 32)
-	for i := range padding {
-		padding[i] = 0xff
-	}
-
-	pinUvAuthParam := crypto.Authenticate(
-		pinUvAuthProtocol,
-		pinUvAuthToken,
-		slices.Concat(
-			padding,
-			[]byte{0x0d, byte(protocol.ConfigSubCommandEnableEnterpriseAttestation)},
-		),
-	)
-
 	req := &protocol.AuthenticatorConfigRequest{
-		SubCommand:        protocol.ConfigSubCommandEnableEnterpriseAttestation,
-		PinUvAuthProtocol: pinUvAuthProtocol,
-		PinUvAuthParam:    pinUvAuthParam,
+		SubCommand: protocol.ConfigSubCommandEnableEnterpriseAttestation,
+	}
+	if pinUvAuthToken != nil {
+		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+			return err
+		}
+
+		padding := make([]byte, 32)
+		for i := range padding {
+			padding[i] = 0xff
+		}
+
+		req.PinUvAuthProtocol = pinUvAuthProtocol
+		req.PinUvAuthParam = crypto.Authenticate(
+			pinUvAuthProtocol,
+			pinUvAuthToken,
+			slices.Concat(
+				padding,
+				[]byte{0x0d, byte(protocol.ConfigSubCommandEnableEnterpriseAttestation)},
+			),
+		)
 	}
 
 	b, err := cl.encMode.Marshal(req)
@@ -1450,24 +1509,28 @@ func (cl *Client) ToggleAlwaysUV(
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
 ) error {
-	padding := make([]byte, 32)
-	for i := range padding {
-		padding[i] = 0xff
-	}
-
-	pinUvAuthParam := crypto.Authenticate(
-		pinUvAuthProtocol,
-		pinUvAuthToken,
-		slices.Concat(
-			padding,
-			[]byte{0x0d, byte(protocol.ConfigSubCommandToggleAlwaysUv)},
-		),
-	)
-
 	req := &protocol.AuthenticatorConfigRequest{
-		SubCommand:        protocol.ConfigSubCommandToggleAlwaysUv,
-		PinUvAuthProtocol: pinUvAuthProtocol,
-		PinUvAuthParam:    pinUvAuthParam,
+		SubCommand: protocol.ConfigSubCommandToggleAlwaysUv,
+	}
+	if pinUvAuthToken != nil {
+		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+			return err
+		}
+
+		padding := make([]byte, 32)
+		for i := range padding {
+			padding[i] = 0xff
+		}
+
+		req.PinUvAuthProtocol = pinUvAuthProtocol
+		req.PinUvAuthParam = crypto.Authenticate(
+			pinUvAuthProtocol,
+			pinUvAuthToken,
+			slices.Concat(
+				padding,
+				[]byte{0x0d, byte(protocol.ConfigSubCommandToggleAlwaysUv)},
+			),
+		)
 	}
 
 	b, err := cl.encMode.Marshal(req)
@@ -1492,11 +1555,6 @@ func (cl *Client) SetMinPINLength(
 	forceChangePin bool,
 	pinComplexityPolicy bool,
 ) error {
-	padding := make([]byte, 32)
-	for i := range padding {
-		padding[i] = 0xff
-	}
-
 	subCommandParams := &protocol.SetMinPINLengthConfigSubCommandParams{
 		NewMinPINLength:     newMinPINLength,
 		MinPinLengthRPIDs:   minPinLengthRPIDs,
@@ -1508,21 +1566,30 @@ func (cl *Client) SetMinPINLength(
 		return err
 	}
 
-	pinUvAuthParam := crypto.Authenticate(
-		pinUvAuthProtocol,
-		pinUvAuthToken,
-		slices.Concat(
-			padding,
-			[]byte{0x0d, byte(protocol.ConfigSubCommandSetMinPINLength)},
-			bSubCommandParams,
-		),
-	)
-
 	req := &protocol.AuthenticatorConfigRequest{
-		SubCommand:        protocol.ConfigSubCommandSetMinPINLength,
-		SubCommandParams:  subCommandParams,
-		PinUvAuthProtocol: pinUvAuthProtocol,
-		PinUvAuthParam:    pinUvAuthParam,
+		SubCommand:       protocol.ConfigSubCommandSetMinPINLength,
+		SubCommandParams: subCommandParams,
+	}
+	if pinUvAuthToken != nil {
+		if err := ValidatePinUvAuthToken(pinUvAuthProtocol, pinUvAuthToken); err != nil {
+			return err
+		}
+
+		padding := make([]byte, 32)
+		for i := range padding {
+			padding[i] = 0xff
+		}
+
+		req.PinUvAuthProtocol = pinUvAuthProtocol
+		req.PinUvAuthParam = crypto.Authenticate(
+			pinUvAuthProtocol,
+			pinUvAuthToken,
+			slices.Concat(
+				padding,
+				[]byte{0x0d, byte(protocol.ConfigSubCommandSetMinPINLength)},
+				bSubCommandParams,
+			),
+		)
 	}
 
 	b, err := cl.encMode.Marshal(req)

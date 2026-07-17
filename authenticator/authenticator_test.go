@@ -1006,7 +1006,7 @@ func TestSetPINRefreshesCachedGetInfo(t *testing.T) {
 		KeyAgreement: testKeyAgreement(t),
 	})
 	updatedInfo := encodeCBOR(t, &protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
 	})
 	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil, updatedInfo)
@@ -1019,6 +1019,7 @@ func TestSetPINRefreshesCachedGetInfo(t *testing.T) {
 
 	info := d.GetInfo()
 	assert.True(t, info.Options[protocol.OptionClientPIN])
+	assert.Equal(t, protocol.PinUvAuthProtocolTwo, d.pinUvAuthProtocol)
 }
 
 func TestChangePINValidatesNewPINBeforeCommand(t *testing.T) {

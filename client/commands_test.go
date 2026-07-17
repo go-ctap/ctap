@@ -795,6 +795,46 @@ func TestConfigRequestShapeAndPINAuthParam(t *testing.T) {
 	assert.Equal(t, expectedParam, request[uint64(4)])
 }
 
+func TestConfigRequestWithoutTokenOmitsAuthorization(t *testing.T) {
+	fake := testhid.NewCBORDevice(t, testCID, nil)
+
+	err := newTestClient(fake).SetMinPINLength(context.Background(), 0, nil, 8, nil, false, false)
+	require.NoError(t, err)
+
+	command, request := fake.FirstCTAPRequestMap(t)
+	assert.Equal(t, protocol.AuthenticatorConfig, command)
+	assertRequestKeys(t, request, 1, 2)
+}
+
+func TestProtectedCommandsRejectInvalidTokenBeforeTransport(t *testing.T) {
+	t.Run("BioEnrollment", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID)
+
+		_, err := newTestClient(fake).EnrollBegin(
+			context.Background(),
+			false,
+			protocol.PinUvAuthProtocolTwo,
+			nil,
+			0,
+		)
+		require.Error(t, err)
+		assert.Empty(t, fake.Writes())
+	})
+
+	t.Run("CredentialManagement", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID)
+
+		_, err := newTestClient(fake).GetCredsMetadata(
+			context.Background(),
+			false,
+			protocol.PinUvAuthProtocolTwo,
+			make([]byte, 16),
+		)
+		require.Error(t, err)
+		assert.Empty(t, fake.Writes())
+	})
+}
+
 func TestNormalizeSelectionError(t *testing.T) {
 	keepaliveCanceled := &ctaptransport.CTAPError{
 		Command:    protocol.AuthenticatorSelection,

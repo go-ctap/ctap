@@ -78,8 +78,16 @@ func (d *Device) refreshInfoLocked(ctx context.Context) error {
 		return err
 	}
 
-	d.info = info
+	d.cacheInfo(info)
 	return nil
+}
+
+func (d *Device) cacheInfo(info protocol.AuthenticatorGetInfoResponse) {
+	d.info = info
+	d.pinUvAuthProtocol = 0
+	if len(info.PinUvAuthProtocols) > 0 {
+		d.pinUvAuthProtocol = info.PinUvAuthProtocols[0]
+	}
 }
 
 func (d *Device) maxFragmentLength() uint {
@@ -110,10 +118,7 @@ func New(ctx context.Context, transport ctaptransport.Device, opts ...options.Op
 	if err != nil {
 		return nil, err
 	}
-	d.info = info
-	if len(info.PinUvAuthProtocols) > 0 {
-		d.pinUvAuthProtocol = info.PinUvAuthProtocols[0]
-	}
+	d.cacheInfo(info)
 
 	return d, nil
 }
@@ -195,113 +200,6 @@ func (d *Device) Lock(ctx context.Context, seconds uint) error {
 	return transport.Lock(ctx, uint8(seconds))
 }
 
-func validateUserVerificationRequest(
-	info protocol.AuthenticatorGetInfoResponse,
-	pinUvAuthToken []byte,
-	options map[protocol.Option]bool,
-) error {
-	hasToken := pinUvAuthToken != nil
-	builtInUVRequested := options[protocol.OptionUserVerification]
-	if hasToken && builtInUVRequested {
-		return newErrorMessage(SyntaxError, "pinUvAuthToken and built-in user verification are mutually exclusive")
-	}
-
-	if builtInUVRequested {
-		builtInUVConfigured, ok := info.Options[protocol.OptionUserVerification]
-		if !ok {
-			return newErrorMessage(ErrNotSupported, "device doesn't support built-in user verification")
-		}
-		if !builtInUVConfigured {
-			return newErrorMessage(ErrUvNotConfigured, "please configure UV first (e.g. enroll biometry)")
-		}
-	}
-
-	return nil
-}
-
-func isFIDO20Only(versions protocol.Versions) bool {
-	fido20Only := versions.Supports(protocol.FIDO_2_0)
-	for _, version := range versions {
-		if version != protocol.FIDO_2_0 && version != protocol.U2F_V2 {
-			return false
-		}
-	}
-
-	return fido20Only
-}
-
-func validateMakeCredentialAuthorization(
-	info protocol.AuthenticatorGetInfoResponse,
-	pinUvAuthToken []byte,
-	options map[protocol.Option]bool,
-) error {
-	if err := validateUserVerificationRequest(info, pinUvAuthToken, options); err != nil {
-		return err
-	}
-
-	hasToken := pinUvAuthToken != nil
-	builtInUVRequested := options[protocol.OptionUserVerification]
-	protected := info.Options[protocol.OptionClientPIN] || info.Options[protocol.OptionUserVerification]
-	fido20Only := isFIDO20Only(info.Versions)
-
-	// CTAP 2.0 authenticators protected by any form of UV always require it
-	// for MakeCredential. makeCredUvNotRqd and alwaysUv were added in CTAP 2.1.
-	requiresUV := protected
-	if !fido20Only {
-		alwaysUV := info.Options[protocol.OptionAlwaysUv]
-		requiresUV = alwaysUV || protected && (!info.Options[protocol.OptionMakeCredentialUvNotRequired] ||
-			options[protocol.OptionResidentKeys])
-	}
-	if !requiresUV {
-		return nil
-	}
-
-	// With alwaysUv enabled, an authenticator with configured built-in UV
-	// implicitly treats the request as if the uv option were true.
-	if hasToken || builtInUVRequested ||
-		!fido20Only && info.Options[protocol.OptionAlwaysUv] && info.Options[protocol.OptionUserVerification] {
-		return nil
-	}
-
-	return ErrPinUvAuthTokenRequired
-}
-
-func validateGetAssertionAuthorization(
-	info protocol.AuthenticatorGetInfoResponse,
-	pinUvAuthToken []byte,
-	options map[protocol.Option]bool,
-) error {
-	if err := validateUserVerificationRequest(info, pinUvAuthToken, options); err != nil {
-		return err
-	}
-
-	if _, ok := options[protocol.OptionResidentKeys]; ok {
-		return newErrorMessage(ErrNotSupported, "rk option is not supported by GetAssertion")
-	}
-
-	userPresence, ok := options[protocol.OptionUserPresence]
-	userPresenceRequested := !ok || userPresence
-	if isFIDO20Only(info.Versions) || !info.Options[protocol.OptionAlwaysUv] || !userPresenceRequested {
-		return nil
-	}
-
-	if pinUvAuthToken != nil || options[protocol.OptionUserVerification] ||
-		info.Options[protocol.OptionUserVerification] {
-		return nil
-	}
-
-	if info.Options[protocol.OptionClientPIN] &&
-		!info.Options[protocol.OptionNoMcGaPermissionsWithClientPin] {
-		return ErrPinUvAuthTokenRequired
-	}
-
-	if builtInUVConfigured, ok := info.Options[protocol.OptionUserVerification]; ok && !builtInUVConfigured {
-		return newErrorMessage(ErrUvNotConfigured, "please configure UV first (e.g. enroll biometry)")
-	}
-
-	return newErrorMessage(ErrBuiltInUVRequired, "alwaysUv requires user verification for GetAssertion")
-}
-
 // MakeCredential initiates the process of creating a new credential on a device with specified parameters and options.
 func (d *Device) MakeCredential(
 	ctx context.Context,
@@ -328,6 +226,13 @@ func (d *Device) MakeCredential(
 		pinProtocol       *crypto.PinUvAuthProtocol
 		sharedSecret      []byte
 	)
+	if pinUvAuthToken != nil {
+		var err error
+		pinUvAuthProtocol, err = d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
+		if err != nil {
+			return protocol.AuthenticatorMakeCredentialResponse{}, err
+		}
+	}
 
 	extensions := new(protocol.CreateExtensionInputs)
 	if extInputs == nil {
@@ -478,14 +383,6 @@ func (d *Device) MakeCredential(
 				SaltAuth:          saltAuth,
 				PinUvAuthProtocol: pinUvAuthProtocol,
 			},
-		}
-	}
-
-	if pinUvAuthToken != nil && pinUvAuthProtocol == 0 {
-		var err error
-		pinUvAuthProtocol, err = d.requirePinUvAuthProtocol()
-		if err != nil {
-			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
 	}
 
@@ -669,6 +566,14 @@ func (d *Device) GetAssertion(
 			pinProtocol       *crypto.PinUvAuthProtocol
 			sharedSecret      []byte
 		)
+		if pinUvAuthToken != nil {
+			var err error
+			pinUvAuthProtocol, err = d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
+			if err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+				return
+			}
+		}
 
 		extensions := new(protocol.GetExtensionInputs)
 		if extInputs == nil {
@@ -687,6 +592,11 @@ func (d *Device) GetAssertion(
 
 		// hmac-secret
 		if extInputs.GetHMACSecretInputs != nil {
+			if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierHMACSecret) {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support hmac-secret extension"))
+				return
+			}
+
 			if err := validateHMACGetSecretSalts(extInputs.GetHMACSecretInputs.HMACGetSecret); err != nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 				return
@@ -742,6 +652,11 @@ func (d *Device) GetAssertion(
 
 		// prf
 		if extInputs.PRFInputs != nil {
+			if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierHMACSecret) {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support prf extension during authentication"))
+				return
+			}
+
 			if extInputs.PRF.EvalByCredential != nil && (allowList == nil || len(allowList) == 0) {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrNotSupported, "evalByCredential works only in conjunction with allowList"))
 				return
@@ -842,17 +757,13 @@ func (d *Device) GetAssertion(
 
 		// credBlob
 		if extInputs.GetCredentialBlobInputs != nil {
+			if !slices.Contains(d.info.Extensions, extension.ExtensionIdentifierCredentialBlob) {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support credBlob extension"))
+				return
+			}
+
 			extensions.GetCredBlobInput = &protocol.GetCredBlobInput{
 				CredBlob: extInputs.GetCredBlob,
-			}
-		}
-
-		if pinUvAuthToken != nil && pinUvAuthProtocol == 0 {
-			var err error
-			pinUvAuthProtocol, err = d.requirePinUvAuthProtocol()
-			if err != nil {
-				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
-				return
 			}
 		}
 
@@ -972,12 +883,9 @@ func (d *Device) GetPINRetries(ctx context.Context) (uint, *bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	clientPin, ok := d.info.Options[protocol.OptionClientPIN]
+	_, ok := d.info.Options[protocol.OptionClientPIN]
 	if !ok {
 		return 0, nil, newErrorMessage(ErrNotSupported, "device doesn't support clientPin option")
-	}
-	if !clientPin {
-		return 0, nil, newErrorMessage(ErrPinNotSet, "please set PIN first")
 	}
 
 	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
@@ -1077,40 +985,9 @@ func (d *Device) GetPinUvAuthTokenUsingPIN(
 		return nil, err
 	}
 
-	noMcGaPermission, ok := d.info.Options[protocol.OptionNoMcGaPermissionsWithClientPin]
-	if ok && noMcGaPermission && (permission&protocol.PermissionMakeCredential != 0 || permission&protocol.PermissionGetAssertion != 0) {
-		return nil, newErrorMessage(
-			ErrNotSupported,
-			"you cannot get a pinUvAuthToken using PIN with MakeCredential or GetAssertion permissions if device has noMcGaPermissionsWithClientPin option",
-		)
-	}
-
-	clientPIN, ok := d.info.Options[protocol.OptionClientPIN]
-	if !ok {
-		return nil, newErrorMessage(
-			ErrNotSupported,
-			"you cannot get a pinUvAuthToken using PIN if device hasn't clientPin option",
-		)
-	}
-	if !clientPIN {
-		return nil, newErrorMessage(
-			ErrPinNotSet,
-			"please set PIN first",
-		)
-	}
-
-	if _, ok := d.info.Options[protocol.OptionBioEnroll]; !ok && permission&protocol.PermissionBioEnrollment != 0 {
-		return nil, newErrorMessage(
-			ErrNotSupported,
-			"you cannot set be BioEnrollment permission if device doesn't support bioEnroll option",
-		)
-	}
-
-	authnrCfg, ok := d.info.Options[protocol.OptionAuthenticatorConfig]
-	if (!ok || !authnrCfg) && permission&protocol.PermissionAuthenticatorConfiguration != 0 {
-		return nil, newErrorMessage(
-			ErrNotSupported,
-			"you cannot set be AuthenticatorConfiguration permission if device doesn't support uv option")
+	flow, err := selectPinTokenFlowUsingPIN(d.info, permission, rpID)
+	if err != nil {
+		return nil, err
 	}
 
 	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement(ctx)
@@ -1118,24 +995,26 @@ func (d *Device) GetPinUvAuthTokenUsingPIN(
 		return nil, err
 	}
 
-	token, ok := d.info.Options[protocol.OptionPinUvAuthToken]
-	if !ok || !token {
+	switch flow {
+	case pinTokenFlowLegacy:
 		return d.ctapClient.GetPinToken(
 			ctx,
 			pinUvAuthProtocol,
 			keyAgreement,
 			pin,
 		)
+	case pinTokenFlowWithPermissions:
+		return d.ctapClient.GetPinUvAuthTokenUsingPinWithPermissions(
+			ctx,
+			pinUvAuthProtocol,
+			keyAgreement,
+			pin,
+			permission,
+			rpID,
+		)
+	default:
+		return nil, newErrorMessage(ErrSpecViolation, "invalid PIN token flow")
 	}
-
-	return d.ctapClient.GetPinUvAuthTokenUsingPinWithPermissions(
-		ctx,
-		pinUvAuthProtocol,
-		keyAgreement,
-		pin,
-		permission,
-		rpID,
-	)
 }
 
 // GetPinUvAuthTokenUsingUV obtains a pinUvAuthToken by performing user verification (UV) on a compatible device.
@@ -1145,17 +1024,8 @@ func (d *Device) GetPinUvAuthTokenUsingUV(ctx context.Context, permission protoc
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	token, ok := d.info.Options[protocol.OptionPinUvAuthToken]
-	if !ok || !token {
-		return nil, newErrorMessage(ErrNotSupported, "device doesn't support pinUvAuthToken")
-	}
-
-	uv, ok := d.info.Options[protocol.OptionUserVerification]
-	if !ok {
-		return nil, newErrorMessage(ErrNotSupported, "device doesn't support user verification")
-	}
-	if !uv {
-		return nil, newErrorMessage(ErrUvNotConfigured, "please configure UV first (e.g. enroll biometry)")
+	if err := validatePinUvAuthTokenUsingUV(d.info, permission, rpID); err != nil {
+		return nil, err
 	}
 
 	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement(ctx)
@@ -1178,12 +1048,13 @@ func (d *Device) GetUVRetries(ctx context.Context) (uint, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	uv, ok := d.info.Options[protocol.OptionUserVerification]
+	if isFIDO20Only(d.info.Versions) {
+		return 0, newErrorMessage(ErrNotSupported, "getUVRetries requires CTAP 2.1 or later")
+	}
+
+	_, ok := d.info.Options[protocol.OptionUserVerification]
 	if !ok {
 		return 0, newErrorMessage(ErrNotSupported, "device doesn't support user verification")
-	}
-	if !uv {
-		return 0, newErrorMessage(ErrUvNotConfigured, "please configure UV first (e.g. enroll biometry)")
 	}
 
 	return d.ctapClient.GetUVRetries(ctx)
@@ -1208,17 +1079,14 @@ func (d *Device) GetBioModality(ctx context.Context) (protocol.AuthenticatorBioE
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	bioEnroll, ok := d.info.Options[protocol.OptionBioEnroll]
-	if d.info.Versions.IsPreviewOnly() {
-		bioEnroll, ok = d.info.Options[protocol.OptionUserVerificationMgmtPreview]
-	}
-	if !ok || !bioEnroll {
-		return protocol.AuthenticatorBioEnrollmentResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support biometric enrollment")
+	preview, err := bioEnrollmentMode(d.info)
+	if err != nil {
+		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
 	return d.ctapClient.GetBioModality(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 	)
 }
 
@@ -1231,17 +1099,14 @@ func (d *Device) GetFingerprintSensorInfo(ctx context.Context) (protocol.Authent
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	bioEnroll, ok := d.info.Options[protocol.OptionBioEnroll]
-	if d.info.Versions.IsPreviewOnly() {
-		bioEnroll, ok = d.info.Options[protocol.OptionUserVerificationMgmtPreview]
-	}
-	if !ok || !bioEnroll {
-		return protocol.AuthenticatorBioEnrollmentResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support biometric enrollment")
+	preview, err := bioEnrollmentMode(d.info)
+	if err != nil {
+		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
 	return d.ctapClient.GetFingerprintSensorInfo(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 	)
 }
 
@@ -1255,22 +1120,19 @@ func (d *Device) EnrollBegin(
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	bioEnroll, ok := d.info.Options[protocol.OptionBioEnroll]
-	if d.info.Versions.IsPreviewOnly() {
-		bioEnroll, ok = d.info.Options[protocol.OptionUserVerificationMgmtPreview]
-	}
-	if !ok || !bioEnroll {
-		return protocol.AuthenticatorBioEnrollmentResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support biometric enrollment")
+	preview, err := bioEnrollmentMode(d.info)
+	if err != nil {
+		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
 	if err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
 	resp, err := d.ctapClient.EnrollBegin(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 		timeoutMilliseconds,
@@ -1302,22 +1164,19 @@ func (d *Device) EnrollCaptureNextSample(
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	bioEnroll, ok := d.info.Options[protocol.OptionBioEnroll]
-	if d.info.Versions.IsPreviewOnly() {
-		bioEnroll, ok = d.info.Options[protocol.OptionUserVerificationMgmtPreview]
-	}
-	if !ok || !bioEnroll {
-		return protocol.AuthenticatorBioEnrollmentResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support biometric enrollment")
+	preview, err := bioEnrollmentMode(d.info)
+	if err != nil {
+		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
 	if err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
 	resp, err := d.ctapClient.EnrollCaptureNextSample(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 		templateID,
@@ -1345,17 +1204,14 @@ func (d *Device) CancelCurrentEnrollment(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	bioEnroll, ok := d.info.Options[protocol.OptionBioEnroll]
-	if d.info.Versions.IsPreviewOnly() {
-		bioEnroll, ok = d.info.Options[protocol.OptionUserVerificationMgmtPreview]
-	}
-	if !ok || !bioEnroll {
-		return newErrorMessage(ErrNotSupported, "device doesn't support biometric enrollment")
+	preview, err := bioEnrollmentMode(d.info)
+	if err != nil {
+		return err
 	}
 
 	return d.ctapClient.CancelCurrentEnrollment(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 	)
 }
 
@@ -1365,22 +1221,19 @@ func (d *Device) EnumerateEnrollments(ctx context.Context, pinUvAuthToken []byte
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	bioEnroll, ok := d.info.Options[protocol.OptionBioEnroll]
-	if d.info.Versions.IsPreviewOnly() {
-		bioEnroll, ok = d.info.Options[protocol.OptionUserVerificationMgmtPreview]
-	}
-	if !ok || !bioEnroll {
-		return protocol.AuthenticatorBioEnrollmentResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support biometric enrollment")
+	preview, err := bioEnrollmentMode(d.info)
+	if err != nil {
+		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
 	if err != nil {
 		return protocol.AuthenticatorBioEnrollmentResponse{}, err
 	}
 
 	return d.ctapClient.EnumerateEnrollments(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 	)
@@ -1391,22 +1244,19 @@ func (d *Device) SetFriendlyName(ctx context.Context, pinUvAuthToken []byte, tem
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	bioEnroll, ok := d.info.Options[protocol.OptionBioEnroll]
-	if d.info.Versions.IsPreviewOnly() {
-		bioEnroll, ok = d.info.Options[protocol.OptionUserVerificationMgmtPreview]
-	}
-	if !ok || !bioEnroll {
-		return newErrorMessage(ErrNotSupported, "device doesn't support biometric enrollment")
+	preview, err := bioEnrollmentMode(d.info)
+	if err != nil {
+		return err
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
 	if err != nil {
 		return err
 	}
 
 	return d.ctapClient.SetFriendlyName(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 		templateID,
@@ -1419,22 +1269,19 @@ func (d *Device) RemoveEnrollment(ctx context.Context, pinUvAuthToken []byte, te
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	bioEnroll, ok := d.info.Options[protocol.OptionBioEnroll]
-	if d.info.Versions.IsPreviewOnly() {
-		bioEnroll, ok = d.info.Options[protocol.OptionUserVerificationMgmtPreview]
-	}
-	if !ok || !bioEnroll {
-		return newErrorMessage(ErrNotSupported, "device doesn't support biometric enrollment")
+	preview, err := bioEnrollmentMode(d.info)
+	if err != nil {
+		return err
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
 	if err != nil {
 		return err
 	}
 
 	if err := d.ctapClient.RemoveEnrollment(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 		templateID,
@@ -1451,22 +1298,19 @@ func (d *Device) GetCredsMetadata(ctx context.Context, pinUvAuthToken []byte) (p
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	credMgmt, ok := d.info.Options[protocol.OptionCredentialManagement]
-	if d.info.Versions.IsPreviewOnly() {
-		credMgmt, ok = d.info.Options[protocol.OptionCredentialManagementPreview]
-	}
-	if !ok || !credMgmt {
-		return protocol.AuthenticatorCredentialManagementResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support credential management")
+	preview, err := credentialManagementMode(d.info)
+	if err != nil {
+		return protocol.AuthenticatorCredentialManagementResponse{}, err
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
 	if err != nil {
 		return protocol.AuthenticatorCredentialManagementResponse{}, err
 	}
 
 	return d.ctapClient.GetCredsMetadata(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 	)
@@ -1486,16 +1330,13 @@ func (d *Device) EnumerateRPs(ctx context.Context, pinUvAuthToken []byte) iter.S
 		d.mu.Lock()
 		defer d.mu.Unlock()
 
-		credMgmt, ok := d.info.Options[protocol.OptionCredentialManagement]
-		if d.info.Versions.IsPreviewOnly() {
-			credMgmt, ok = d.info.Options[protocol.OptionCredentialManagementPreview]
-		}
-		if !ok || !credMgmt {
-			yield(protocol.AuthenticatorCredentialManagementResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support credential management"))
+		preview, err := credentialManagementMode(d.info)
+		if err != nil {
+			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 			return
 		}
 
-		pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+		pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
 		if err != nil {
 			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 			return
@@ -1503,7 +1344,7 @@ func (d *Device) EnumerateRPs(ctx context.Context, pinUvAuthToken []byte) iter.S
 
 		for rp, err := range d.ctapClient.EnumerateRPs(
 			ctx,
-			d.info.Versions.IsPreviewOnly(),
+			preview,
 			pinUvAuthProtocol,
 			pinUvAuthToken,
 		) {
@@ -1527,16 +1368,13 @@ func (d *Device) EnumerateCredentials(ctx context.Context, pinUvAuthToken []byte
 		d.mu.Lock()
 		defer d.mu.Unlock()
 
-		credMgmt, ok := d.info.Options[protocol.OptionCredentialManagement]
-		if d.info.Versions.IsPreviewOnly() {
-			credMgmt, ok = d.info.Options[protocol.OptionCredentialManagementPreview]
-		}
-		if !ok || !credMgmt {
-			yield(protocol.AuthenticatorCredentialManagementResponse{}, newErrorMessage(ErrNotSupported, "device doesn't support credential management"))
+		preview, err := credentialManagementMode(d.info)
+		if err != nil {
+			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 			return
 		}
 
-		pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+		pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
 		if err != nil {
 			yield(protocol.AuthenticatorCredentialManagementResponse{}, err)
 			return
@@ -1544,7 +1382,7 @@ func (d *Device) EnumerateCredentials(ctx context.Context, pinUvAuthToken []byte
 
 		for rp, err := range d.ctapClient.EnumerateCredentials(
 			ctx,
-			d.info.Versions.IsPreviewOnly(),
+			preview,
 			pinUvAuthProtocol,
 			pinUvAuthToken,
 			rpIDHash,
@@ -1566,22 +1404,19 @@ func (d *Device) DeleteCredential(
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	credMgmt, ok := d.info.Options[protocol.OptionCredentialManagement]
-	if d.info.Versions.IsPreviewOnly() {
-		credMgmt, ok = d.info.Options[protocol.OptionCredentialManagementPreview]
-	}
-	if !ok || !credMgmt {
-		return newErrorMessage(ErrNotSupported, "device doesn't support credential management")
+	preview, err := credentialManagementMode(d.info)
+	if err != nil {
+		return err
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
 	if err != nil {
 		return err
 	}
 
 	return d.ctapClient.DeleteCredential(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 		credentialID,
@@ -1600,22 +1435,19 @@ func (d *Device) UpdateUserInformation(
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	credMgmt, ok := d.info.Options[protocol.OptionCredentialManagement]
-	if d.info.Versions.IsPreviewOnly() {
-		credMgmt, ok = d.info.Options[protocol.OptionCredentialManagementPreview]
-	}
-	if !ok || !credMgmt {
-		return newErrorMessage(ErrNotSupported, "device doesn't support credential management")
+	preview, err := credentialManagementMode(d.info)
+	if err != nil {
+		return err
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(pinUvAuthToken, true)
 	if err != nil {
 		return err
 	}
 
 	return d.ctapClient.UpdateUserInformation(
 		ctx,
-		d.info.Versions.IsPreviewOnly(),
+		preview,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
 		credentialID,
@@ -1704,6 +1536,14 @@ func (d *Device) SetLargeBlobs(ctx context.Context, pinUvAuthToken []byte, blobs
 		return newErrorMessage(ErrNotSupported, "device doesn't support largeBlobs")
 	}
 
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(
+		pinUvAuthToken,
+		largeBlobsAuthorizationRequired(d.info),
+	)
+	if err != nil {
+		return err
+	}
+
 	set, err := d.encMode.Marshal(blobs)
 	if err != nil {
 		return err
@@ -1734,11 +1574,6 @@ func (d *Device) SetLargeBlobs(ctx context.Context, pinUvAuthToken []byte, blobs
 	offset := uint(0)
 	length := uint(len(set))
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
-	if err != nil {
-		return err
-	}
-
 	setChunks := lo.Chunk(set, int(maxFragmentLength))
 	for i, chunk := range setChunks {
 		if i > 0 {
@@ -1768,14 +1603,18 @@ func (d *Device) EnableEnterpriseAttestation(ctx context.Context, pinUvAuthToken
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if authnrCfg, ok := d.info.Options[protocol.OptionAuthenticatorConfig]; !ok || !authnrCfg {
-		return newErrorMessage(ErrNotSupported, "device doesn't support authnrCfg")
+	const subCommand = protocol.ConfigSubCommandEnableEnterpriseAttestation
+	if err := validateAuthenticatorConfigCommand(d.info, subCommand); err != nil {
+		return err
 	}
 	if _, ok := d.info.Options[protocol.OptionEnterpriseAttestation]; !ok {
 		return newErrorMessage(ErrNotSupported, "device doesn't support ep")
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(
+		pinUvAuthToken,
+		configAuthorizationRequired(d.info, subCommand),
+	)
 	if err != nil {
 		return err
 	}
@@ -1796,14 +1635,18 @@ func (d *Device) ToggleAlwaysUV(ctx context.Context, pinUvAuthToken []byte) erro
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if authnrCfg, ok := d.info.Options[protocol.OptionAuthenticatorConfig]; !ok || !authnrCfg {
-		return newErrorMessage(ErrNotSupported, "device doesn't support authnrCfg")
+	const subCommand = protocol.ConfigSubCommandToggleAlwaysUv
+	if err := validateAuthenticatorConfigCommand(d.info, subCommand); err != nil {
+		return err
 	}
 	if _, ok := d.info.Options[protocol.OptionAlwaysUv]; !ok {
 		return newErrorMessage(ErrNotSupported, "device doesn't support alwaysUv")
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(
+		pinUvAuthToken,
+		configAuthorizationRequired(d.info, subCommand),
+	)
 	if err != nil {
 		return err
 	}
@@ -1830,11 +1673,18 @@ func (d *Device) SetMinPINLength(
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if authnrCfg, ok := d.info.Options[protocol.OptionAuthenticatorConfig]; !ok || !authnrCfg {
-		return newErrorMessage(ErrNotSupported, "device doesn't support authnrCfg")
+	const subCommand = protocol.ConfigSubCommandSetMinPINLength
+	if err := validateAuthenticatorConfigCommand(d.info, subCommand); err != nil {
+		return err
+	}
+	if !d.info.Options[protocol.OptionSetMinPINLength] {
+		return newErrorMessage(ErrNotSupported, "device doesn't support setMinPINLength")
 	}
 
-	pinUvAuthProtocol, err := d.requirePinUvAuthProtocol()
+	pinUvAuthProtocol, err := d.pinUvAuthProtocolForRequest(
+		pinUvAuthToken,
+		configAuthorizationRequired(d.info, subCommand),
+	)
 	if err != nil {
 		return err
 	}
@@ -1860,5 +1710,9 @@ func (d *Device) SetMinPINLength(
 func (d *Device) Selection(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if isFIDO20Only(d.info.Versions) {
+		return newErrorMessage(ErrNotSupported, "authenticatorSelection requires CTAP 2.1 or later")
+	}
+
 	return d.ctapClient.Selection(ctx)
 }
