@@ -29,10 +29,17 @@ type AuthenticatorMakeCredentialResponse struct {
 	AuthDataRaw              []byte                                                `cbor:"2,keyasint"`
 	AuthData                 *MakeCredentialAuthData                               `cbor:"-"`
 	AttestationStatement     map[string]any                                        `cbor:"3,keyasint,omitempty"`
-	EnterpriseAttestation    bool                                                  `cbor:"4,keyasint,omitempty"`
+	EnterpriseAttestation    *bool                                                 `cbor:"4,keyasint,omitempty"`
 	LargeBlobKey             []byte                                                `cbor:"5,keyasint,omitempty"`
 	UnsignedExtensionOutputs map[extension.ExtensionIdentifier]any                 `cbor:"6,keyasint,omitempty"`
 	ExtensionOutputs         *webauthn.CreateAuthenticationExtensionsClientOutputs `cbor:"-"`
+}
+
+func (r *AuthenticatorMakeCredentialResponse) LargeBlobUnsignedExtensionOutput() (*CreateLargeBlobOutput, error) {
+	return decodeUnsignedExtensionOutput[CreateLargeBlobOutput](
+		r.UnsignedExtensionOutputs,
+		extension.ExtensionIdentifierLargeBlob,
+	)
 }
 
 type MakeCredentialAuthData struct {

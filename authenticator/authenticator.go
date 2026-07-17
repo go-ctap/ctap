@@ -245,9 +245,23 @@ func (d *Device) MakeCredential(
 	}
 
 	extensions := new(protocol.CreateExtensionInputs)
-
-	if extInputs.LargeBlobInputs != nil {
-		return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(SyntaxError, "largeBlob extension is not supported yet")
+	backend, largeBlobSupport, largeBlobKeyRequested, err := validateCreateLargeBlob(
+		d.info,
+		extInputs.LargeBlobInputs,
+		options,
+	)
+	if err != nil {
+		return protocol.AuthenticatorMakeCredentialResponse{}, err
+	}
+	switch backend {
+	case largeBlobBackendDirect:
+		extensions.CreateLargeBlobInput = &protocol.CreateLargeBlobInput{
+			LargeBlob: protocol.CreateLargeBlobParams{Support: largeBlobSupport},
+		}
+	case largeBlobBackendLegacy:
+		if largeBlobKeyRequested {
+			extensions.CreateLargeBlobKeyInput = &protocol.CreateLargeBlobKeyInput{LargeBlobKey: true}
+		}
 	}
 
 	// hmac-secret
@@ -445,6 +459,16 @@ func (d *Device) MakeCredential(
 
 	extOutputs := new(webauthn.CreateAuthenticationExtensionsClientOutputs)
 	resp.ExtensionOutputs = extOutputs
+	largeBlobOutput, err := createLargeBlobOutput(
+		backend,
+		largeBlobSupport,
+		largeBlobKeyRequested,
+		resp,
+	)
+	if err != nil {
+		return protocol.AuthenticatorMakeCredentialResponse{}, err
+	}
+	extOutputs.LargeBlobOutputs = largeBlobOutput
 	if extInputs.PRFInputs != nil {
 		extOutputs.CreatePRFOutputs = &webauthn.CreatePRFOutputs{}
 	}
@@ -557,10 +581,6 @@ func (d *Device) GetAssertion(
 		if extInputs == nil {
 			extInputs = &webauthn.GetAuthenticationExtensionsClientInputs{}
 		}
-		if extInputs.LargeBlobInputs != nil {
-			yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(SyntaxError, "largeBlob extension is not supported yet"))
-			return
-		}
 		if extInputs.PRFInputs != nil && extInputs.GetHMACSecretInputs != nil {
 			yield(protocol.AuthenticatorGetAssertionResponse{}, newErrorMessage(SyntaxError, "you cannot use hmac-secret and prf extensions at the same time"))
 			return
@@ -590,6 +610,32 @@ func (d *Device) GetAssertion(
 		}
 
 		extensions := new(protocol.GetExtensionInputs)
+		backend, largeBlobRead, largeBlobWrite, err := validateGetLargeBlob(
+			d.info,
+			extInputs.LargeBlobInputs,
+			allowList,
+		)
+		if err != nil {
+			yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+			return
+		}
+		switch backend {
+		case largeBlobBackendDirect:
+			params := protocol.GetLargeBlobParams{Read: largeBlobRead}
+			if largeBlobWrite != nil {
+				compressed, err := crypto.CompressLargeBlobData(largeBlobWrite)
+				if err != nil {
+					yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+					return
+				}
+				originalSize := uint(len(largeBlobWrite))
+				params.Write = compressed
+				params.OriginalSize = &originalSize
+			}
+			extensions.GetLargeBlobInput = &protocol.GetLargeBlobInput{LargeBlob: params}
+		case largeBlobBackendLegacy:
+			extensions.GetLargeBlobKeyInput = &protocol.GetLargeBlobKeyInput{LargeBlobKey: true}
+		}
 
 		// hmac-secret
 		if extInputs.GetHMACSecretInputs != nil {
@@ -716,6 +762,15 @@ func (d *Device) GetAssertion(
 			}
 		}
 
+		var legacyAssertions []protocol.AuthenticatorGetAssertionResponse
+		emitAssertion := func(assertion protocol.AuthenticatorGetAssertionResponse) bool {
+			if backend == largeBlobBackendLegacy {
+				legacyAssertions = append(legacyAssertions, assertion)
+				return true
+			}
+			return yield(assertion, nil)
+		}
+
 		clientDataHash := sha256.Sum256(clientData)
 		for assertion, err := range d.ctapClient.GetAssertion(
 			ctx,
@@ -736,6 +791,17 @@ func (d *Device) GetAssertion(
 			if extInputs.PRFInputs != nil {
 				assertion.ExtensionOutputs.GetPRFOutputs = &webauthn.GetPRFOutputs{}
 			}
+			largeBlobOutput, err := getLargeBlobOutput(
+				backend,
+				largeBlobRead,
+				largeBlobWrite,
+				assertion,
+			)
+			if err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+				return
+			}
+			assertion.ExtensionOutputs.LargeBlobOutputs = largeBlobOutput
 
 			var authenticatorExtensions *protocol.GetExtensionOutputs
 			if assertion.AuthData.Flags.ExtensionDataIncluded() {
@@ -748,7 +814,7 @@ func (d *Device) GetAssertion(
 
 			// Yield assertions without extension data
 			if authenticatorExtensions == nil {
-				if !yield(assertion, nil) {
+				if !emitAssertion(assertion) {
 					return
 				}
 				continue
@@ -826,8 +892,29 @@ func (d *Device) GetAssertion(
 				}
 			}
 
-			if !yield(assertion, nil) {
+			if !emitAssertion(assertion) {
 				return
+			}
+		}
+
+		if backend == largeBlobBackendLegacy {
+			largeBlobOutputs, err := d.resolveLegacyLargeBlobOutputs(
+				ctx,
+				pinUvAuthToken,
+				backend,
+				largeBlobRead,
+				largeBlobWrite,
+				legacyAssertions,
+			)
+			if err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+				return
+			}
+			for i := range legacyAssertions {
+				legacyAssertions[i].ExtensionOutputs.LargeBlobOutputs = largeBlobOutputs[i]
+				if !yield(legacyAssertions[i], nil) {
+					return
+				}
 			}
 		}
 	}
@@ -869,6 +956,24 @@ func (d *Device) GetPINRetries(ctx context.Context) (uint, *bool, error) {
 	}
 
 	return d.ctapClient.GetPINRetries(ctx, pinUvAuthProtocol)
+}
+
+// GetUVRetries retrieves the number of remaining user verification retries from the device.
+// Returns an error if the device does not support user verification.
+func (d *Device) GetUVRetries(ctx context.Context) (uint, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if isFIDO20Only(d.info.Versions) {
+		return 0, newErrorMessage(ErrNotSupported, "getUVRetries requires CTAP 2.1 or later")
+	}
+
+	_, ok := d.info.Options[protocol.OptionUserVerification]
+	if !ok {
+		return 0, newErrorMessage(ErrNotSupported, "device doesn't support user verification")
+	}
+
+	return d.ctapClient.GetUVRetries(ctx)
 }
 
 // SetPIN sets a new PIN on the device if the clientPin option is supported and no PIN exists.
@@ -1015,24 +1120,6 @@ func (d *Device) GetPinUvAuthTokenUsingUV(ctx context.Context, permission protoc
 		permission,
 		rpID,
 	)
-}
-
-// GetUVRetries retrieves the number of remaining user verification retries from the device.
-// Returns an error if the device does not support user verification.
-func (d *Device) GetUVRetries(ctx context.Context) (uint, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if isFIDO20Only(d.info.Versions) {
-		return 0, newErrorMessage(ErrNotSupported, "getUVRetries requires CTAP 2.1 or later")
-	}
-
-	_, ok := d.info.Options[protocol.OptionUserVerification]
-	if !ok {
-		return 0, newErrorMessage(ErrNotSupported, "device doesn't support user verification")
-	}
-
-	return d.ctapClient.GetUVRetries(ctx)
 }
 
 // Reset performs a factory reset on the device, clearing all stored user data and resetting it to its default state.
@@ -1430,13 +1517,29 @@ func (d *Device) UpdateUserInformation(
 	)
 }
 
+// Selection is a higher-level version of ctap.Selection. CTAPHID commands are
+// canceled when the context is canceled; other transports check the context
+// before starting the command.
+func (d *Device) Selection(ctx context.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if isFIDO20Only(d.info.Versions) {
+		return newErrorMessage(ErrNotSupported, "authenticatorSelection requires CTAP 2.1 or later")
+	}
+
+	return d.ctapClient.Selection(ctx)
+}
+
 // GetLargeBlobs retrieves a list of large blobs from the device that supports the large blobs option.
 // Returns an error if the device does not support large blobs or if there is an issue with the retrieval process.
 // Ensures integrity by validating computed and actual hashes of the retrieved data.
 func (d *Device) GetLargeBlobs(ctx context.Context) ([]protocol.LargeBlob, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.getLargeBlobsLocked(ctx)
+}
 
+func (d *Device) getLargeBlobsLocked(ctx context.Context) ([]protocol.LargeBlob, error) {
 	largeBlobs, ok := d.info.Options[protocol.OptionLargeBlobs]
 	if !ok || !largeBlobs {
 		return nil, newErrorMessage(ErrNotSupported, "device doesn't support largeBlobs")
@@ -1457,11 +1560,12 @@ func (d *Device) GetLargeBlobs(ctx context.Context) ([]protocol.LargeBlob, error
 		return nil, err
 	}
 
-	config := resp.Config
-	offset := maxFragmentLength
+	fragment := resp.Config
+	config := slices.Clone(fragment)
+	offset := uint(len(fragment))
 
 	// Continue to read
-	for uint(len(config)) == maxFragmentLength {
+	for uint(len(fragment)) == maxFragmentLength {
 		respNext, err := d.ctapClient.LargeBlobs(
 			ctx,
 			0,
@@ -1475,8 +1579,9 @@ func (d *Device) GetLargeBlobs(ctx context.Context) ([]protocol.LargeBlob, error
 			return nil, err
 		}
 
-		config = slices.Concat(config, respNext.Config)
-		offset += uint(len(respNext.Config))
+		fragment = respNext.Config
+		config = append(config, fragment...)
+		offset += uint(len(fragment))
 	}
 	if len(config) < 16 {
 		return nil, newErrorMessage(ErrLargeBlobsIntegrityCheck, "invalid large blobs response length")
@@ -1488,7 +1593,7 @@ func (d *Device) GetLargeBlobs(ctx context.Context) ([]protocol.LargeBlob, error
 	hasher := sha256.New()
 	hasher.Write(bLargeBlobs)
 	if !slices.Equal(hash, hasher.Sum(nil)[:16]) {
-		return []protocol.LargeBlob{}, nil
+		return nil, newErrorMessage(ErrLargeBlobsIntegrityCheck, "large blobs checksum mismatch")
 	}
 
 	var blobs []protocol.LargeBlob
@@ -1509,7 +1614,10 @@ func (d *Device) GetLargeBlobs(ctx context.Context) ([]protocol.LargeBlob, error
 func (d *Device) SetLargeBlobs(ctx context.Context, pinUvAuthToken []byte, blobs []protocol.LargeBlob) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.setLargeBlobsLocked(ctx, pinUvAuthToken, blobs)
+}
 
+func (d *Device) setLargeBlobsLocked(ctx context.Context, pinUvAuthToken []byte, blobs []protocol.LargeBlob) error {
 	largeBlobs, ok := d.info.Options[protocol.OptionLargeBlobs]
 	if !ok || !largeBlobs {
 		return newErrorMessage(ErrNotSupported, "device doesn't support largeBlobs")
@@ -1640,13 +1748,12 @@ func (d *Device) ToggleAlwaysUV(ctx context.Context, pinUvAuthToken []byte) erro
 	return d.refreshInfoLocked(ctx)
 }
 
+// SetMinPINLength configures any subset of the PIN policy parameters accepted
+// by the setMinPINLength authenticatorConfig subcommand.
 func (d *Device) SetMinPINLength(
 	ctx context.Context,
 	pinUvAuthToken []byte,
-	newMinPINLength uint,
-	minPinLengthRPIDs []string,
-	forceChangePin bool,
-	pinComplexityPolicy bool,
+	params protocol.SetMinPINLengthConfigSubCommandParams,
 ) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -1671,26 +1778,10 @@ func (d *Device) SetMinPINLength(
 		ctx,
 		pinUvAuthProtocol,
 		pinUvAuthToken,
-		newMinPINLength,
-		minPinLengthRPIDs,
-		forceChangePin,
-		pinComplexityPolicy,
+		params,
 	); err != nil {
 		return err
 	}
 
 	return d.refreshInfoLocked(ctx)
-}
-
-// Selection is a higher-level version of ctap.Selection. CTAPHID commands are
-// canceled when the context is canceled; other transports check the context
-// before starting the command.
-func (d *Device) Selection(ctx context.Context) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if isFIDO20Only(d.info.Versions) {
-		return newErrorMessage(ErrNotSupported, "authenticatorSelection requires CTAP 2.1 or later")
-	}
-
-	return d.ctapClient.Selection(ctx)
 }

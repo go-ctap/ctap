@@ -67,12 +67,16 @@ func TestProtocolNames(t *testing.T) {
 	}, ConfigSubCommand.Name)
 }
 
-type namedValue[T ~byte] struct {
+type namedUnsigned interface {
+	~uint8 | ~uint
+}
+
+type namedValue[T namedUnsigned] struct {
 	value T
 	name  string
 }
 
-func assertNames[T ~byte](
+func assertNames[T namedUnsigned](
 	t *testing.T,
 	typeName string,
 	values []namedValue[T],

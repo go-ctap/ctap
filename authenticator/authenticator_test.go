@@ -245,7 +245,70 @@ func TestLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
 	assert.Equal(t, uint64(960), request[uint64(1)])
 }
 
-func TestLargeBlobsTreatsCorruptConfigAsInitialEmptyArray(t *testing.T) {
+func TestGetLargeBlobsReadsAllFullFragments(t *testing.T) {
+	want := []protocol.LargeBlob{{
+		Ciphertext: bytes.Repeat([]byte{0xaa}, 32),
+		Nonce:      bytes.Repeat([]byte{0xbb}, 12),
+		OrigSize:   16,
+	}}
+	encodedBlobs, err := marshalLargeBlobArray(want)
+	require.NoError(t, err)
+	sum := sha256.Sum256(encodedBlobs)
+	config := slices.Concat(encodedBlobs, sum[:16])
+
+	const maxFragmentLength = 16
+	chunks := lo.Chunk(config, maxFragmentLength)
+	require.Greater(t, len(chunks), 2)
+	responses := make([][]byte, len(chunks))
+	for i, chunk := range chunks {
+		responses[i] = encodeCBOR(t, &protocol.AuthenticatorLargeBlobsResponse{Config: chunk})
+	}
+
+	fake := testhid.NewCBORDevice(t, testCID, responses...)
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		MaxMsgSize: lo.ToPtr(uint(maxFragmentLength + 64)),
+		Options: map[protocol.Option]bool{
+			protocol.OptionLargeBlobs: true,
+		},
+	})
+
+	got, err := d.GetLargeBlobs(testContext)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+	assert.Len(t, fake.Requests(t), len(chunks))
+}
+
+func TestGetLargeBlobsStopsAfterTrailingEmptyFragment(t *testing.T) {
+	encodedBlobs := encodeCBOR(t, []protocol.LargeBlob{})
+	sum := sha256.Sum256(encodedBlobs)
+	config := slices.Concat(encodedBlobs, sum[:16])
+	maxMsgSize := uint(len(config) + 64)
+
+	fake := testhid.NewCBORDevice(
+		t,
+		testCID,
+		encodeCBOR(t, &protocol.AuthenticatorLargeBlobsResponse{Config: config}),
+		encodeCBOR(t, &protocol.AuthenticatorLargeBlobsResponse{Config: []byte{}}),
+	)
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		MaxMsgSize: &maxMsgSize,
+		Options: map[protocol.Option]bool{
+			protocol.OptionLargeBlobs: true,
+		},
+	})
+
+	blobs, err := d.GetLargeBlobs(testContext)
+	require.NoError(t, err)
+	assert.Empty(t, blobs)
+
+	requests := fake.Requests(t)
+	require.Len(t, requests, 2)
+	command, request := requests[1].CTAPRequestMap(t)
+	assert.Equal(t, protocol.AuthenticatorLargeBlobs, command)
+	assert.Equal(t, uint64(len(config)), request[uint64(3)])
+}
+
+func TestLargeBlobsReturnsIntegrityErrorForCorruptConfig(t *testing.T) {
 	encodedBlobs := encodeCBOR(t, []protocol.LargeBlob{{Ciphertext: []byte{0xaa}}})
 	response := encodeCBOR(t, &protocol.AuthenticatorLargeBlobsResponse{
 		Config: append(encodedBlobs, bytes.Repeat([]byte{0x00}, 16)...),
@@ -257,9 +320,8 @@ func TestLargeBlobsTreatsCorruptConfigAsInitialEmptyArray(t *testing.T) {
 		},
 	})
 
-	blobs, err := d.GetLargeBlobs(testContext)
-	require.NoError(t, err)
-	assert.Empty(t, blobs)
+	_, err := d.GetLargeBlobs(testContext)
+	require.ErrorIs(t, err, ErrLargeBlobsIntegrityCheck)
 }
 
 func TestLargeBlobsReturnsInvalidArrayError(t *testing.T) {

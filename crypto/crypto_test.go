@@ -33,6 +33,12 @@ func TestEncryptDecryptLargeBlob(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, decryptedOrigData, origData)
+
+	compressed, err := OpenLargeBlob(encKey, encryptedBlob)
+	require.NoError(t, err)
+	openedOrigData, err := DecompressLargeBlobData(compressed, encryptedBlob.OrigSize)
+	require.NoError(t, err)
+	assert.Equal(t, origData, openedOrigData)
 }
 
 func TestDecryptLargeBlobRejectsTampering(t *testing.T) {

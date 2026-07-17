@@ -4,7 +4,7 @@ import "github.com/go-ctap/ctap/extension"
 
 type AuthenticationExtensionsLargeBlobInputs struct {
 	Support extension.LargeBlobSupport `cbor:"support,omitzero" json:"support,omitzero"`
-	Read    bool                       `cbor:"read,omitzero" json:"read,omitzero"`
+	Read    *bool                      `cbor:"read,omitempty" json:"read,omitempty"`
 	Write   []byte                     `cbor:"write,omitzero" json:"write,omitzero"`
 }
 
@@ -13,9 +13,9 @@ type LargeBlobInputs struct {
 }
 
 type AuthenticationExtensionsLargeBlobOutputs struct {
-	Supported bool   `cbor:"supported" json:"supported"`
+	Supported *bool  `cbor:"supported,omitempty" json:"supported,omitempty"`
 	Blob      []byte `cbor:"blob,omitzero" json:"blob,omitzero"`
-	Written   bool   `cbor:"written,omitzero" json:"written,omitzero"`
+	Written   *bool  `cbor:"written,omitempty" json:"written,omitempty"`
 }
 
 type LargeBlobOutputs struct {

@@ -106,12 +106,48 @@ func Authenticate(number protocol.PinUvAuthProtocol, sharedSecret []byte, messag
 	}
 }
 
+func DecryptLargeBlob(key []byte, blob protocol.LargeBlob) ([]byte, error) {
+	plaintext, err := OpenLargeBlob(key, blob)
+	if err != nil {
+		return nil, err
+	}
+
+	return DecompressLargeBlobData(plaintext, blob.OrigSize)
+}
+
+// OpenLargeBlob authenticates and decrypts a large-blob array element without
+// decompressing its plaintext. Callers that scan an array can use a successful
+// return to distinguish an AEAD key match from a malformed DEFLATE stream.
+func OpenLargeBlob(key []byte, blob protocol.LargeBlob) ([]byte, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("invalid large blob key length: got %d, want 32", len(key))
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	if len(blob.Nonce) != gcm.NonceSize() {
+		return nil, fmt.Errorf("invalid large blob nonce length: got %d, want %d", len(blob.Nonce), gcm.NonceSize())
+	}
+
+	origSizeBin := make([]byte, 8)
+	binary.LittleEndian.PutUint64(origSizeBin, uint64(blob.OrigSize))
+
+	return gcm.Open(nil, blob.Nonce, blob.Ciphertext, slices.Concat([]byte("blob"), origSizeBin))
+}
+
 func EncryptLargeBlob(key []byte, origData []byte) (protocol.LargeBlob, error) {
 	if len(key) != 32 {
 		return protocol.LargeBlob{}, fmt.Errorf("invalid large blob key length: got %d, want 32", len(key))
 	}
 
-	plaintext, err := compress(origData)
+	plaintext, err := CompressLargeBlobData(origData)
 	if err != nil {
 		return protocol.LargeBlob{}, err
 	}
@@ -141,41 +177,4 @@ func EncryptLargeBlob(key []byte, origData []byte) (protocol.LargeBlob, error) {
 		Nonce:      nonce,
 		OrigSize:   uint(origSize),
 	}, nil
-}
-
-func DecryptLargeBlob(key []byte, blob protocol.LargeBlob) ([]byte, error) {
-	if len(key) != 32 {
-		return nil, fmt.Errorf("invalid large blob key length: got %d, want 32", len(key))
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	if len(blob.Nonce) != gcm.NonceSize() {
-		return nil, fmt.Errorf("invalid large blob nonce length: got %d, want %d", len(blob.Nonce), gcm.NonceSize())
-	}
-
-	origSizeBin := make([]byte, 8)
-	binary.LittleEndian.PutUint64(origSizeBin, uint64(blob.OrigSize))
-
-	plaintext, err := gcm.Open(nil, blob.Nonce, blob.Ciphertext, slices.Concat([]byte("blob"), origSizeBin))
-	if err != nil {
-		return nil, err
-	}
-
-	origData, err := decompress(plaintext)
-	if err != nil {
-		return nil, err
-	}
-	if uint(len(origData)) != blob.OrigSize {
-		return nil, fmt.Errorf("large blob orig size mismatch: got %d, want %d", len(origData), blob.OrigSize)
-	}
-
-	return origData, nil
 }

@@ -467,7 +467,7 @@ func validateAuthenticatorConfigCommand(
 	// CTAP 2.3 exposes exact subcommand support. A missing or empty list does
 	// not advertise support for any standard authenticatorConfig subcommand.
 	if info.Versions.Supports(protocol.FIDO_2_3) &&
-		!slices.Contains(info.AuthenticatorConfigCommands, uint(subCommand)) {
+		!slices.Contains(info.AuthenticatorConfigCommands, subCommand) {
 		return newErrorMessage(
 			ErrNotSupported,
 			fmt.Sprintf("device doesn't support authenticatorConfig subcommand %s", subCommand),

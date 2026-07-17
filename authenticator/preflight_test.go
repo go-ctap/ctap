@@ -437,12 +437,14 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 				protocol.OptionAuthenticatorConfig: true,
 				protocol.OptionSetMinPINLength:     true,
 			},
-			AuthenticatorConfigCommands: []uint{uint(protocol.ConfigSubCommandSetMinPINLength)},
+			AuthenticatorConfigCommands: []protocol.ConfigSubCommand{protocol.ConfigSubCommandSetMinPINLength},
 		}
 		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, info))
 		d := newTestDevice(fake, info)
 
-		require.NoError(t, d.SetMinPINLength(testContext, nil, 8, nil, false, false))
+		require.NoError(t, d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+			NewMinPINLength: lo.ToPtr(uint(8)),
+		}))
 
 		command, request := fake.FirstCTAPRequestMap(t)
 		assert.Equal(t, protocol.AuthenticatorConfig, command)
@@ -461,7 +463,9 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 			},
 		})
 
-		err := d.SetMinPINLength(testContext, nil, 8, nil, false, false)
+		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+			NewMinPINLength: lo.ToPtr(uint(8)),
+		})
 		require.ErrorIs(t, err, ErrPinUvAuthTokenRequired)
 		assert.Empty(t, fake.Writes())
 	})
@@ -475,7 +479,9 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 			},
 		})
 
-		err := d.SetMinPINLength(testContext, nil, 8, nil, false, false)
+		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+			NewMinPINLength: lo.ToPtr(uint(8)),
+		})
 		require.ErrorIs(t, err, ErrNotSupported)
 		assert.Empty(t, fake.Writes())
 	})
@@ -488,10 +494,12 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 				protocol.OptionAuthenticatorConfig: true,
 				protocol.OptionSetMinPINLength:     true,
 			},
-			AuthenticatorConfigCommands: []uint{},
+			AuthenticatorConfigCommands: []protocol.ConfigSubCommand{},
 		})
 
-		err := d.SetMinPINLength(testContext, nil, 8, nil, false, false)
+		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+			NewMinPINLength: lo.ToPtr(uint(8)),
+		})
 		require.ErrorIs(t, err, ErrNotSupported)
 		assert.Empty(t, fake.Writes())
 	})
@@ -506,7 +514,9 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 			},
 		})
 
-		err := d.SetMinPINLength(testContext, nil, 8, nil, false, false)
+		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+			NewMinPINLength: lo.ToPtr(uint(8)),
+		})
 		require.ErrorIs(t, err, ErrNotSupported)
 		assert.Empty(t, fake.Writes())
 	})
@@ -518,12 +528,14 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 				protocol.OptionAuthenticatorConfig: true,
 				protocol.OptionSetMinPINLength:     true,
 			},
-			AuthenticatorConfigCommands: []uint{},
+			AuthenticatorConfigCommands: []protocol.ConfigSubCommand{},
 		}
 		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, info))
 		d := newTestDevice(fake, info)
 
-		require.NoError(t, d.SetMinPINLength(testContext, nil, 8, nil, false, false))
+		require.NoError(t, d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+			NewMinPINLength: lo.ToPtr(uint(8)),
+		}))
 	})
 
 	t.Run("unprotected alwaysUv can be disabled without auth", func(t *testing.T) {
@@ -533,7 +545,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 				protocol.OptionAuthenticatorConfig: true,
 				protocol.OptionAlwaysUv:            true,
 			},
-			AuthenticatorConfigCommands: []uint{uint(protocol.ConfigSubCommandToggleAlwaysUv)},
+			AuthenticatorConfigCommands: []protocol.ConfigSubCommand{protocol.ConfigSubCommandToggleAlwaysUv},
 		}
 		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, info))
 		d := newTestDevice(fake, info)

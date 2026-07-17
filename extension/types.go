@@ -24,6 +24,7 @@ const (
 	ExtensionIdentifierCredentialProperties   ExtensionIdentifier = "credProps"
 	ExtensionIdentifierLargeBlob              ExtensionIdentifier = "largeBlob"
 	ExtensionIdentifierPayment                ExtensionIdentifier = "payment"
+	ExtensionIdentifierThirdPartyPayment      ExtensionIdentifier = "thirdPartyPayment"
 )
 
 type CredentialProtectionPolicy string

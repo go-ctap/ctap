@@ -272,6 +272,35 @@ func (cl *Client) GetPINRetries(
 	return *resp.PinRetries, resp.PowerCycleState, nil
 }
 
+func (cl *Client) GetUVRetries(ctx context.Context) (uint, error) {
+	req := &protocol.AuthenticatorClientPINRequest{
+		SubCommand: protocol.ClientPINSubCommandGetUVRetries,
+	}
+
+	b, err := cl.encMode.Marshal(req)
+	if err != nil {
+		return 0, err
+	}
+	cl.logger.Debug("getUVRetries CBOR request", "hex", hex.EncodeToString(b))
+
+	respRaw, err := cl.cbor(ctx, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
+	if err != nil {
+		return 0, err
+	}
+	cl.logger.Debug("getUVRetries CBOR response", "hex", hex.EncodeToString(respRaw.Data))
+
+	var resp *protocol.AuthenticatorClientPINResponse
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
+		return 0, err
+	}
+
+	if resp.UvRetries == nil {
+		return 0, errors.New("spec violation: uvRetries is nil")
+	}
+
+	return *resp.UvRetries, err
+}
+
 func (cl *Client) GetKeyAgreement(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
@@ -489,86 +518,6 @@ func (cl *Client) GetPinToken(
 	return pinUvAuthToken, nil
 }
 
-// GetPinUvAuthTokenUsingUvWithPermissions allows getting a PinUvAuthToken with specific permissions using User Verification.
-func (cl *Client) GetPinUvAuthTokenUsingUvWithPermissions(
-	ctx context.Context,
-	pinUvAuthProtocol protocol.PinUvAuthProtocol,
-	keyAgreement cose.Key,
-	permissions protocol.Permission,
-	rpID string,
-) ([]byte, error) {
-	pinProtocol, err := crypto.NewPinUvAuthProtocol(pinUvAuthProtocol)
-	if err != nil {
-		return nil, err
-	}
-
-	platformCoseKey, sharedSecret, err := pinProtocol.Encapsulate(keyAgreement)
-	if err != nil {
-		return nil, err
-	}
-
-	req := &protocol.AuthenticatorClientPINRequest{
-		PinUvAuthProtocol: pinProtocol.Number,
-		SubCommand:        protocol.ClientPINSubCommandGetPinUvAuthTokenUsingUvWithPermissions,
-		KeyAgreement:      platformCoseKey,
-		Permissions:       permissions,
-		RPID:              rpID,
-	}
-
-	b, err := cl.encMode.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-	cl.logger.Debug("getPinUvAuthTokenUsingUvWithPermissions CBOR request", "hex", hex.EncodeToString(b))
-
-	respRaw, err := cl.cbor(ctx, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
-	if err != nil {
-		return nil, err
-	}
-	cl.logger.Debug("getPinUvAuthTokenUsingUvWithPermissions CBOR response", "hex", hex.EncodeToString(respRaw.Data))
-
-	var resp *protocol.AuthenticatorClientPINResponse
-	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
-		return nil, err
-	}
-
-	pinUvAuthToken, err := pinProtocol.Decrypt(sharedSecret, resp.PinUvAuthToken)
-	if err != nil {
-		return nil, err
-	}
-
-	return pinUvAuthToken, nil
-}
-
-func (cl *Client) GetUVRetries(ctx context.Context) (uint, error) {
-	req := &protocol.AuthenticatorClientPINRequest{
-		SubCommand: protocol.ClientPINSubCommandGetUVRetries,
-	}
-
-	b, err := cl.encMode.Marshal(req)
-	if err != nil {
-		return 0, err
-	}
-	cl.logger.Debug("getUVRetries CBOR request", "hex", hex.EncodeToString(b))
-
-	respRaw, err := cl.cbor(ctx, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
-	if err != nil {
-		return 0, err
-	}
-	cl.logger.Debug("getUVRetries CBOR response", "hex", hex.EncodeToString(respRaw.Data))
-
-	var resp *protocol.AuthenticatorClientPINResponse
-	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
-		return 0, err
-	}
-
-	if resp.UvRetries == nil {
-		return 0, errors.New("spec violation: uvRetries is nil")
-	}
-
-	return *resp.UvRetries, err
-}
-
 // GetPinUvAuthTokenUsingPinWithPermissions allows getting a PinUvAuthToken with specific permissions using PIN.
 func (cl *Client) GetPinUvAuthTokenUsingPinWithPermissions(
 	ctx context.Context,
@@ -622,6 +571,57 @@ func (cl *Client) GetPinUvAuthTokenUsingPinWithPermissions(
 		return nil, err
 	}
 	cl.logger.Debug("getPinUvAuthTokenUsingPinWithPermissions CBOR response", "hex", hex.EncodeToString(respRaw.Data))
+
+	var resp *protocol.AuthenticatorClientPINResponse
+	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
+		return nil, err
+	}
+
+	pinUvAuthToken, err := pinProtocol.Decrypt(sharedSecret, resp.PinUvAuthToken)
+	if err != nil {
+		return nil, err
+	}
+
+	return pinUvAuthToken, nil
+}
+
+// GetPinUvAuthTokenUsingUvWithPermissions allows getting a PinUvAuthToken with specific permissions using User Verification.
+func (cl *Client) GetPinUvAuthTokenUsingUvWithPermissions(
+	ctx context.Context,
+	pinUvAuthProtocol protocol.PinUvAuthProtocol,
+	keyAgreement cose.Key,
+	permissions protocol.Permission,
+	rpID string,
+) ([]byte, error) {
+	pinProtocol, err := crypto.NewPinUvAuthProtocol(pinUvAuthProtocol)
+	if err != nil {
+		return nil, err
+	}
+
+	platformCoseKey, sharedSecret, err := pinProtocol.Encapsulate(keyAgreement)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &protocol.AuthenticatorClientPINRequest{
+		PinUvAuthProtocol: pinProtocol.Number,
+		SubCommand:        protocol.ClientPINSubCommandGetPinUvAuthTokenUsingUvWithPermissions,
+		KeyAgreement:      platformCoseKey,
+		Permissions:       permissions,
+		RPID:              rpID,
+	}
+
+	b, err := cl.encMode.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	cl.logger.Debug("getPinUvAuthTokenUsingUvWithPermissions CBOR request", "hex", hex.EncodeToString(b))
+
+	respRaw, err := cl.cbor(ctx, slices.Concat([]byte{byte(protocol.AuthenticatorClientPIN)}, b))
+	if err != nil {
+		return nil, err
+	}
+	cl.logger.Debug("getPinUvAuthTokenUsingUvWithPermissions CBOR response", "hex", hex.EncodeToString(respRaw.Data))
 
 	var resp *protocol.AuthenticatorClientPINResponse
 	if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
@@ -1132,7 +1132,12 @@ func (cl *Client) EnumerateRPs(
 			return
 		}
 
-		if respBegin.TotalRPs == 0 {
+		if respBegin.TotalRPs == nil {
+			yield(protocol.AuthenticatorCredentialManagementResponse{}, errors.New("spec violation: totalRPs is missing from enumerateRPsBegin response"))
+			return
+		}
+		if *respBegin.TotalRPs == 0 {
+			yield(protocol.AuthenticatorCredentialManagementResponse{}, errors.New("spec violation: totalRPs is zero in enumerateRPsBegin response"))
 			return
 		}
 
@@ -1140,7 +1145,7 @@ func (cl *Client) EnumerateRPs(
 			return
 		}
 
-		for i := uint(1); i < respBegin.TotalRPs; i++ {
+		for i := uint(1); i < *respBegin.TotalRPs; i++ {
 			reqNext := &protocol.AuthenticatorCredentialManagementRequest{
 				SubCommand: protocol.CredentialManagementSubCommandEnumerateRPsGetNextRP,
 			}
@@ -1243,7 +1248,12 @@ func (cl *Client) EnumerateCredentials(
 			return
 		}
 
-		if respBegin.TotalCredentials == 0 {
+		if respBegin.TotalCredentials == nil {
+			yield(protocol.AuthenticatorCredentialManagementResponse{}, errors.New("spec violation: totalCredentials is missing from enumerateCredentialsBegin response"))
+			return
+		}
+		if *respBegin.TotalCredentials == 0 {
+			yield(protocol.AuthenticatorCredentialManagementResponse{}, errors.New("spec violation: totalCredentials is zero in enumerateCredentialsBegin response"))
 			return
 		}
 
@@ -1251,7 +1261,7 @@ func (cl *Client) EnumerateCredentials(
 			return
 		}
 
-		for i := uint(1); i < respBegin.TotalCredentials; i++ {
+		for i := uint(1); i < *respBegin.TotalCredentials; i++ {
 			reqNext := &protocol.AuthenticatorCredentialManagementRequest{
 				SubCommand: protocol.CredentialManagementSubCommandEnumerateCredentialsGetNextCredential,
 			}
@@ -1390,6 +1400,20 @@ func (cl *Client) UpdateUserInformation(
 	}
 
 	return nil
+}
+
+// Selection blocks until the user confirms presence or ctx is canceled.
+func (cl *Client) Selection(ctx context.Context) error {
+	_, err := cl.cbor(ctx, []byte{byte(protocol.AuthenticatorSelection)})
+	return normalizeSelectionError(err)
+}
+
+func normalizeSelectionError(err error) error {
+	if ctapError, ok := errors.AsType[*ctaptransport.CTAPError](err); ok && ctapError.StatusCode == ctaptransport.CTAP2_ERR_KEEPALIVE_CANCEL {
+		return nil
+	}
+
+	return err
 }
 
 func (cl *Client) LargeBlobs(
@@ -1546,21 +1570,15 @@ func (cl *Client) ToggleAlwaysUV(
 	return nil
 }
 
+// SetMinPINLength invokes the setMinPINLength authenticatorConfig subcommand
+// with independently optional CTAP 2.3 PIN policy parameters.
 func (cl *Client) SetMinPINLength(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	pinUvAuthToken []byte,
-	newMinPINLength uint,
-	minPinLengthRPIDs []string,
-	forceChangePin bool,
-	pinComplexityPolicy bool,
+	params protocol.SetMinPINLengthConfigSubCommandParams,
 ) error {
-	subCommandParams := &protocol.SetMinPINLengthConfigSubCommandParams{
-		NewMinPINLength:     newMinPINLength,
-		MinPinLengthRPIDs:   minPinLengthRPIDs,
-		ForceChangePin:      forceChangePin,
-		PinComplexityPolicy: pinComplexityPolicy,
-	}
+	subCommandParams := &params
 	bSubCommandParams, err := cl.encMode.Marshal(subCommandParams)
 	if err != nil {
 		return err
@@ -1603,18 +1621,4 @@ func (cl *Client) SetMinPINLength(
 	}
 
 	return nil
-}
-
-// Selection blocks until the user confirms presence or ctx is canceled.
-func (cl *Client) Selection(ctx context.Context) error {
-	_, err := cl.cbor(ctx, []byte{byte(protocol.AuthenticatorSelection)})
-	return normalizeSelectionError(err)
-}
-
-func normalizeSelectionError(err error) error {
-	if ctapError, ok := errors.AsType[*ctaptransport.CTAPError](err); ok && ctapError.StatusCode == ctaptransport.CTAP2_ERR_KEEPALIVE_CANCEL {
-		return nil
-	}
-
-	return err
 }

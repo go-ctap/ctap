@@ -32,6 +32,13 @@ type AuthenticatorGetAssertionResponse struct {
 	ExtensionOutputs         *webauthn.GetAuthenticationExtensionsClientOutputs `cbor:"-"`
 }
 
+func (r *AuthenticatorGetAssertionResponse) LargeBlobUnsignedExtensionOutput() (*GetLargeBlobOutput, error) {
+	return decodeUnsignedExtensionOutput[GetLargeBlobOutput](
+		r.UnsignedExtensionOutputs,
+		extension.ExtensionIdentifierLargeBlob,
+	)
+}
+
 type GetAssertionAuthData struct {
 	RPIDHash               []byte
 	Flags                  AuthDataFlag

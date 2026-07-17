@@ -144,6 +144,25 @@ func TestClientUsesConfiguredTransport(t *testing.T) {
 	assert.Equal(t, protocol.Versions{protocol.FIDO_2_1}, response.Versions)
 }
 
+func TestClientGetInfoRemainsCompatibleWithFIDO20Response(t *testing.T) {
+	transport := &fakeCBORTransport{
+		t:       t,
+		request: []byte{byte(protocol.AuthenticatorGetInfo)},
+		response: encodeCBOR(t, map[uint64]any{
+			1: []string{"FIDO_2_0"},
+			3: make([]byte, 16),
+		}),
+	}
+
+	client, err := NewClient(options.WithTransport(transport))
+	require.NoError(t, err)
+	response, err := client.GetInfo(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, protocol.Versions{protocol.FIDO_2_0}, response.Versions)
+	assert.Equal(t, protocol.DefaultMaxPINCodePoints, response.EffectiveMaxPINLength())
+	assert.Nil(t, response.AuthenticatorConfigCommands)
+}
+
 func TestClientUsesConfiguredDecMode(t *testing.T) {
 	// {1: ["FIDO_2_1"], 9: [h'ff' encoded as a CBOR text string]}
 	responseCBOR := []byte{
@@ -160,7 +179,7 @@ func TestClientUsesConfiguredDecMode(t *testing.T) {
 	require.NoError(t, err)
 	response, err := lenientClient.GetInfo(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, []string{string([]byte{0xff})}, response.Transports)
+	assert.Equal(t, []credential.AuthenticatorTransport{credential.AuthenticatorTransport(string([]byte{0xff}))}, response.Transports)
 
 	decMode, err := cbor.DecOptions{UTF8: cbor.UTF8RejectInvalid}.DecMode()
 	require.NoError(t, err)
@@ -741,6 +760,95 @@ func TestCredentialManagementRequestShapeAndPINAuthParam(t *testing.T) {
 	)
 }
 
+func TestCredentialEnumerationRejectsMissingOrZeroTotals(t *testing.T) {
+	token := pinUvAuthToken()
+	tests := []struct {
+		name     string
+		response protocol.AuthenticatorCredentialManagementResponse
+		field    string
+		invoke   func(*Client) error
+	}{
+		{
+			name:  "RPs missing total",
+			field: "totalRPs",
+			invoke: func(cl *Client) error {
+				for _, err := range cl.EnumerateRPs(context.Background(), false, protocol.PinUvAuthProtocolOne, token) {
+					return err
+				}
+				return nil
+			},
+		},
+		{
+			name:     "RPs zero total",
+			response: protocol.AuthenticatorCredentialManagementResponse{TotalRPs: new(uint)},
+			field:    "totalRPs",
+			invoke: func(cl *Client) error {
+				for _, err := range cl.EnumerateRPs(context.Background(), false, protocol.PinUvAuthProtocolOne, token) {
+					return err
+				}
+				return nil
+			},
+		},
+		{
+			name:  "credentials missing total",
+			field: "totalCredentials",
+			invoke: func(cl *Client) error {
+				for _, err := range cl.EnumerateCredentials(context.Background(), false, protocol.PinUvAuthProtocolOne, token, make([]byte, 32)) {
+					return err
+				}
+				return nil
+			},
+		},
+		{
+			name:     "credentials zero total",
+			response: protocol.AuthenticatorCredentialManagementResponse{TotalCredentials: new(uint)},
+			field:    "totalCredentials",
+			invoke: func(cl *Client) error {
+				for _, err := range cl.EnumerateCredentials(context.Background(), false, protocol.PinUvAuthProtocolOne, token, make([]byte, 32)) {
+					return err
+				}
+				return nil
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, &tc.response))
+			err := tc.invoke(newTestClient(fake))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "spec violation")
+			assert.Contains(t, err.Error(), tc.field)
+		})
+	}
+}
+
+func TestNormalizeSelectionError(t *testing.T) {
+	keepaliveCanceled := &ctaptransport.CTAPError{
+		Command:    protocol.AuthenticatorSelection,
+		StatusCode: ctaptransport.CTAP2_ERR_KEEPALIVE_CANCEL,
+	}
+
+	t.Run("expected cancellation status", func(t *testing.T) {
+		require.NoError(t, normalizeSelectionError(keepaliveCanceled))
+	})
+
+	t.Run("cancel write error is preserved", func(t *testing.T) {
+		cancelWriteErr := errors.New("cancel write failed")
+		err := normalizeSelectionError(cancelWriteErr)
+		require.ErrorIs(t, err, cancelWriteErr)
+	})
+
+	t.Run("unrelated CTAP status is preserved", func(t *testing.T) {
+		want := &ctaptransport.CTAPError{
+			Command:    protocol.AuthenticatorSelection,
+			StatusCode: ctaptransport.CTAP1_ERR_INVALID_COMMAND,
+		}
+		err := normalizeSelectionError(want)
+		require.ErrorIs(t, err, want)
+	})
+}
+
 func TestLargeBlobsRequestShapeAndPINAuthParam(t *testing.T) {
 	token := pinUvAuthToken()
 	set := []byte("large-blob-fragment")
@@ -775,8 +883,16 @@ func TestLargeBlobsRequestShapeAndPINAuthParam(t *testing.T) {
 func TestConfigRequestShapeAndPINAuthParam(t *testing.T) {
 	token := pinUvAuthToken()
 	fake := testhid.NewCBORDevice(t, testCID, nil)
+	newMinPINLength := uint(8)
+	minPINLengthRPIDs := []string{"example.com"}
+	forceChangePIN := true
+	params := protocol.SetMinPINLengthConfigSubCommandParams{
+		NewMinPINLength:   &newMinPINLength,
+		MinPINLengthRPIDs: minPINLengthRPIDs,
+		ForceChangePIN:    &forceChangePIN,
+	}
 
-	err := newTestClient(fake).SetMinPINLength(context.Background(), protocol.PinUvAuthProtocolOne, token, 8, []string{"example.com"}, true, false)
+	err := newTestClient(fake).SetMinPINLength(context.Background(), protocol.PinUvAuthProtocolOne, token, params)
 	require.NoError(t, err)
 
 	command, request := fake.FirstCTAPRequestMap(t)
@@ -785,11 +901,6 @@ func TestConfigRequestShapeAndPINAuthParam(t *testing.T) {
 	assert.Equal(t, uint64(protocol.ConfigSubCommandSetMinPINLength), request[uint64(1)])
 	assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(3)])
 
-	params := &protocol.SetMinPINLengthConfigSubCommandParams{
-		NewMinPINLength:   8,
-		MinPinLengthRPIDs: []string{"example.com"},
-		ForceChangePin:    true,
-	}
 	paramsCBOR := encodeCBOR(t, params)
 	expectedParam := crypto.Authenticate(
 		protocol.PinUvAuthProtocolOne,
@@ -801,13 +912,48 @@ func TestConfigRequestShapeAndPINAuthParam(t *testing.T) {
 
 func TestConfigRequestWithoutTokenOmitsAuthorization(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, nil)
+	newMinPINLength := uint(8)
 
-	err := newTestClient(fake).SetMinPINLength(context.Background(), 0, nil, 8, nil, false, false)
+	err := newTestClient(fake).SetMinPINLength(context.Background(), 0, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+		NewMinPINLength: &newMinPINLength,
+	})
 	require.NoError(t, err)
 
 	command, request := fake.FirstCTAPRequestMap(t)
 	assert.Equal(t, protocol.AuthenticatorConfig, command)
 	assertRequestKeys(t, request, 1, 2)
+	assert.Equal(t, map[any]any{uint64(1): uint64(8)}, request[uint64(2)])
+}
+
+func TestSetMinPINLengthPreservesExplicitZeroFalseAndEmptyValues(t *testing.T) {
+	fake := testhid.NewCBORDevice(t, testCID, nil)
+	zero := uint(0)
+	disabled := false
+	emptyRPIDs := []string{}
+
+	err := newTestClient(fake).SetMinPINLength(
+		context.Background(),
+		0,
+		nil,
+		protocol.SetMinPINLengthConfigSubCommandParams{
+			NewMinPINLength:     &zero,
+			MinPINLengthRPIDs:   emptyRPIDs,
+			ForceChangePIN:      &disabled,
+			PINComplexityPolicy: &disabled,
+		},
+	)
+	require.NoError(t, err)
+
+	command, request := fake.FirstCTAPRequestMap(t)
+	assert.Equal(t, protocol.AuthenticatorConfig, command)
+	assertRequestKeys(t, request, 1, 2)
+
+	params, ok := request[uint64(2)].(map[any]any)
+	require.True(t, ok)
+	assert.Equal(t, uint64(0), params[uint64(1)])
+	assert.Empty(t, params[uint64(2)])
+	assert.Equal(t, false, params[uint64(3)])
+	assert.Equal(t, false, params[uint64(4)])
 }
 
 func TestProtectedCommandsRejectInvalidTokenBeforeTransport(t *testing.T) {
@@ -836,31 +982,5 @@ func TestProtectedCommandsRejectInvalidTokenBeforeTransport(t *testing.T) {
 		)
 		require.Error(t, err)
 		assert.Empty(t, fake.Writes())
-	})
-}
-
-func TestNormalizeSelectionError(t *testing.T) {
-	keepaliveCanceled := &ctaptransport.CTAPError{
-		Command:    protocol.AuthenticatorSelection,
-		StatusCode: ctaptransport.CTAP2_ERR_KEEPALIVE_CANCEL,
-	}
-
-	t.Run("expected cancellation status", func(t *testing.T) {
-		require.NoError(t, normalizeSelectionError(keepaliveCanceled))
-	})
-
-	t.Run("cancel write error is preserved", func(t *testing.T) {
-		cancelWriteErr := errors.New("cancel write failed")
-		err := normalizeSelectionError(cancelWriteErr)
-		require.ErrorIs(t, err, cancelWriteErr)
-	})
-
-	t.Run("unrelated CTAP status is preserved", func(t *testing.T) {
-		want := &ctaptransport.CTAPError{
-			Command:    protocol.AuthenticatorSelection,
-			StatusCode: ctaptransport.CTAP1_ERR_INVALID_COMMAND,
-		}
-		err := normalizeSelectionError(want)
-		require.ErrorIs(t, err, want)
 	})
 }

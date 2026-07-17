@@ -83,7 +83,7 @@ const (
 	CredentialManagementSubCommandUpdateUserInformation
 )
 
-type ConfigSubCommand byte
+type ConfigSubCommand uint
 
 const (
 	ConfigSubCommandEnableEnterpriseAttestation ConfigSubCommand = iota + 1

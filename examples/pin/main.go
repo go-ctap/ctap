@@ -54,10 +54,17 @@ func printCredentials(ctx context.Context, device *authenticator.Device, token [
 	if err != nil {
 		log.Fatal(err)
 	}
+	existing, remaining := uint(0), uint(0)
+	if metadata.ExistingResidentCredentialsCount != nil {
+		existing = *metadata.ExistingResidentCredentialsCount
+	}
+	if metadata.MaxPossibleRemainingResidentCredentialsCount != nil {
+		remaining = *metadata.MaxPossibleRemainingResidentCredentialsCount
+	}
 	fmt.Printf(
 		"Passkeys: %d (%d slots left)\n",
-		metadata.ExistingResidentCredentialsCount,
-		metadata.MaxPossibleRemainingResidentCredentialsCount,
+		existing,
+		remaining,
 	)
 
 	rps := make([]protocol.AuthenticatorCredentialManagementResponse, 0)
