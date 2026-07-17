@@ -8,11 +8,10 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/attestation"
 	"github.com/go-ctap/ctap/credential"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAuthenticatorGetInfoResponsePreservesOptionalScalarPresence(t *testing.T) {
+func TestAuthenticatorGetInfoResponseUsesZeroSentinelsForEquivalentOrInvalidValues(t *testing.T) {
 	raw, err := cbor.Marshal(map[uint64]any{
 		4:  map[string]bool{string(OptionClientPIN): false},
 		5:  uint64(0),
@@ -23,10 +22,8 @@ func TestAuthenticatorGetInfoResponsePreservesOptionalScalarPresence(t *testing.
 	var resp AuthenticatorGetInfoResponse
 	require.NoError(t, cbor.Unmarshal(raw, &resp))
 
-	require.NotNil(t, resp.MaxMsgSize)
-	require.Equal(t, uint(0), *resp.MaxMsgSize)
-	require.NotNil(t, resp.ForcePINChange)
-	require.False(t, *resp.ForcePINChange)
+	require.Zero(t, resp.MaxMsgSize)
+	require.False(t, resp.ForcePINChange)
 
 	clientPIN, ok := resp.Options[OptionClientPIN]
 	require.True(t, ok)
@@ -34,7 +31,7 @@ func TestAuthenticatorGetInfoResponsePreservesOptionalScalarPresence(t *testing.
 
 	_, ok = resp.Options[OptionUserVerification]
 	require.False(t, ok)
-	require.Nil(t, resp.MinPINLength)
+	require.Zero(t, resp.MinPINLength)
 	require.Nil(t, resp.LongTouchForReset)
 }
 
@@ -61,19 +58,15 @@ func TestAuthenticatorGetInfoResponseOmitsAbsentOptionalScalarsJSON(t *testing.T
 	zero := uint(0)
 	disabled := false
 	raw, err = json.Marshal(AuthenticatorGetInfoResponse{
-		MaxMsgSize:                  &zero,
-		PreferredPlatformUvAttempts: &zero,
-		UvModality:                  (*UserVerify)(&zero),
-		UvCountSinceLastPinEntry:    &zero,
-		LongTouchForReset:           &disabled,
-		PinComplexityPolicy:         &disabled,
+		UvModality:               (*UserVerify)(&zero),
+		UvCountSinceLastPinEntry: &zero,
+		LongTouchForReset:        &disabled,
+		PinComplexityPolicy:      &disabled,
 	})
 	require.NoError(t, err)
 
 	text = string(raw)
 	for _, presentValue := range []string{
-		`"maxMsgSize":0`,
-		`"preferredPlatformUvAttempts":0`,
 		`"uvModality":0`,
 		`"uvCountSinceLastPinEntry":0`,
 		`"longTouchForReset":false`,
@@ -89,9 +82,9 @@ func TestAuthenticatorGetInfoResponseEffectiveDefaults(t *testing.T) {
 	require.Equal(t, DefaultMinPINCodePoints, resp.EffectiveMinPINLength())
 	require.Equal(t, DefaultMaxPINCodePoints, resp.EffectiveMaxPINLength())
 
-	resp.MaxMsgSize = lo.ToPtr(uint(2048))
-	resp.MinPINLength = lo.ToPtr(uint(8))
-	resp.MaxPINLength = lo.ToPtr(uint(48))
+	resp.MaxMsgSize = 2048
+	resp.MinPINLength = 8
+	resp.MaxPINLength = 48
 
 	require.Equal(t, uint(2048), resp.EffectiveMaxMsgSize())
 	require.Equal(t, uint(8), resp.EffectiveMinPINLength())
@@ -165,7 +158,7 @@ func TestAuthenticatorGetInfoResponseDecodesFIDO20WithoutNewFields(t *testing.T)
 	var resp AuthenticatorGetInfoResponse
 	require.NoError(t, cbor.Unmarshal(raw, &resp))
 	require.Equal(t, Versions{FIDO_2_0}, resp.Versions)
-	require.Nil(t, resp.MaxPINLength)
+	require.Zero(t, resp.MaxPINLength)
 	require.Nil(t, resp.AuthenticatorConfigCommands)
 	require.Empty(t, resp.PinComplexityPolicyURLString())
 	require.Equal(t, DefaultMaxPINCodePoints, resp.EffectiveMaxPINLength())
@@ -186,9 +179,9 @@ func TestCredentialManagementOptionalScalarsPreservePresence(t *testing.T) {
 	require.NoError(t, cbor.Unmarshal(raw, &resp))
 	require.Equal(t, uint(0), *resp.ExistingResidentCredentialsCount)
 	require.Equal(t, uint(0), *resp.MaxPossibleRemainingResidentCredentialsCount)
-	require.Equal(t, uint(0), *resp.TotalRPs)
-	require.Equal(t, uint(0), *resp.TotalCredentials)
-	require.Equal(t, uint(0), *resp.CredProtect)
+	require.Zero(t, resp.TotalRPs)
+	require.Zero(t, resp.TotalCredentials)
+	require.Zero(t, resp.CredProtect)
 	require.False(t, *resp.ThirdPartyPayment)
 
 	raw, err = cbor.Marshal(AuthenticatorCredentialManagementResponse{})
@@ -200,18 +193,58 @@ func TestCredentialManagementOptionalScalarsPreservePresence(t *testing.T) {
 	}
 }
 
-func TestMakeCredentialEnterpriseAttestationPreservesFalsePresence(t *testing.T) {
+func TestMakeCredentialEnterpriseAttestationTreatsFalseAsAbsent(t *testing.T) {
 	raw, err := cbor.Marshal(map[uint64]any{4: false})
 	require.NoError(t, err)
 
 	var resp AuthenticatorMakeCredentialResponse
 	require.NoError(t, cbor.Unmarshal(raw, &resp))
-	require.NotNil(t, resp.EnterpriseAttestation)
-	require.False(t, *resp.EnterpriseAttestation)
+	require.False(t, resp.EnterpriseAttestation)
 
 	var absent AuthenticatorMakeCredentialResponse
 	require.NoError(t, cbor.Unmarshal([]byte{0xa0}, &absent))
-	require.Nil(t, absent.EnterpriseAttestation)
+	require.False(t, absent.EnterpriseAttestation)
+}
+
+func TestAttestationStatementAccessorsAcceptNormativeWireShapes(t *testing.T) {
+	t.Run("packed self attestation omits x5c", func(t *testing.T) {
+		resp := AuthenticatorMakeCredentialResponse{AttestationStatement: map[string]any{
+			"alg": int64(-7),
+			"sig": []byte{1, 2, 3},
+		}}
+
+		statement, ok := resp.PackedAttestationStatementFormat()
+		require.True(t, ok)
+		require.Nil(t, statement.X509Chain)
+	})
+
+	t.Run("FIDO U2F accepts generic decoded x5c array", func(t *testing.T) {
+		certificate := []byte{1, 2, 3}
+		resp := AuthenticatorMakeCredentialResponse{AttestationStatement: map[string]any{
+			"x5c": []any{certificate},
+			"sig": []byte{4, 5, 6},
+		}}
+
+		statement, ok := resp.FIDOU2FAttestationStatementFormat()
+		require.True(t, ok)
+		require.Equal(t, [][]byte{certificate}, statement.X509Chain)
+	})
+
+	t.Run("TPM does not require non-standard aikCert", func(t *testing.T) {
+		certificate := []byte{1, 2, 3}
+		resp := AuthenticatorMakeCredentialResponse{AttestationStatement: map[string]any{
+			"ver":      "2.0",
+			"alg":      int64(-7),
+			"x5c":      []any{certificate},
+			"sig":      []byte{4},
+			"certInfo": []byte{5},
+			"pubArea":  []byte{6},
+		}}
+
+		statement, ok := resp.TPMAttestationStatementFormat()
+		require.True(t, ok)
+		require.Equal(t, [][]byte{certificate}, statement.X509Chain)
+	})
 }
 
 func TestAuthenticatorGetInfoResponseMaxCredBlobLengthPresence(t *testing.T) {
@@ -220,10 +253,10 @@ func TestAuthenticatorGetInfoResponseMaxCredBlobLengthPresence(t *testing.T) {
 	require.False(t, ok)
 	require.Equal(t, uint(0), value)
 
-	resp.MaxCredBlobLength = lo.ToPtr(uint(0))
+	resp.MaxCredBlobLength = 32
 	value, ok = resp.MaxCredBlobLengthValue()
 	require.True(t, ok)
-	require.Equal(t, uint(0), value)
+	require.Equal(t, uint(32), value)
 }
 
 func TestParseGetAssertionAuthDataRejectsShortData(t *testing.T) {

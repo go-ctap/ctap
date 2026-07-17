@@ -16,7 +16,6 @@ import (
 	"github.com/go-ctap/ctap/internal/testhid"
 	"github.com/go-ctap/ctap/protocol"
 	"github.com/go-ctap/ctap/webauthn"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +25,7 @@ func TestDirectLargeBlobMakeCredential(t *testing.T) {
 		Format:      attestation.AttestationStatementFormatIdentifierPacked,
 		AuthDataRaw: minimalAuthData(),
 		UnsignedExtensionOutputs: map[extension.ExtensionIdentifier]any{
-			extension.ExtensionIdentifierLargeBlob: protocol.CreateLargeBlobOutput{Supported: lo.ToPtr(true)},
+			extension.ExtensionIdentifierLargeBlob: protocol.CreateLargeBlobOutput{Supported: true},
 		},
 	})
 	fake := testhid.NewCBORDevice(t, testCID, response)
@@ -49,9 +48,8 @@ func TestDirectLargeBlobMakeCredential(t *testing.T) {
 	assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
 	var request protocol.AuthenticatorMakeCredentialRequest
 	require.NoError(t, cbor.Unmarshal(payload, &request))
-	require.NotNil(t, request.Extensions.CreateLargeBlobInput)
 	assert.Equal(t, extension.LargeBlobSupportRequired, request.Extensions.CreateLargeBlobInput.LargeBlob.Support)
-	assert.Nil(t, request.Extensions.CreateLargeBlobKeyInput)
+	assert.Zero(t, request.Extensions.CreateLargeBlobKeyInput)
 }
 
 func TestLegacyLargeBlobMakeCredential(t *testing.T) {
@@ -79,9 +77,8 @@ func TestLegacyLargeBlobMakeCredential(t *testing.T) {
 	assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
 	var request protocol.AuthenticatorMakeCredentialRequest
 	require.NoError(t, cbor.Unmarshal(payload, &request))
-	require.NotNil(t, request.Extensions.CreateLargeBlobKeyInput)
 	assert.True(t, request.Extensions.CreateLargeBlobKeyInput.LargeBlobKey)
-	assert.Nil(t, request.Extensions.CreateLargeBlobInput)
+	assert.Zero(t, request.Extensions.CreateLargeBlobInput)
 }
 
 func TestLegacyLargeBlobMakeCredentialValidatesKeyRequestCorrelation(t *testing.T) {
@@ -104,7 +101,7 @@ func TestLegacyLargeBlobMakeCredentialValidatesKeyRequestCorrelation(t *testing.
 		_, payload := fake.FirstCTAPPayload(t)
 		var request protocol.AuthenticatorMakeCredentialRequest
 		require.NoError(t, cbor.Unmarshal(payload, &request))
-		require.NotNil(t, request.Extensions.CreateLargeBlobKeyInput)
+		assert.True(t, request.Extensions.CreateLargeBlobKeyInput.LargeBlobKey)
 	})
 
 	t.Run("key without CTAP extension input is unsolicited", func(t *testing.T) {
@@ -127,7 +124,7 @@ func TestLegacyLargeBlobMakeCredentialValidatesKeyRequestCorrelation(t *testing.
 		_, payload := fake.FirstCTAPPayload(t)
 		var request protocol.AuthenticatorMakeCredentialRequest
 		require.NoError(t, cbor.Unmarshal(payload, &request))
-		assert.Nil(t, request.Extensions.CreateLargeBlobKeyInput)
+		assert.Zero(t, request.Extensions.CreateLargeBlobKeyInput)
 	})
 }
 
@@ -150,7 +147,7 @@ func TestMakeCredentialRejectsUnsolicitedLargeBlobResponseWithoutClientInput(t *
 			Format:      attestation.AttestationStatementFormatIdentifierPacked,
 			AuthDataRaw: minimalAuthData(),
 			UnsignedExtensionOutputs: map[extension.ExtensionIdentifier]any{
-				extension.ExtensionIdentifierLargeBlob: protocol.CreateLargeBlobOutput{Supported: lo.ToPtr(true)},
+				extension.ExtensionIdentifierLargeBlob: protocol.CreateLargeBlobOutput{Supported: true},
 			},
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
@@ -183,7 +180,7 @@ func TestGetAssertionRejectsUnsolicitedLargeBlobResponseWithoutClientInput(t *te
 			AuthDataRaw: minimalAuthData(),
 			Signature:   []byte("signature"),
 			UnsignedExtensionOutputs: map[extension.ExtensionIdentifier]any{
-				extension.ExtensionIdentifierLargeBlob: protocol.GetLargeBlobOutput{Written: lo.ToPtr(false)},
+				extension.ExtensionIdentifierLargeBlob: protocol.GetLargeBlobOutput{Written: new(false)},
 			},
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
@@ -219,7 +216,7 @@ func TestDirectLargeBlobGetAssertionRead(t *testing.T) {
 	})
 
 	assertions, gotErr := getAssertionsWithLargeBlob(d, nil, &webauthn.LargeBlobInputs{
-		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: lo.ToPtr(true)},
+		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: new(true)},
 	})
 	require.NoError(t, gotErr)
 	require.Len(t, assertions, 1)
@@ -231,9 +228,8 @@ func TestDirectLargeBlobGetAssertionRead(t *testing.T) {
 	assert.Equal(t, protocol.AuthenticatorGetAssertion, command)
 	var request protocol.AuthenticatorGetAssertionRequest
 	require.NoError(t, cbor.Unmarshal(payload, &request))
-	require.NotNil(t, request.Extensions.GetLargeBlobInput)
 	assert.True(t, request.Extensions.GetLargeBlobInput.LargeBlob.Read)
-	assert.Nil(t, request.Extensions.GetLargeBlobKeyInput)
+	assert.Zero(t, request.Extensions.GetLargeBlobKeyInput)
 }
 
 func TestDirectLargeBlobGetAssertionPreservesEmptyWrite(t *testing.T) {
@@ -241,7 +237,7 @@ func TestDirectLargeBlobGetAssertionPreservesEmptyWrite(t *testing.T) {
 		AuthDataRaw: minimalAuthData(),
 		Signature:   []byte("signature"),
 		UnsignedExtensionOutputs: map[extension.ExtensionIdentifier]any{
-			extension.ExtensionIdentifierLargeBlob: protocol.GetLargeBlobOutput{Written: lo.ToPtr(true)},
+			extension.ExtensionIdentifierLargeBlob: protocol.GetLargeBlobOutput{Written: new(true)},
 		},
 	})
 	fake := testhid.NewCBORDevice(t, testCID, response)
@@ -286,7 +282,7 @@ func TestLegacyLargeBlobGetAssertionBuffersAllAssertionsBeforeRead(t *testing.T)
 	first := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 		AuthDataRaw:         minimalAuthData(),
 		Signature:           []byte{1},
-		NumberOfCredentials: lo.ToPtr(uint(2)),
+		NumberOfCredentials: 2,
 		LargeBlobKey:        firstKey,
 	})
 	second := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
@@ -300,7 +296,7 @@ func TestLegacyLargeBlobGetAssertionBuffersAllAssertionsBeforeRead(t *testing.T)
 	d := newTestDevice(fake, legacyLargeBlobInfo())
 
 	assertions, gotErr := getAssertionsWithLargeBlob(d, nil, &webauthn.LargeBlobInputs{
-		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: lo.ToPtr(true)},
+		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: new(true)},
 	})
 	require.NoError(t, gotErr)
 	require.Len(t, assertions, 2)
@@ -324,9 +320,8 @@ func TestLegacyLargeBlobGetAssertionBuffersAllAssertionsBeforeRead(t *testing.T)
 	_, payload := requests[0].CTAPPayload(t)
 	var request protocol.AuthenticatorGetAssertionRequest
 	require.NoError(t, cbor.Unmarshal(payload, &request))
-	require.NotNil(t, request.Extensions.GetLargeBlobKeyInput)
 	assert.True(t, request.Extensions.GetLargeBlobKeyInput.LargeBlobKey)
-	assert.Nil(t, request.Extensions.GetLargeBlobInput)
+	assert.Zero(t, request.Extensions.GetLargeBlobInput)
 }
 
 func TestLegacyLargeBlobGetAssertionWrite(t *testing.T) {
@@ -393,7 +388,7 @@ func TestLegacyLargeBlobReadReturnsMatchedDecompressionError(t *testing.T) {
 	d := newTestDevice(fake, legacyLargeBlobInfo())
 
 	_, gotErr := getAssertionsWithLargeBlob(d, nil, &webauthn.LargeBlobInputs{
-		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: lo.ToPtr(true)},
+		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: new(true)},
 	})
 	require.Error(t, gotErr)
 }
@@ -440,7 +435,7 @@ func TestLegacyLargeBlobWriteReplacesAEADMatchWithoutDecompressing(t *testing.T)
 }
 
 func TestLargeBlobInputValidationUsesReadPresence(t *testing.T) {
-	presentFalse := lo.ToPtr(false)
+	presentFalse := new(false)
 
 	t.Run("MakeCredential rejects present read", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
@@ -483,7 +478,7 @@ func TestLargeBlobRejectsMutuallyExclusiveAuthenticatorCapabilities(t *testing.T
 	})
 
 	_, gotErr := getAssertionsWithLargeBlob(d, nil, &webauthn.LargeBlobInputs{
-		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: lo.ToPtr(true)},
+		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: new(true)},
 	})
 	require.ErrorIs(t, gotErr, ErrSpecViolation)
 	assert.Empty(t, fake.Writes())
@@ -541,7 +536,7 @@ func legacyLargeBlobInfo() protocol.AuthenticatorGetInfoResponse {
 	return protocol.AuthenticatorGetInfoResponse{
 		Versions:                    protocol.Versions{protocol.FIDO_2_1},
 		Extensions:                  []extension.ExtensionIdentifier{extension.ExtensionIdentifierLargeBlobKey},
-		MaxSerializedLargeBlobArray: lo.ToPtr(uint(2048)),
+		MaxSerializedLargeBlobArray: 2048,
 		Options:                     map[protocol.Option]bool{protocol.OptionLargeBlobs: true},
 	}
 }

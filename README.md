@@ -153,3 +153,11 @@ FIDO2_PIN=123456 go run .
 ```
 
 In PowerShell, set the variable first: `$env:FIDO2_PIN = "123456"`.
+
+## References
+
+- [Client to Authenticator Protocol 2.0, Proposed Standard](https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html)
+- [Client to Authenticator Protocol 2.1, Proposed Standard with errata](https://fidoalliance.org/specs/fido-v2.1-ps-20220621/ctap-2.1-spec-plus-errata-v2.1-ps-20220621.html)
+- [Client to Authenticator Protocol 2.2, Proposed Standard](https://fidoalliance.org/specs/fido-v2.2-ps-20250714/fido-client-to-authenticator-protocol-v2.2-ps-20250714.html)
+- [Client to Authenticator Protocol 2.3, Proposed Standard](https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html)
+- [Web Authentication: An API for accessing Public Key Credentials — Level 3](https://www.w3.org/TR/webauthn-3/)

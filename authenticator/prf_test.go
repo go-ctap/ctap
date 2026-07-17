@@ -71,7 +71,7 @@ func (t *prfRoundTripTransport) CBOR(
 			protocol.AuthDataFlagExtensionDataIncluded)
 		authData = append(authData, encodeCBOR(t.t, protocol.CreateExtensionOutputs{
 			CreateHMACSecretOutput:   &protocol.CreateHMACSecretOutput{HMACSecret: true},
-			CreateHMACSecretMCOutput: &protocol.CreateHMACSecretMCOutput{HMACSecret: encryptedResult},
+			CreateHMACSecretMCOutput: protocol.CreateHMACSecretMCOutput{HMACSecret: encryptedResult},
 		})...)
 
 		return ctaptransport.CBORResponse{Data: encodeCBOR(t.t, &protocol.AuthenticatorMakeCredentialResponse{
@@ -90,7 +90,7 @@ func (t *prfRoundTripTransport) CBOR(
 			protocol.AuthDataFlagUserVerified |
 			protocol.AuthDataFlagExtensionDataIncluded)
 		authData = append(authData, encodeCBOR(t.t, protocol.GetExtensionOutputs{
-			GetHMACSecretOutput: &protocol.GetHMACSecretOutput{HMACSecret: encryptedResult},
+			GetHMACSecretOutput: protocol.GetHMACSecretOutput{HMACSecret: encryptedResult},
 		})...)
 
 		return ctaptransport.CBORResponse{Data: encodeCBOR(t.t, &protocol.AuthenticatorGetAssertionResponse{
@@ -178,9 +178,8 @@ func TestMakeCredentialPRFReportsCapabilityWithoutRequiringEvaluation(t *testing
 			_, requestCBOR := fake.FirstCTAPPayload(t)
 			var request protocol.AuthenticatorMakeCredentialRequest
 			require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-			require.NotNil(t, request.Extensions.CreateHMACSecretInput)
 			assert.True(t, request.Extensions.CreateHMACSecretInput.HMACSecret)
-			assert.Nil(t, request.Extensions.CreateHMACSecretMCInput)
+			assert.Zero(t, request.Extensions.CreateHMACSecretMCInput)
 		})
 	}
 }
@@ -209,8 +208,8 @@ func TestMakeCredentialPRFWithoutHMACSecretReturnsDisabledOutput(t *testing.T) {
 	_, requestCBOR := fake.FirstCTAPPayload(t)
 	var request protocol.AuthenticatorMakeCredentialRequest
 	require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-	assert.Nil(t, request.Extensions.CreateHMACSecretInput)
-	assert.Nil(t, request.Extensions.CreateHMACSecretMCInput)
+	assert.Zero(t, request.Extensions.CreateHMACSecretInput)
+	assert.Zero(t, request.Extensions.CreateHMACSecretMCInput)
 }
 
 func TestMakeCredentialPRFEvaluatesAtCreationTimeWithExplicitUserVerification(t *testing.T) {
@@ -254,9 +253,8 @@ func TestMakeCredentialPRFEvaluatesAtCreationTimeWithExplicitUserVerification(t 
 	var request protocol.AuthenticatorMakeCredentialRequest
 	require.NoError(t, cbor.Unmarshal(transport.requests[1][1:], &request))
 	assert.True(t, request.Options[protocol.OptionUserVerification])
-	require.NotNil(t, request.Extensions.CreateHMACSecretInput)
 	assert.True(t, request.Extensions.CreateHMACSecretInput.HMACSecret)
-	require.NotNil(t, request.Extensions.CreateHMACSecretMCInput)
+	require.NotNil(t, request.Extensions.CreateHMACSecretMCInput.HMACSecret.KeyAgreement)
 }
 
 func TestMakeCredentialRawHMACSecretMCReturnsRawOutput(t *testing.T) {
@@ -334,7 +332,7 @@ func TestMakeCredentialPRFEvaluatesAtCreationTimeWithAlwaysUV(t *testing.T) {
 	var request protocol.AuthenticatorMakeCredentialRequest
 	require.NoError(t, cbor.Unmarshal(transport.requests[1][1:], &request))
 	assert.False(t, request.Options[protocol.OptionUserVerification])
-	require.NotNil(t, request.Extensions.CreateHMACSecretMCInput)
+	require.NotNil(t, request.Extensions.CreateHMACSecretMCInput.HMACSecret.KeyAgreement)
 }
 
 func TestMakeCredentialPRFSkipsCreationTimeEvaluationWithoutExplicitUserVerification(t *testing.T) {
@@ -378,7 +376,7 @@ func TestMakeCredentialPRFSkipsCreationTimeEvaluationWithoutExplicitUserVerifica
 	var request protocol.AuthenticatorMakeCredentialRequest
 	require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
 	assert.False(t, request.Options[protocol.OptionUserVerification])
-	assert.Nil(t, request.Extensions.CreateHMACSecretMCInput)
+	assert.Zero(t, request.Extensions.CreateHMACSecretMCInput)
 }
 
 func TestMakeCredentialPRFRejectsResultsWhenHMACSecretWasNotEnabled(t *testing.T) {
@@ -387,7 +385,7 @@ func TestMakeCredentialPRFRejectsResultsWhenHMACSecretWasNotEnabled(t *testing.T
 	})
 	authData := authDataWithExtensionOutputs(t, protocol.CreateExtensionOutputs{
 		CreateHMACSecretOutput:   &protocol.CreateHMACSecretOutput{HMACSecret: false},
-		CreateHMACSecretMCOutput: &protocol.CreateHMACSecretMCOutput{HMACSecret: make([]byte, 32)},
+		CreateHMACSecretMCOutput: protocol.CreateHMACSecretMCOutput{HMACSecret: make([]byte, 32)},
 	})
 	authData[32] |= byte(protocol.AuthDataFlagUserVerified)
 	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
@@ -467,7 +465,7 @@ func TestGetAssertionPRFInitializesEmptyOutputWhenNoEvaluationIsSent(t *testing.
 			_, requestCBOR := fake.FirstCTAPPayload(t)
 			var request protocol.AuthenticatorGetAssertionRequest
 			require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-			assert.Nil(t, request.Extensions.GetHMACSecretInput)
+			assert.Zero(t, request.Extensions.GetHMACSecretInput)
 		})
 	}
 }
@@ -553,7 +551,7 @@ func TestGetAssertionPRFEvaluatesWithAlwaysUV(t *testing.T) {
 	var request protocol.AuthenticatorGetAssertionRequest
 	require.NoError(t, cbor.Unmarshal(transport.requests[1][1:], &request))
 	assert.False(t, request.Options[protocol.OptionUserVerification])
-	require.NotNil(t, request.Extensions.GetHMACSecretInput)
+	require.NotNil(t, request.Extensions.GetHMACSecretInput.HMACSecret.KeyAgreement)
 }
 
 func TestGetAssertionPRFRejectsResultCountMismatch(t *testing.T) {
@@ -626,7 +624,7 @@ func TestPRFResultsRequireUserVerification(t *testing.T) {
 	})
 	assertion := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 		AuthDataRaw: authDataWithExtensionOutputs(t, protocol.GetExtensionOutputs{
-			GetHMACSecretOutput: &protocol.GetHMACSecretOutput{HMACSecret: make([]byte, 32)},
+			GetHMACSecretOutput: protocol.GetHMACSecretOutput{HMACSecret: make([]byte, 32)},
 		}),
 		Signature: []byte("signature"),
 	})

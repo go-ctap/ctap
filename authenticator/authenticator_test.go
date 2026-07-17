@@ -38,6 +38,33 @@ var (
 	_ yubico.VendorTransport = (*ctaphid.Transport)(nil)
 )
 
+func TestHMACSecretPinUvAuthProtocolWirePresence(t *testing.T) {
+	tests := []struct {
+		name       string
+		protocol   protocol.PinUvAuthProtocol
+		wantMember bool
+	}{
+		{name: "protocol one is implicit", protocol: protocol.PinUvAuthProtocolOne},
+		{name: "protocol two is explicit", protocol: protocol.PinUvAuthProtocolTwo, wantMember: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := newHMACSecretInput(cose.Key{1: 2}, []byte{3}, []byte{4}, tt.protocol)
+			raw, err := cbor.Marshal(input)
+			require.NoError(t, err)
+
+			var fields map[uint64]cbor.RawMessage
+			require.NoError(t, cbor.Unmarshal(raw, &fields))
+			if tt.wantMember {
+				require.Contains(t, fields, uint64(4))
+			} else {
+				require.NotContains(t, fields, uint64(4))
+			}
+		})
+	}
+}
+
 type optionTransport struct {
 	response []byte
 	err      error
@@ -201,7 +228,7 @@ func TestGetAssertionContinuesAfterAssertionWithoutExtensionData(t *testing.T) {
 	first := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 		AuthDataRaw:         minimalAuthData(),
 		Signature:           []byte{1},
-		NumberOfCredentials: new(uint(2)),
+		NumberOfCredentials: 2,
 	})
 	second := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 		AuthDataRaw: minimalAuthData(),
@@ -266,7 +293,7 @@ func TestGetLargeBlobsReadsAllFullFragments(t *testing.T) {
 
 	fake := testhid.NewCBORDevice(t, testCID, responses...)
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
-		MaxMsgSize: lo.ToPtr(uint(maxFragmentLength + 64)),
+		MaxMsgSize: uint(maxFragmentLength + 64),
 		Options: map[protocol.Option]bool{
 			protocol.OptionLargeBlobs: true,
 		},
@@ -291,7 +318,7 @@ func TestGetLargeBlobsStopsAfterTrailingEmptyFragment(t *testing.T) {
 		encodeCBOR(t, &protocol.AuthenticatorLargeBlobsResponse{Config: []byte{}}),
 	)
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
-		MaxMsgSize: &maxMsgSize,
+		MaxMsgSize: maxMsgSize,
 		Options: map[protocol.Option]bool{
 			protocol.OptionLargeBlobs: true,
 		},
@@ -345,7 +372,7 @@ func TestSetLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 		PinUvAuthProtocols:          []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
-		MaxSerializedLargeBlobArray: lo.ToPtr(uint(2048)),
+		MaxSerializedLargeBlobArray: 2048,
 		Options: map[protocol.Option]bool{
 			protocol.OptionLargeBlobs: true,
 		},
@@ -1068,7 +1095,7 @@ func TestGetPinUvAuthTokenUsingPINValidatesPINBeforeCommand(t *testing.T) {
 func TestGetPinUvAuthTokenUsingPINRequiresPINChangeBeforeCommand(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID)
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
-		ForcePINChange:         lo.ToPtr(true),
+		ForcePINChange:         true,
 		PinComplexityPolicyURL: []byte("https://example.com/pin-policy"),
 	})
 
@@ -1101,7 +1128,7 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
 		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
-			MinPINLength:       lo.ToPtr(uint(8)),
+			MinPINLength:       8,
 			Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
 		})
 
@@ -1115,7 +1142,7 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
 		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
-			MaxPINLength:       lo.ToPtr(uint(8)),
+			MaxPINLength:       8,
 			Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
 		})
 
@@ -1128,7 +1155,7 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 
 func TestNormalizeAndValidateNewPINAppliesMaximumAfterNFCNormalization(t *testing.T) {
 	d := &Device{info: protocol.AuthenticatorGetInfoResponse{
-		MaxPINLength: lo.ToPtr(uint(4)),
+		MaxPINLength: 4,
 	}}
 
 	pin, err := d.normalizeAndValidateNewPIN("e\u0301123")
@@ -1188,7 +1215,7 @@ func TestChangePINValidatesNewPINBeforeCommand(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID)
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
-		MinPINLength:       lo.ToPtr(uint(8)),
+		MinPINLength:       8,
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
 	})
 
@@ -1204,18 +1231,18 @@ func TestChangePINRemainsAvailableWhenPINChangeIsRequired(t *testing.T) {
 	})
 	updatedInfo := protocol.AuthenticatorGetInfoResponse{
 		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
-		ForcePINChange:     lo.ToPtr(false),
+		ForcePINChange:     false,
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
 	}
 	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil, encodeCBOR(t, updatedInfo))
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
-		ForcePINChange:     lo.ToPtr(true),
+		ForcePINChange:     true,
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
 	})
 
 	require.NoError(t, d.ChangePIN(testContext, "1234", "5678"))
-	assert.False(t, *d.GetInfo().ForcePINChange)
+	assert.False(t, d.GetInfo().ForcePINChange)
 }
 
 func TestGetAssertionValidatesHMACSecretSalts(t *testing.T) {

@@ -5,7 +5,6 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/extension"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,13 +20,13 @@ func TestLargeBlobKeyExtensionInputs(t *testing.T) {
 		{
 			name: "MakeCredential",
 			input: CreateExtensionInputs{
-				CreateLargeBlobKeyInput: &CreateLargeBlobKeyInput{LargeBlobKey: true},
+				CreateLargeBlobKeyInput: CreateLargeBlobKeyInput{LargeBlobKey: true},
 			},
 		},
 		{
 			name: "GetAssertion",
 			input: GetExtensionInputs{
-				GetLargeBlobKeyInput: &GetLargeBlobKeyInput{LargeBlobKey: true},
+				GetLargeBlobKeyInput: GetLargeBlobKeyInput{LargeBlobKey: true},
 			},
 		},
 	}
@@ -63,7 +62,7 @@ func TestDirectLargeBlobExtensionWireTypes(t *testing.T) {
 	require.NoError(t, err)
 
 	createEncoded, err := encMode.Marshal(CreateExtensionInputs{
-		CreateLargeBlobInput: &CreateLargeBlobInput{
+		CreateLargeBlobInput: CreateLargeBlobInput{
 			LargeBlob: CreateLargeBlobParams{Support: extension.LargeBlobSupportRequired},
 		},
 	})
@@ -74,10 +73,10 @@ func TestDirectLargeBlobExtensionWireTypes(t *testing.T) {
 
 	emptyBlob := []byte{}
 	getEncoded, err := encMode.Marshal(GetExtensionInputs{
-		GetLargeBlobInput: &GetLargeBlobInput{
+		GetLargeBlobInput: GetLargeBlobInput{
 			LargeBlob: GetLargeBlobParams{
 				Write:        emptyBlob,
-				OriginalSize: lo.ToPtr(uint(0)),
+				OriginalSize: new(uint(0)),
 			},
 		},
 	})
@@ -89,7 +88,7 @@ func TestDirectLargeBlobExtensionWireTypes(t *testing.T) {
 	assert.Equal(t, uint64(0), get["largeBlob"]["originalSize"])
 
 	getEncoded, err = encMode.Marshal(GetExtensionInputs{
-		GetLargeBlobInput: &GetLargeBlobInput{
+		GetLargeBlobInput: GetLargeBlobInput{
 			LargeBlob: GetLargeBlobParams{Read: true},
 		},
 	})
@@ -130,8 +129,7 @@ func TestLargeBlobUnsignedOutputsPreserveUnknownExtensionsAndProvideTypedAccesso
 	makeCredentialOutput, err := makeCredential.LargeBlobUnsignedExtensionOutput()
 	require.NoError(t, err)
 	require.NotNil(t, makeCredentialOutput)
-	require.NotNil(t, makeCredentialOutput.Supported)
-	require.False(t, *makeCredentialOutput.Supported)
+	require.False(t, makeCredentialOutput.Supported)
 
 	raw, err = cbor.Marshal(map[uint64]any{
 		8: map[string]any{

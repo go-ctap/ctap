@@ -77,7 +77,7 @@ func validateSetMinPINLength(
 		}
 	}
 
-	if params.MinPINLengthRPIDs != nil {
+	if len(params.MinPINLengthRPIDs) != 0 {
 		if info.MaxRPIDsForSetMinPINLength != nil &&
 			uint(len(params.MinPINLengthRPIDs)) > *info.MaxRPIDsForSetMinPINLength {
 			return newErrorMessage(SyntaxError, "too many RP IDs for setMinPINLength")
@@ -88,10 +88,10 @@ func validateSetMinPINLength(
 		}
 	}
 
-	if params.PINComplexityPolicy != nil && info.PinComplexityPolicy == nil {
+	if params.PINComplexityPolicy && info.PinComplexityPolicy == nil {
 		return newErrorMessage(ErrNotSupported, "device doesn't support pinComplexityPolicy")
 	}
-	if params.ForceChangePIN != nil && *params.ForceChangePIN &&
+	if params.ForceChangePIN &&
 		!info.Options[protocol.OptionClientPIN] {
 		return newErrorMessage(ErrPinNotSet, "cannot force a PIN change before a PIN is set")
 	}

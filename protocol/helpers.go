@@ -142,21 +142,13 @@ func (r *AuthenticatorMakeCredentialResponse) PackedAttestationStatementFormat()
 		return attestation.PackedAttestationStatementFormat{}, false
 	}
 
-	x5cRaw, ok := r.AttestationStatement["x5c"]
-	if !ok {
-		return attestation.PackedAttestationStatementFormat{}, false
-	}
-	x5cSlice, ok := x5cRaw.([]any)
-	if !ok {
-		return attestation.PackedAttestationStatementFormat{}, false
-	}
 	var x5c [][]byte
-	for _, certRaw := range x5cSlice {
-		cert, ok := certRaw.([]byte)
+	if x5cRaw, present := r.AttestationStatement["x5c"]; present {
+		var ok bool
+		x5c, ok = attestationX509Chain(x5cRaw)
 		if !ok {
 			return attestation.PackedAttestationStatementFormat{}, false
 		}
-		x5c = append(x5c, cert)
 	}
 
 	return attestation.PackedAttestationStatementFormat{
@@ -171,7 +163,7 @@ func (r *AuthenticatorMakeCredentialResponse) FIDOU2FAttestationStatementFormat(
 	if !ok {
 		return attestation.FIDOU2FAttestationStatementFormat{}, false
 	}
-	x5c, ok := x5cRaw.([][]byte)
+	x5c, ok := attestationX509Chain(x5cRaw)
 	if !ok {
 		return attestation.FIDOU2FAttestationStatementFormat{}, false
 	}
@@ -214,24 +206,7 @@ func (r *AuthenticatorMakeCredentialResponse) TPMAttestationStatementFormat() (a
 	if !ok {
 		return attestation.TPMAttestationStatementFormat{}, false
 	}
-	x5cSlice, ok := x5cRaw.([]any)
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-	var x5c [][]byte
-	for _, certRaw := range x5cSlice {
-		cert, ok := certRaw.([]byte)
-		if !ok {
-			return attestation.TPMAttestationStatementFormat{}, false
-		}
-		x5c = append(x5c, cert)
-	}
-
-	aikCertRaw, ok := r.AttestationStatement["aikCert"]
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-	aikCert, ok := aikCertRaw.([]byte)
+	x5c, ok := attestationX509Chain(x5cRaw)
 	if !ok {
 		return attestation.TPMAttestationStatementFormat{}, false
 	}
@@ -267,9 +242,29 @@ func (r *AuthenticatorMakeCredentialResponse) TPMAttestationStatementFormat() (a
 		Version:   ver,
 		Algorithm: cose.Algorithm(alg),
 		X509Chain: x5c,
-		AIKCert:   aikCert,
 		Signature: sig,
 		CertInfo:  certInfo,
 		PubArea:   pubArea,
 	}, true
+}
+
+func attestationX509Chain(raw any) ([][]byte, bool) {
+	if chain, ok := raw.([][]byte); ok {
+		return chain, true
+	}
+
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, false
+	}
+
+	chain := make([][]byte, 0, len(items))
+	for _, item := range items {
+		cert, ok := item.([]byte)
+		if !ok {
+			return nil, false
+		}
+		chain = append(chain, cert)
+	}
+	return chain, true
 }

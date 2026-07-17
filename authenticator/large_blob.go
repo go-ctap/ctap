@@ -208,7 +208,7 @@ func createLargeBlobOutput(
 	switch backend {
 	case largeBlobBackendDirect:
 		if directOutput != nil {
-			if directOutput.Supported == nil || !*directOutput.Supported {
+			if !directOutput.Supported {
 				return nil, newErrorMessage(ErrSpecViolation, "device returned an invalid largeBlob MakeCredential output")
 			}
 			supported = true

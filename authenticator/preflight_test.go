@@ -8,7 +8,6 @@ import (
 	"github.com/go-ctap/ctap/internal/testhid"
 	"github.com/go-ctap/ctap/protocol"
 	"github.com/go-ctap/ctap/webauthn"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -396,7 +395,7 @@ func TestConditionalAuthorizationUsesCTAPVersion(t *testing.T) {
 func TestSetLargeBlobsConditionalAuthorization(t *testing.T) {
 	baseInfo := protocol.AuthenticatorGetInfoResponse{
 		Versions:                    protocol.Versions{protocol.FIDO_2_1},
-		MaxSerializedLargeBlobArray: lo.ToPtr(uint(2048)),
+		MaxSerializedLargeBlobArray: 2048,
 		Options: map[protocol.Option]bool{
 			protocol.OptionLargeBlobs: true,
 		},
@@ -443,7 +442,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		d := newTestDevice(fake, info)
 
 		require.NoError(t, d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
-			NewMinPINLength: lo.ToPtr(uint(8)),
+			NewMinPINLength: new(uint(8)),
 		}))
 
 		command, request := fake.FirstCTAPRequestMap(t)
@@ -464,7 +463,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		})
 
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
-			NewMinPINLength: lo.ToPtr(uint(8)),
+			NewMinPINLength: new(uint(8)),
 		})
 		require.ErrorIs(t, err, ErrPinUvAuthTokenRequired)
 		assert.Empty(t, fake.Writes())
@@ -480,7 +479,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		})
 
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
-			NewMinPINLength: lo.ToPtr(uint(8)),
+			NewMinPINLength: new(uint(8)),
 		})
 		require.ErrorIs(t, err, ErrNotSupported)
 		assert.Empty(t, fake.Writes())
@@ -498,7 +497,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		})
 
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
-			NewMinPINLength: lo.ToPtr(uint(8)),
+			NewMinPINLength: new(uint(8)),
 		})
 		require.ErrorIs(t, err, ErrNotSupported)
 		assert.Empty(t, fake.Writes())
@@ -515,7 +514,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		})
 
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
-			NewMinPINLength: lo.ToPtr(uint(8)),
+			NewMinPINLength: new(uint(8)),
 		})
 		require.ErrorIs(t, err, ErrNotSupported)
 		assert.Empty(t, fake.Writes())
@@ -534,7 +533,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		d := newTestDevice(fake, info)
 
 		require.NoError(t, d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
-			NewMinPINLength: lo.ToPtr(uint(8)),
+			NewMinPINLength: new(uint(8)),
 		}))
 	})
 
@@ -563,13 +562,13 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 			Options: map[protocol.Option]bool{
 				protocol.OptionAuthenticatorConfig: true,
 			},
-			LongTouchForReset: lo.ToPtr(false),
+			LongTouchForReset: new(false),
 			AuthenticatorConfigCommands: []protocol.ConfigSubCommand{
 				protocol.ConfigSubCommandEnableLongTouchForReset,
 			},
 		}
 		updatedInfo := info
-		updatedInfo.LongTouchForReset = lo.ToPtr(true)
+		updatedInfo.LongTouchForReset = new(true)
 		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, updatedInfo))
 		d := newTestDevice(fake, info)
 
@@ -605,7 +604,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 			Options: map[protocol.Option]bool{
 				protocol.OptionAuthenticatorConfig: true,
 			},
-			LongTouchForReset: lo.ToPtr(false),
+			LongTouchForReset: new(false),
 			AuthenticatorConfigCommands: []protocol.ConfigSubCommand{
 				protocol.ConfigSubCommandEnableLongTouchForReset,
 			},
@@ -621,7 +620,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
 		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 			Versions:     protocol.Versions{protocol.FIDO_2_1},
-			MinPINLength: lo.ToPtr(uint(8)),
+			MinPINLength: 8,
 			Options: map[protocol.Option]bool{
 				protocol.OptionAuthenticatorConfig: true,
 				protocol.OptionSetMinPINLength:     true,
@@ -629,7 +628,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		})
 
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
-			NewMinPINLength: lo.ToPtr(uint(7)),
+			NewMinPINLength: new(uint(7)),
 		})
 		require.ErrorIs(t, err, SyntaxError)
 		assert.Empty(t, fake.Writes())
@@ -640,7 +639,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 			Versions:                   protocol.Versions{protocol.FIDO_2_1},
 			Extensions:                 []extension.ExtensionIdentifier{extension.ExtensionIdentifierMinPinLength},
-			MaxRPIDsForSetMinPINLength: lo.ToPtr(uint(1)),
+			MaxRPIDsForSetMinPINLength: new(uint(1)),
 			Options: map[protocol.Option]bool{
 				protocol.OptionAuthenticatorConfig: true,
 				protocol.OptionSetMinPINLength:     true,
@@ -665,7 +664,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		})
 
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
-			PINComplexityPolicy: lo.ToPtr(true),
+			PINComplexityPolicy: true,
 		})
 		require.ErrorIs(t, err, ErrNotSupported)
 		assert.Empty(t, fake.Writes())
@@ -756,7 +755,7 @@ func TestGetAssertionRejectsMalformedTokenBeforeExtensionKeyAgreement(t *testing
 func TestRetryQueriesWorkBeforePINOrUVConfiguration(t *testing.T) {
 	t.Run("PIN", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
-			PinRetries: lo.ToPtr(uint(8)),
+			PinRetries: new(uint(8)),
 		}))
 		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
@@ -772,7 +771,7 @@ func TestRetryQueriesWorkBeforePINOrUVConfiguration(t *testing.T) {
 
 	t.Run("UV", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
-			UvRetries: lo.ToPtr(uint(5)),
+			UvRetries: new(uint(5)),
 		}))
 		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 			Options: map[protocol.Option]bool{

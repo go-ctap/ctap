@@ -46,8 +46,8 @@ type PublicKeyCredentialRpEntity struct {
 // https://www.w3.org/TR/webauthn-3/#dictdef-publickeycredentialuserentity
 type PublicKeyCredentialUserEntity struct {
 	ID          []byte `cbor:"id" json:"id"`
-	DisplayName string `cbor:"displayName" json:"displayName"`
-	Name        string `cbor:"name" json:"name"`
+	DisplayName string `cbor:"displayName,omitempty" json:"displayName"`
+	Name        string `cbor:"name,omitempty" json:"name"`
 	Icon        string `cbor:"icon,omitempty" json:"icon,omitempty"` // deprecated
 }
 

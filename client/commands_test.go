@@ -277,8 +277,8 @@ func TestMakeCredentialFullRequestShape(t *testing.T) {
 			ID:   []byte("credential-id"),
 		}},
 		&protocol.CreateExtensionInputs{
-			CreateCredProtectInput:  &protocol.CreateCredProtectInput{CredProtect: 2},
-			CreateLargeBlobKeyInput: &protocol.CreateLargeBlobKeyInput{LargeBlobKey: true},
+			CreateCredProtectInput:  protocol.CreateCredProtectInput{CredProtect: 2},
+			CreateLargeBlobKeyInput: protocol.CreateLargeBlobKeyInput{LargeBlobKey: true},
 		},
 		map[protocol.Option]bool{
 			protocol.OptionResidentKeys:     true,
@@ -463,8 +463,8 @@ func TestGetAssertionFullRequestShape(t *testing.T) {
 			ID:   []byte("credential-id"),
 		}},
 		&protocol.GetExtensionInputs{
-			GetCredBlobInput:     &protocol.GetCredBlobInput{CredBlob: true},
-			GetLargeBlobKeyInput: &protocol.GetLargeBlobKeyInput{LargeBlobKey: true},
+			GetCredBlobInput:     protocol.GetCredBlobInput{CredBlob: true},
+			GetLargeBlobKeyInput: protocol.GetLargeBlobKeyInput{LargeBlobKey: true},
 		},
 		map[protocol.Option]bool{
 			protocol.OptionUserPresence:     true,
@@ -513,7 +513,7 @@ func TestGetAssertionFetchesNextAssertions(t *testing.T) {
 	first := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 		AuthDataRaw:         minimalAuthData(),
 		Signature:           []byte{1},
-		NumberOfCredentials: new(uint(3)),
+		NumberOfCredentials: 3,
 	})
 	second := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 		AuthDataRaw: minimalAuthData(),
@@ -557,7 +557,7 @@ func TestGetAssertionStopsBeforeGetNextAssertionWhenIteratorStops(t *testing.T) 
 	first := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 		AuthDataRaw:         minimalAuthData(),
 		Signature:           []byte{1},
-		NumberOfCredentials: new(uint(2)),
+		NumberOfCredentials: 2,
 	})
 	fake := testhid.NewCBORDevice(t, testCID, first)
 
@@ -746,7 +746,7 @@ func TestCredentialEnumerationRejectsMissingOrZeroTotals(t *testing.T) {
 		},
 		{
 			name:     "RPs zero total",
-			response: protocol.AuthenticatorCredentialManagementResponse{TotalRPs: new(uint)},
+			response: protocol.AuthenticatorCredentialManagementResponse{TotalRPs: 0},
 			field:    "totalRPs",
 			invoke: func(cl *Client) error {
 				for _, err := range cl.EnumerateRPs(context.Background(), false, protocol.PinUvAuthProtocolOne, token) {
@@ -767,7 +767,7 @@ func TestCredentialEnumerationRejectsMissingOrZeroTotals(t *testing.T) {
 		},
 		{
 			name:     "credentials zero total",
-			response: protocol.AuthenticatorCredentialManagementResponse{TotalCredentials: new(uint)},
+			response: protocol.AuthenticatorCredentialManagementResponse{TotalCredentials: 0},
 			field:    "totalCredentials",
 			invoke: func(cl *Client) error {
 				for _, err := range cl.EnumerateCredentials(context.Background(), false, protocol.PinUvAuthProtocolOne, token, make([]byte, 32)) {
@@ -846,16 +846,42 @@ func TestLargeBlobsRequestShapeAndPINAuthParam(t *testing.T) {
 	assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(6)])
 }
 
+func TestLargeBlobsPreservesZeroLengthReadAndWritePresence(t *testing.T) {
+	t.Run("get zero", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorLargeBlobsResponse{Config: []byte{}}))
+
+		resp, err := newTestClient(fake).LargeBlobs(context.Background(), 0, nil, 0, nil, 0, 0)
+		require.NoError(t, err)
+		require.NotNil(t, resp.Config)
+		require.Empty(t, resp.Config)
+
+		command, request := fake.FirstCTAPRequestMap(t)
+		assert.Equal(t, protocol.AuthenticatorLargeBlobs, command)
+		assertRequestKeys(t, request, 1, 3)
+		assert.Equal(t, uint64(0), request[uint64(1)])
+	})
+
+	t.Run("set empty", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID, nil)
+
+		_, err := newTestClient(fake).LargeBlobs(context.Background(), 0, nil, 0, []byte{}, 0, 17)
+		require.NoError(t, err)
+
+		command, request := fake.FirstCTAPRequestMap(t)
+		assert.Equal(t, protocol.AuthenticatorLargeBlobs, command)
+		assertRequestKeys(t, request, 2, 3, 4)
+		assert.Empty(t, request[uint64(2)])
+	})
+}
+
 func TestConfigRequestShapeAndPINAuthParam(t *testing.T) {
 	token := pinUvAuthToken()
 	fake := testhid.NewCBORDevice(t, testCID, nil)
-	newMinPINLength := uint(8)
 	minPINLengthRPIDs := []string{"example.com"}
-	forceChangePIN := true
 	params := protocol.SetMinPINLengthConfigSubCommandParams{
-		NewMinPINLength:   &newMinPINLength,
+		NewMinPINLength:   new(uint(8)),
 		MinPINLengthRPIDs: minPINLengthRPIDs,
-		ForceChangePIN:    &forceChangePIN,
+		ForceChangePIN:    true,
 	}
 
 	err := newTestClient(fake).SetMinPINLength(context.Background(), protocol.PinUvAuthProtocolOne, token, params)
@@ -878,10 +904,8 @@ func TestConfigRequestShapeAndPINAuthParam(t *testing.T) {
 
 func TestConfigRequestWithoutTokenOmitsAuthorization(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, nil)
-	newMinPINLength := uint(8)
-
 	err := newTestClient(fake).SetMinPINLength(context.Background(), 0, nil, protocol.SetMinPINLengthConfigSubCommandParams{
-		NewMinPINLength: &newMinPINLength,
+		NewMinPINLength: new(uint(8)),
 	})
 	require.NoError(t, err)
 
@@ -891,21 +915,16 @@ func TestConfigRequestWithoutTokenOmitsAuthorization(t *testing.T) {
 	assert.Equal(t, map[any]any{uint64(1): uint64(8)}, request[uint64(2)])
 }
 
-func TestSetMinPINLengthPreservesExplicitZeroFalseAndEmptyValues(t *testing.T) {
+func TestSetMinPINLengthPreservesZeroMinimumAndOmitsEquivalentZeroValues(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, nil)
-	zero := uint(0)
-	disabled := false
-	emptyRPIDs := []string{}
 
 	err := newTestClient(fake).SetMinPINLength(
 		context.Background(),
 		0,
 		nil,
 		protocol.SetMinPINLengthConfigSubCommandParams{
-			NewMinPINLength:     &zero,
-			MinPINLengthRPIDs:   emptyRPIDs,
-			ForceChangePIN:      &disabled,
-			PINComplexityPolicy: &disabled,
+			NewMinPINLength:   new(uint(0)),
+			MinPINLengthRPIDs: []string{},
 		},
 	)
 	require.NoError(t, err)
@@ -916,10 +935,7 @@ func TestSetMinPINLengthPreservesExplicitZeroFalseAndEmptyValues(t *testing.T) {
 
 	params, ok := request[uint64(2)].(map[any]any)
 	require.True(t, ok)
-	assert.Equal(t, uint64(0), params[uint64(1)])
-	assert.Empty(t, params[uint64(2)])
-	assert.Equal(t, false, params[uint64(3)])
-	assert.Equal(t, false, params[uint64(4)])
+	assert.Equal(t, map[any]any{uint64(1): uint64(0)}, params)
 }
 
 func TestEnableLongTouchForResetRequestShape(t *testing.T) {

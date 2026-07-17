@@ -12,7 +12,6 @@ import (
 	"github.com/go-ctap/ctap/internal/testhid"
 	"github.com/go-ctap/ctap/protocol"
 	"github.com/go-ctap/ctap/webauthn"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,8 +61,8 @@ func TestMakeCredentialVerifiesEnforcedCredentialProtectionOutput(t *testing.T) 
 		wantErr error
 	}{
 		{name: "missing output", wantErr: ErrSpecViolation},
-		{name: "weaker output", output: lo.ToPtr(1), wantErr: ErrSpecViolation},
-		{name: "enforced output", output: lo.ToPtr(3)},
+		{name: "weaker output", output: new(1), wantErr: ErrSpecViolation},
+		{name: "enforced output", output: new(3)},
 	}
 
 	for _, tt := range tests {
@@ -71,7 +70,7 @@ func TestMakeCredentialVerifiesEnforcedCredentialProtectionOutput(t *testing.T) 
 			authData := minimalAuthData()
 			if tt.output != nil {
 				authData = authDataWithExtensionOutputs(t, protocol.CreateExtensionOutputs{
-					CreateCredProtectOutput: &protocol.CreateCredProtectOutput{CredProtect: *tt.output},
+					CreateCredProtectOutput: protocol.CreateCredProtectOutput{CredProtect: *tt.output},
 				})
 			}
 			response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
@@ -113,7 +112,7 @@ func TestMakeCredentialIgnoresOversizedCredentialBlob(t *testing.T) {
 			extension.ExtensionIdentifierCredentialBlob,
 			extension.ExtensionIdentifierCredentialProtection,
 		},
-		MaxCredBlobLength: lo.ToPtr(uint(32)),
+		MaxCredBlobLength: 32,
 		Options: map[protocol.Option]bool{
 			protocol.OptionMakeCredentialUvNotRequired: true,
 		},
@@ -131,7 +130,7 @@ func TestMakeCredentialIgnoresOversizedCredentialBlob(t *testing.T) {
 	var request protocol.AuthenticatorMakeCredentialRequest
 	require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
 	require.NotNil(t, request.Extensions)
-	assert.Nil(t, request.Extensions.CreateCredBlobInput)
+	assert.Zero(t, request.Extensions.CreateCredBlobInput)
 }
 
 func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
@@ -161,10 +160,10 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 		var request protocol.AuthenticatorMakeCredentialRequest
 		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
 		require.NotNil(t, request.Extensions)
-		assert.Nil(t, request.Extensions.CreateHMACSecretInput)
-		assert.Nil(t, request.Extensions.CreateMinPinLengthInput)
-		assert.Nil(t, request.Extensions.CreatePinComplexityPolicyInput)
-		assert.Nil(t, request.Extensions.CreateThirdPartyPaymentInput)
+		assert.Zero(t, request.Extensions.CreateHMACSecretInput)
+		assert.Zero(t, request.Extensions.CreateMinPinLengthInput)
+		assert.Zero(t, request.Extensions.CreatePinComplexityPolicyInput)
+		assert.Zero(t, request.Extensions.CreateThirdPartyPaymentInput)
 	})
 
 	t.Run("GetAssertion", func(t *testing.T) {
@@ -199,8 +198,8 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 		var request protocol.AuthenticatorGetAssertionRequest
 		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
 		require.NotNil(t, request.Extensions)
-		assert.Nil(t, request.Extensions.GetCredBlobInput)
-		assert.Nil(t, request.Extensions.GetThirdPartyPaymentInput)
+		assert.Zero(t, request.Extensions.GetCredBlobInput)
+		assert.Zero(t, request.Extensions.GetThirdPartyPaymentInput)
 	})
 }
 
@@ -229,7 +228,6 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 		assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
 		var request protocol.AuthenticatorMakeCredentialRequest
 		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-		require.NotNil(t, request.Extensions.CreateThirdPartyPaymentInput)
 		assert.True(t, request.Extensions.CreateThirdPartyPaymentInput.ThirdPartyPayment)
 	})
 
@@ -270,7 +268,6 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 		assert.Equal(t, protocol.AuthenticatorGetAssertion, command)
 		var request protocol.AuthenticatorGetAssertionRequest
 		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-		require.NotNil(t, request.Extensions.GetThirdPartyPaymentInput)
 		assert.True(t, request.Extensions.GetThirdPartyPaymentInput.ThirdPartyPayment)
 	})
 
@@ -302,7 +299,7 @@ func TestCompositeExtensionCapabilitiesAreValidatedBeforeCommand(t *testing.T) {
 			name: "credBlob requires credProtect",
 			info: protocol.AuthenticatorGetInfoResponse{
 				Extensions:        []extension.ExtensionIdentifier{extension.ExtensionIdentifierCredentialBlob},
-				MaxCredBlobLength: lo.ToPtr(uint(32)),
+				MaxCredBlobLength: 32,
 			},
 			extInputs: &webauthn.CreateAuthenticationExtensionsClientInputs{
 				CreateCredentialBlobInputs: &webauthn.CreateCredentialBlobInputs{CredBlob: []byte("blob")},
@@ -315,7 +312,7 @@ func TestCompositeExtensionCapabilitiesAreValidatedBeforeCommand(t *testing.T) {
 					extension.ExtensionIdentifierCredentialBlob,
 					extension.ExtensionIdentifierCredentialProtection,
 				},
-				MaxCredBlobLength: lo.ToPtr(uint(31)),
+				MaxCredBlobLength: 31,
 			},
 			extInputs: &webauthn.CreateAuthenticationExtensionsClientInputs{
 				CreateCredentialBlobInputs: &webauthn.CreateCredentialBlobInputs{CredBlob: []byte("blob")},
@@ -381,7 +378,7 @@ func TestUnsolicitedExtensionOutputsAreRejectedWithoutPanic(t *testing.T) {
 		response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 			Format: attestation.AttestationStatementFormatIdentifierPacked,
 			AuthDataRaw: authDataWithExtensionOutputs(t, protocol.CreateExtensionOutputs{
-				CreateHMACSecretMCOutput: &protocol.CreateHMACSecretMCOutput{HMACSecret: make([]byte, 32)},
+				CreateHMACSecretMCOutput: protocol.CreateHMACSecretMCOutput{HMACSecret: make([]byte, 32)},
 			}),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
@@ -398,7 +395,7 @@ func TestUnsolicitedExtensionOutputsAreRejectedWithoutPanic(t *testing.T) {
 	t.Run("GetAssertion hmac-secret", func(t *testing.T) {
 		response := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 			AuthDataRaw: authDataWithExtensionOutputs(t, protocol.GetExtensionOutputs{
-				GetHMACSecretOutput: &protocol.GetHMACSecretOutput{HMACSecret: make([]byte, 32)},
+				GetHMACSecretOutput: protocol.GetHMACSecretOutput{HMACSecret: make([]byte, 32)},
 			}),
 			Signature: []byte("signature"),
 		})
@@ -423,7 +420,7 @@ func TestUnsolicitedExtensionOutputsAreRejectedWithoutPanic(t *testing.T) {
 
 func TestSetLargeBlobsValidatesAndCanonicalizesArray(t *testing.T) {
 	info := protocol.AuthenticatorGetInfoResponse{
-		MaxSerializedLargeBlobArray: lo.ToPtr(uint(1024)),
+		MaxSerializedLargeBlobArray: 1024,
 		Options: map[protocol.Option]bool{
 			protocol.OptionLargeBlobs: true,
 		},

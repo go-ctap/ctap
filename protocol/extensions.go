@@ -7,15 +7,15 @@ import (
 )
 
 type CreateCredProtectInput struct {
-	CredProtect int `cbor:"credProtect"`
+	CredProtect int `cbor:"credProtect,omitzero"`
 }
 
 type CreateCredProtectOutput struct {
-	CredProtect int `cbor:"credProtect"`
+	CredProtect int `cbor:"credProtect,omitzero"`
 }
 
 type CreateCredBlobInput struct {
-	CredBlob []byte `cbor:"credBlob"`
+	CredBlob []byte `cbor:"credBlob,omitzero"`
 }
 
 type CreateCredBlobOutput struct {
@@ -23,19 +23,19 @@ type CreateCredBlobOutput struct {
 }
 
 type GetCredBlobInput struct {
-	CredBlob bool `cbor:"credBlob"`
+	CredBlob bool `cbor:"credBlob,omitzero"`
 }
 
 type GetCredBlobOutput struct {
-	CredBlob []byte `cbor:"credBlob"`
+	CredBlob []byte `cbor:"credBlob,omitzero"`
 }
 
 type CreateLargeBlobKeyInput struct {
-	LargeBlobKey bool `cbor:"largeBlobKey"`
+	LargeBlobKey bool `cbor:"largeBlobKey,omitzero"`
 }
 
 type GetLargeBlobKeyInput struct {
-	LargeBlobKey bool `cbor:"largeBlobKey"`
+	LargeBlobKey bool `cbor:"largeBlobKey,omitzero"`
 }
 
 type CreateLargeBlobParams struct {
@@ -43,11 +43,11 @@ type CreateLargeBlobParams struct {
 }
 
 type CreateLargeBlobInput struct {
-	LargeBlob CreateLargeBlobParams `cbor:"largeBlob"`
+	LargeBlob CreateLargeBlobParams `cbor:"largeBlob,omitzero"`
 }
 
 type CreateLargeBlobOutput struct {
-	Supported *bool `cbor:"supported,omitempty"`
+	Supported bool `cbor:"supported"`
 }
 
 type GetLargeBlobParams struct {
@@ -57,7 +57,7 @@ type GetLargeBlobParams struct {
 }
 
 type GetLargeBlobInput struct {
-	LargeBlob GetLargeBlobParams `cbor:"largeBlob"`
+	LargeBlob GetLargeBlobParams `cbor:"largeBlob,omitzero"`
 }
 
 type GetLargeBlobOutput struct {
@@ -67,15 +67,15 @@ type GetLargeBlobOutput struct {
 }
 
 type CreateMinPinLengthInput struct {
-	MinPinLength bool `cbor:"minPinLength"`
+	MinPinLength bool `cbor:"minPinLength,omitzero"`
 }
 
 type CreateMinPinLengthOutput struct {
-	MinPinLength uint `cbor:"minPinLength"`
+	MinPinLength uint `cbor:"minPinLength,omitzero"`
 }
 
 type CreatePinComplexityPolicyInput struct {
-	PinComplexityPolicy bool `cbor:"pinComplexityPolicy"`
+	PinComplexityPolicy bool `cbor:"pinComplexityPolicy,omitzero"`
 }
 
 type CreatePinComplexityPolicyOutput struct {
@@ -90,7 +90,7 @@ type HMACSecret struct {
 }
 
 type CreateHMACSecretInput struct {
-	HMACSecret bool `cbor:"hmac-secret"`
+	HMACSecret bool `cbor:"hmac-secret,omitzero"`
 }
 
 type CreateHMACSecretOutput struct {
@@ -98,27 +98,27 @@ type CreateHMACSecretOutput struct {
 }
 
 type GetHMACSecretInput struct {
-	HMACSecret HMACSecret `cbor:"hmac-secret"`
+	HMACSecret HMACSecret `cbor:"hmac-secret,omitzero"`
 }
 
 type GetHMACSecretOutput struct {
-	HMACSecret []byte `cbor:"hmac-secret"`
+	HMACSecret []byte `cbor:"hmac-secret,omitzero"`
 }
 
 type CreateHMACSecretMCInput struct {
-	HMACSecret HMACSecret `cbor:"hmac-secret-mc"`
+	HMACSecret HMACSecret `cbor:"hmac-secret-mc,omitzero"`
 }
 
 type CreateHMACSecretMCOutput struct {
-	HMACSecret []byte `cbor:"hmac-secret-mc"`
+	HMACSecret []byte `cbor:"hmac-secret-mc,omitzero"`
 }
 
 type CreateThirdPartyPaymentInput struct {
-	ThirdPartyPayment bool `cbor:"thirdPartyPayment"`
+	ThirdPartyPayment bool `cbor:"thirdPartyPayment,omitzero"`
 }
 
 type GetThirdPartyPaymentInput struct {
-	ThirdPartyPayment bool `cbor:"thirdPartyPayment"`
+	ThirdPartyPayment bool `cbor:"thirdPartyPayment,omitzero"`
 }
 
 type GetThirdPartyPaymentOutput struct {
@@ -128,37 +128,37 @@ type GetThirdPartyPaymentOutput struct {
 // CreateExtensionInputs aggregates MakeCredential extension inputs in CTAP
 // 2.3 PS § 12 order.
 type CreateExtensionInputs struct {
-	*CreateCredProtectInput
-	*CreateCredBlobInput
-	*CreateLargeBlobKeyInput
-	*CreateLargeBlobInput
-	*CreateMinPinLengthInput
-	*CreatePinComplexityPolicyInput
-	*CreateHMACSecretInput
-	*CreateHMACSecretMCInput
-	*CreateThirdPartyPaymentInput
+	CreateCredProtectInput
+	CreateCredBlobInput
+	CreateLargeBlobKeyInput
+	CreateLargeBlobInput
+	CreateMinPinLengthInput
+	CreatePinComplexityPolicyInput
+	CreateHMACSecretInput
+	CreateHMACSecretMCInput
+	CreateThirdPartyPaymentInput
 }
 
 type CreateExtensionOutputs struct {
-	*CreateCredProtectOutput
+	CreateCredProtectOutput
 	*CreateCredBlobOutput
-	*CreateMinPinLengthOutput
+	CreateMinPinLengthOutput
 	*CreatePinComplexityPolicyOutput
 	*CreateHMACSecretOutput
-	*CreateHMACSecretMCOutput
+	CreateHMACSecretMCOutput
 }
 
 type GetExtensionInputs struct {
-	*GetCredBlobInput
-	*GetLargeBlobKeyInput
-	*GetLargeBlobInput
-	*GetHMACSecretInput
-	*GetThirdPartyPaymentInput
+	GetCredBlobInput
+	GetLargeBlobKeyInput
+	GetLargeBlobInput
+	GetHMACSecretInput
+	GetThirdPartyPaymentInput
 }
 
 type GetExtensionOutputs struct {
-	*GetCredBlobOutput
-	*GetHMACSecretOutput
+	GetCredBlobOutput
+	GetHMACSecretOutput
 	*GetThirdPartyPaymentOutput
 }
 

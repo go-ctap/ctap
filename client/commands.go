@@ -72,13 +72,18 @@ func (cl *Client) MakeCredential(
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
 
+	var requestExtensions protocol.CreateExtensionInputs
+	if extensions != nil {
+		requestExtensions = *extensions
+	}
+
 	req := &protocol.AuthenticatorMakeCredentialRequest{
 		ClientDataHash:               clientDataHash,
 		RP:                           rp,
 		User:                         user,
 		PubKeyCredParams:             pubKeyCredParams,
 		ExcludeList:                  excludeList,
-		Extensions:                   extensions,
+		Extensions:                   requestExtensions,
 		Options:                      options,
 		EnterpriseAttestation:        enterpriseAttestation,
 		AttestationFormatsPreference: attestationFormatsPreference,
@@ -140,11 +145,16 @@ func (cl *Client) GetAssertion(
 			return
 		}
 
+		var requestExtensions protocol.GetExtensionInputs
+		if extensions != nil {
+			requestExtensions = *extensions
+		}
+
 		req := &protocol.AuthenticatorGetAssertionRequest{
 			RPID:           rpID,
 			ClientDataHash: clientDataHash,
 			AllowList:      allowList,
-			Extensions:     extensions,
+			Extensions:     requestExtensions,
 			Options:        options,
 		}
 
@@ -194,11 +204,11 @@ func (cl *Client) GetAssertion(
 			return
 		}
 
-		if respBegin.NumberOfCredentials == nil {
+		if respBegin.NumberOfCredentials == 0 {
 			return
 		}
 
-		for i := uint(1); i < *respBegin.NumberOfCredentials; i++ {
+		for i := uint(1); i < respBegin.NumberOfCredentials; i++ {
 			respRaw, err := cl.cbor(ctx, []byte{byte(protocol.AuthenticatorGetNextAssertion)})
 			if err != nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
@@ -927,7 +937,7 @@ func (cl *Client) SetFriendlyName(
 
 	bSubCommandParams, err := cl.encMode.Marshal(protocol.BioEnrollmentSubCommandParams{
 		TemplateID:           templateID,
-		TemplateFriendlyName: friendlyName,
+		TemplateFriendlyName: &friendlyName,
 	})
 	if err != nil {
 		return err
@@ -947,7 +957,7 @@ func (cl *Client) SetFriendlyName(
 		SubCommand: protocol.BioEnrollmentSubCommandSetFriendlyName,
 		SubCommandParams: protocol.BioEnrollmentSubCommandParams{
 			TemplateID:           templateID,
-			TemplateFriendlyName: friendlyName,
+			TemplateFriendlyName: &friendlyName,
 		},
 		PinUvAuthProtocol: pinUvAuthProtocol,
 		PinUvAuthParam:    pinUvAuthParam,
@@ -1133,12 +1143,8 @@ func (cl *Client) EnumerateRPs(
 			return
 		}
 
-		if respBegin.TotalRPs == nil {
-			yield(protocol.AuthenticatorCredentialManagementResponse{}, errors.New("spec violation: totalRPs is missing from enumerateRPsBegin response"))
-			return
-		}
-		if *respBegin.TotalRPs == 0 {
-			yield(protocol.AuthenticatorCredentialManagementResponse{}, errors.New("spec violation: totalRPs is zero in enumerateRPsBegin response"))
+		if respBegin.TotalRPs == 0 {
+			yield(protocol.AuthenticatorCredentialManagementResponse{}, errors.New("spec violation: totalRPs is missing or zero in enumerateRPsBegin response"))
 			return
 		}
 
@@ -1146,7 +1152,7 @@ func (cl *Client) EnumerateRPs(
 			return
 		}
 
-		for i := uint(1); i < *respBegin.TotalRPs; i++ {
+		for i := uint(1); i < respBegin.TotalRPs; i++ {
 			reqNext := &protocol.AuthenticatorCredentialManagementRequest{
 				SubCommand: protocol.CredentialManagementSubCommandEnumerateRPsGetNextRP,
 			}
@@ -1249,12 +1255,8 @@ func (cl *Client) EnumerateCredentials(
 			return
 		}
 
-		if respBegin.TotalCredentials == nil {
-			yield(protocol.AuthenticatorCredentialManagementResponse{}, errors.New("spec violation: totalCredentials is missing from enumerateCredentialsBegin response"))
-			return
-		}
-		if *respBegin.TotalCredentials == 0 {
-			yield(protocol.AuthenticatorCredentialManagementResponse{}, errors.New("spec violation: totalCredentials is zero in enumerateCredentialsBegin response"))
+		if respBegin.TotalCredentials == 0 {
+			yield(protocol.AuthenticatorCredentialManagementResponse{}, errors.New("spec violation: totalCredentials is missing or zero in enumerateCredentialsBegin response"))
 			return
 		}
 
@@ -1262,7 +1264,7 @@ func (cl *Client) EnumerateCredentials(
 			return
 		}
 
-		for i := uint(1); i < *respBegin.TotalCredentials; i++ {
+		for i := uint(1); i < respBegin.TotalCredentials; i++ {
 			reqNext := &protocol.AuthenticatorCredentialManagementRequest{
 				SubCommand: protocol.CredentialManagementSubCommandEnumerateCredentialsGetNextCredential,
 			}
@@ -1426,8 +1428,12 @@ func (cl *Client) LargeBlobs(
 	offset uint,
 	length uint,
 ) (protocol.AuthenticatorLargeBlobsResponse, error) {
+	var getParam *uint
+	if set == nil || get != 0 {
+		getParam = &get
+	}
 	req := &protocol.AuthenticatorLargeBlobsRequest{
-		Get:    get,
+		Get:    getParam,
 		Set:    set,
 		Offset: offset,
 		Length: length,
@@ -1478,7 +1484,7 @@ func (cl *Client) LargeBlobs(
 	}
 
 	var resp protocol.AuthenticatorLargeBlobsResponse
-	if get > 0 {
+	if getParam != nil {
 		if err := cl.decMode.Unmarshal(respRaw.Data, &resp); err != nil {
 			return protocol.AuthenticatorLargeBlobsResponse{}, err
 		}

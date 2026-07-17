@@ -95,29 +95,39 @@ func validateMakeCredentialExtensionOutputs(
 	// https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html#current-pin-complexity-policy
 	// https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html#sctn-hmac-secret-make-cred-extension
 	if outputs != nil {
-		if outputs.CreateCredProtectOutput != nil {
-			if request.CreateCredProtectInput == nil {
+		if outputs.CredProtect != 0 {
+			if request.CredProtect == 0 {
 				return unexpectedExtensionOutput("credProtect")
 			}
-			if outputs.CreateCredProtectOutput.CredProtect < 0x01 || outputs.CreateCredProtectOutput.CredProtect > 0x03 {
+			if outputs.CredProtect < 0x01 || outputs.CredProtect > 0x03 {
 				return newErrorMessage(ErrSpecViolation, "device returned invalid credProtect extension output")
 			}
 		}
-		if outputs.CreateCredBlobOutput != nil && request.CreateCredBlobInput == nil {
+		if outputs.CreateCredBlobOutput != nil && request.CredBlob == nil {
 			return unexpectedExtensionOutput("credBlob")
 		}
-		if outputs.CreateMinPinLengthOutput != nil && request.CreateMinPinLengthInput == nil {
+		if outputs.MinPinLength != 0 && !request.MinPinLength {
 			return unexpectedExtensionOutput("minPinLength")
 		}
-		if outputs.CreatePinComplexityPolicyOutput != nil && request.CreatePinComplexityPolicyInput == nil {
+		if outputs.CreatePinComplexityPolicyOutput != nil && !request.PinComplexityPolicy {
 			return unexpectedExtensionOutput("pinComplexityPolicy")
 		}
-		if outputs.CreateHMACSecretOutput != nil && request.CreateHMACSecretInput == nil {
+		if outputs.CreateHMACSecretOutput != nil && !request.CreateHMACSecretInput.HMACSecret {
 			return unexpectedExtensionOutput("hmac-secret")
 		}
-		if outputs.CreateHMACSecretMCOutput != nil && request.CreateHMACSecretMCInput == nil {
+		if outputs.CreateHMACSecretMCOutput.HMACSecret != nil && request.CreateHMACSecretMCInput.HMACSecret.KeyAgreement == nil {
 			return unexpectedExtensionOutput("hmac-secret-mc")
 		}
+	}
+	if request.CredBlob != nil && (outputs == nil || outputs.CreateCredBlobOutput == nil) {
+		return newErrorMessage(ErrSpecViolation, "device did not return credBlob extension output")
+	}
+	if request.CreateHMACSecretInput.HMACSecret && (outputs == nil || outputs.CreateHMACSecretOutput == nil) {
+		return newErrorMessage(ErrSpecViolation, "device did not return hmac-secret extension output")
+	}
+	if request.CreateHMACSecretMCInput.HMACSecret.KeyAgreement != nil &&
+		(outputs == nil || outputs.CreateHMACSecretMCOutput.HMACSecret == nil) {
+		return newErrorMessage(ErrSpecViolation, "device did not return hmac-secret-mc extension output")
 	}
 
 	if clientInputs.CreateCredentialProtectionInputs == nil ||
@@ -133,15 +143,15 @@ func validateMakeCredentialExtensionOutputs(
 	if err != nil {
 		return err
 	}
-	if outputs == nil || outputs.CreateCredProtectOutput == nil {
+	if outputs == nil || outputs.CredProtect == 0 {
 		return newErrorMessage(ErrSpecViolation, "device did not confirm enforced credProtect policy")
 	}
-	if outputs.CreateCredProtectOutput.CredProtect < requested {
+	if outputs.CredProtect < requested {
 		return newErrorMessage(
 			ErrSpecViolation,
 			fmt.Sprintf(
 				"device returned credProtect policy %d, weaker than enforced policy %d",
-				outputs.CreateCredProtectOutput.CredProtect,
+				outputs.CredProtect,
 				requested,
 			),
 		)
@@ -160,17 +170,20 @@ func validateGetAssertionExtensionOutputs(
 	// https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#sctn-hmac-secret-extension
 	// https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-credBlob-extension
 	// https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html#sctn-thirdPartyPayment-extension
-	if outputs == nil {
-		return nil
-	}
-	if outputs.GetCredBlobOutput != nil && request.GetCredBlobInput == nil {
+	if outputs != nil && outputs.GetCredBlobOutput.CredBlob != nil && !request.GetCredBlobInput.CredBlob {
 		return unexpectedExtensionOutput("credBlob")
 	}
-	if outputs.GetHMACSecretOutput != nil && request.GetHMACSecretInput == nil {
+	if outputs != nil && outputs.GetHMACSecretOutput.HMACSecret != nil && request.GetHMACSecretInput.HMACSecret.KeyAgreement == nil {
 		return unexpectedExtensionOutput("hmac-secret")
 	}
-	if outputs.GetThirdPartyPaymentOutput != nil && request.GetThirdPartyPaymentInput == nil {
+	if outputs != nil && outputs.GetThirdPartyPaymentOutput != nil && !request.GetThirdPartyPaymentInput.ThirdPartyPayment {
 		return unexpectedExtensionOutput("thirdPartyPayment")
+	}
+	if request.GetCredBlobInput.CredBlob && (outputs == nil || outputs.GetCredBlobOutput.CredBlob == nil) {
+		return newErrorMessage(ErrSpecViolation, "device did not return credBlob extension output")
+	}
+	if request.GetThirdPartyPaymentInput.ThirdPartyPayment && (outputs == nil || outputs.GetThirdPartyPaymentOutput == nil) {
+		return newErrorMessage(ErrSpecViolation, "device did not return thirdPartyPayment extension output")
 	}
 
 	return nil

@@ -14,9 +14,9 @@ type AuthenticatorClientPINRequest struct {
 }
 
 type AuthenticatorClientPINResponse struct {
-	KeyAgreement    cose.Key `cbor:"1,keyasint"`
-	PinUvAuthToken  []byte   `cbor:"2,keyasint"`
-	PinRetries      *uint    `cbor:"3,keyasint"`
-	PowerCycleState *bool    `cbor:"4,keyasint"`
-	UvRetries       *uint    `cbor:"5,keyasint"`
+	KeyAgreement    cose.Key `cbor:"1,keyasint,omitzero"`
+	PinUvAuthToken  []byte   `cbor:"2,keyasint,omitempty"`
+	PinRetries      *uint    `cbor:"3,keyasint,omitzero"`
+	PowerCycleState *bool    `cbor:"4,keyasint,omitzero"`
+	UvRetries       *uint    `cbor:"5,keyasint,omitzero"`
 }

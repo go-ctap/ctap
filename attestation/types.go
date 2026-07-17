@@ -21,7 +21,7 @@ const (
 type PackedAttestationStatementFormat struct {
 	Algorithm cose.Algorithm `cbor:"alg" json:"alg"`
 	Signature []byte         `cbor:"sig" json:"sig"`
-	X509Chain [][]byte       `cbor:"x5c" json:"x5c"`
+	X509Chain [][]byte       `cbor:"x5c,omitempty" json:"x5c,omitempty"`
 }
 
 // FIDOU2FAttestationStatementFormat is attestation statement format is used with FIDO U2F authenticators.
@@ -38,7 +38,6 @@ type TPMAttestationStatementFormat struct {
 	Version   string         `cbor:"ver" json:"ver"`
 	Algorithm cose.Algorithm `cbor:"alg" json:"alg"`
 	X509Chain [][]byte       `cbor:"x5c" json:"x5c"`
-	AIKCert   []byte         `cbor:"aikCert" json:"aikCert"`
 	Signature []byte         `cbor:"sig" json:"sig"`
 	CertInfo  []byte         `cbor:"certInfo" json:"certInfo"` // TPMS_ATTEST structure
 	PubArea   []byte         `cbor:"pubArea" json:"pubArea"`   // TPMT_PUBLIC structure
