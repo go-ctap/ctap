@@ -108,6 +108,24 @@ commands follow the same rule, with the CTAP exception that lets an unprotected 
 enabled `alwaysUv` without authorization. Otherwise these methods return `authenticator.ErrPinUvAuthTokenRequired`
 before sending a command.
 
+## PRF extension
+
+The high-level `authenticator.Device` API maps the WebAuthn Level 3
+[`prf` extension](https://www.w3.org/TR/webauthn-3/#prf-extension) to CTAP `hmac-secret` and `hmac-secret-mc`. Supply
+`webauthn.PRFInputs` through the extension inputs passed to `MakeCredential` or `GetAssertion`; corresponding PRF
+outputs are returned with the response. Do not combine PRF evaluation with the corresponding raw evaluation input:
+`hmac-secret-mc` for `MakeCredential` or `hmac-secret` for `GetAssertion`.
+
+PRF evaluation requires user verification. `Device` sends an evaluation when UV is provided by a PIN/UV auth token,
+requested with `options[uv]=true`, or guaranteed by CTAP 2.1+ `alwaysUv` with configured built-in UV. Creation-time
+evaluation additionally requires `hmac-secret-mc`; when it is unavailable, credential creation can still report PRF
+capability but returns no creation-time results. An authentication request that asks for PRF evaluation without an
+available UV mechanism fails before device I/O.
+
+When `evalByCredential` resolves to different inputs for credentials in the same allow list, issue one `GetAssertion`
+request per credential. A single CTAP request lets the authenticator choose the credential, so `Device.GetAssertion`
+rejects that ambiguous combination with `authenticator.ErrNotSupported`.
+
 ## Other transports
 
 ### Token2 over PC/SC
