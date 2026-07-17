@@ -66,17 +66,47 @@ If the HID path is already known, use `authenticator.OpenHID(ctx, path)`.
 
 ## Choosing an API
 
-| Package                                                          | Use it for                                                                          |
-|------------------------------------------------------------------|-------------------------------------------------------------------------------------|
-| `discover`, `authenticator`                                      | Device selection and convenient stateful workflows, including PIN/UV and extensions |
-| `client`                                                         | Individual CTAP commands with caller-managed transport and authorization state      |
-| `transport`, `transport/ctaphid`, `transport/token2`, `hidproxy` | Custom device access and transport implementations                                  |
-| `protocol`, `credential`, `attestation`, `extension`, `webauthn` | CTAP constants, wire types, credentials, attestations, and extension data           |
-| `crypto`, `yubico`                                               | CTAP cryptography and Yubico-specific device information                            |
+| Package                                                          | Abstraction level      | Responsibility                                                                                   |
+|------------------------------------------------------------------|------------------------|--------------------------------------------------------------------------------------------------|
+| `discover`                                                       | Application entry      | Selects and opens a device, returning an initialized high-level `authenticator.Device`           |
+| `authenticator`                                                  | High-level, stateful   | Owns and serializes device access; caches capabilities and preflights PIN/UV and extension flows |
+| `client`                                                         | CTAP command level     | Sends individual CTAP commands; the caller manages capabilities, authorization, and state        |
+| `transport`, `transport/ctaphid`, `transport/token2`, `hidproxy` | Transport level        | Provides device I/O and framing without applying CTAP workflow policy                            |
+| `protocol`, `credential`, `attestation`, `extension`, `webauthn` | Data model             | Defines CTAP constants, wire types, credentials, attestations, and extension data                |
+| `crypto`, `yubico`                                               | Helpers and vendor API | Implements CTAP cryptography and Yubico-specific device operations                               |
 
 Concrete transports expose a common `transport.CBOR` boundary, so `client.Client` and `authenticator.Device` do not
 depend on HID packets or APDUs. For a custom high-level transport, implement `transport.Device` (`transport.CBOR` plus
 `io.Closer`) and pass it to `authenticator.New`.
+
+## PIN/UV authorization
+
+`authenticator.Device` uses its cached `authenticatorGetInfo` response to preflight high-level operations. For PIN/UV-
+authorized and extension workflows, it selects the authenticator's most-preferred PIN/UV auth protocol, validates token
+lengths, and rejects requests it can determine are unsupported without performing device I/O.
+
+`GetPinUvAuthTokenUsingPIN` uses permissioned tokens when the authenticator advertises `pinUvAuthToken`. It falls back to
+the superseded `getPinToken` flow only when the requested permissions can be satisfied by that flow, including CTAP 2.0
+and FIDO 2.1 preview biometric-enrollment or credential-management compatibility. A non-empty RP ID is required when
+requesting `PermissionMakeCredential` or `PermissionGetAssertion` through the permissioned flow:
+
+```go
+token, err := device.GetPinUvAuthTokenUsingPIN(
+	ctx,
+	pin,
+	protocol.PermissionMakeCredential,
+	"example.com",
+)
+```
+
+Request only the permissions needed by subsequent commands. `GetPinUvAuthTokenUsingUV` additionally checks whether the
+requested permission can be granted through the authenticator's configured built-in UV method.
+
+Authorization for `SetLargeBlobs` and authenticator-configuration commands is conditional. `SetLargeBlobs` may omit a
+token only when the authenticator is not protected by configured PIN/UV and `alwaysUv` is disabled. Configuration
+commands follow the same rule, with the CTAP exception that lets an unprotected authenticator disable an initially
+enabled `alwaysUv` without authorization. Otherwise these methods return `authenticator.ErrPinUvAuthTokenRequired`
+before sending a command.
 
 ## Other transports
 
@@ -110,6 +140,10 @@ proxy. The library connects to the proxy but does not launch or manage it. See
   enumeration state only until the next command.
 - CTAP failures can be matched as `*transport.CTAPError`; Token2 ISO 7816 failures as `*token2.APDUError`.
 - PIN/UV auth tokens are short-lived secrets. Request minimal permissions, never log them, and discard them after use.
+- `bioEnroll` and the FIDO 2.1 preview `userVerificationMgmtPreview` option report support by their presence; a `false`
+  value means biometric enrollment is supported but no enrollment exists yet.
+- PIN and UV retry counters may be queried before the corresponding method is configured, provided the authenticator
+  advertises support. CTAP 2.1-only commands such as `GetUVRetries` and `Selection` are rejected on CTAP 2.0 devices.
 
 ## Examples
 
