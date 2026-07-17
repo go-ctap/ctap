@@ -487,7 +487,7 @@ func (d *Device) MakeCredential(
 		}
 	}
 
-	// hmac-secret-mc (it needs tests, thought I cannot find any devices that support it yet)
+	// hmac-secret-mc
 	if authenticatorExtensions.CreateHMACSecretMCOutput != nil {
 		if extInputs.PRFInputs != nil && !resp.AuthData.Flags.UserVerified() {
 			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrSpecViolation, "device returned PRF results without user verification")
@@ -510,28 +510,26 @@ func (d *Device) MakeCredential(
 			}
 		}
 
-		var results webauthn.AuthenticationExtensionsPRFValues
+		var output1, output2 []byte
 		switch len(salt) {
 		case 32:
-			results = webauthn.AuthenticationExtensionsPRFValues{
-				First: salt[:32],
-			}
+			output1 = salt[:32]
 		case 64:
-			results = webauthn.AuthenticationExtensionsPRFValues{
-				First:  salt[:32],
-				Second: salt[32:],
-			}
+			output1 = salt[:32]
+			output2 = salt[32:]
 		default:
 			return protocol.AuthenticatorMakeCredentialResponse{}, newErrorMessage(ErrInvalidSaltSize, "salt must be 32 or 64 bytes")
 		}
-		if extOutputs.CreatePRFOutputs != nil {
-			extOutputs.CreatePRFOutputs.PRF.Results = results
+		if extInputs.PRFInputs != nil {
+			extOutputs.CreatePRFOutputs.PRF.Results = webauthn.AuthenticationExtensionsPRFValues{
+				First:  output1,
+				Second: output2,
+			}
 		} else {
-			// Preserve the existing raw hmac-secret-mc client mapping.
-			extOutputs.CreatePRFOutputs = &webauthn.CreatePRFOutputs{
-				PRF: webauthn.CreateAuthenticationExtensionsPRFOutputs{
-					Enabled: true,
-					Results: results,
+			extOutputs.CreateHMACSecretMCOutputs = &webauthn.CreateHMACSecretMCOutputs{
+				HMACGetSecret: webauthn.HMACGetSecretOutput{
+					Output1: output1,
+					Output2: output2,
 				},
 			}
 		}

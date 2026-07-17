@@ -243,6 +243,7 @@ func TestMakeCredentialPRFEvaluatesAtCreationTimeWithExplicitUserVerification(t 
 	)
 	require.NoError(t, err)
 	require.NotNil(t, resp.ExtensionOutputs.CreatePRFOutputs)
+	assert.Nil(t, resp.ExtensionOutputs.CreateHMACSecretMCOutputs)
 	assert.True(t, resp.ExtensionOutputs.CreatePRFOutputs.PRF.Enabled)
 	assert.Equal(t, result[:32], resp.ExtensionOutputs.CreatePRFOutputs.PRF.Results.First)
 	assert.Equal(t, result[32:], resp.ExtensionOutputs.CreatePRFOutputs.PRF.Results.Second)
@@ -256,6 +257,42 @@ func TestMakeCredentialPRFEvaluatesAtCreationTimeWithExplicitUserVerification(t 
 	require.NotNil(t, request.Extensions.CreateHMACSecretInput)
 	assert.True(t, request.Extensions.CreateHMACSecretInput.HMACSecret)
 	require.NotNil(t, request.Extensions.CreateHMACSecretMCInput)
+}
+
+func TestMakeCredentialRawHMACSecretMCReturnsRawOutput(t *testing.T) {
+	salt1 := bytes.Repeat([]byte{0x11}, 32)
+	salt2 := bytes.Repeat([]byte{0x22}, 32)
+	result := bytes.Repeat([]byte{0x5a}, 64)
+	transport := newPRFRoundTripTransport(t, result)
+	d := newPRFRoundTripDevice(t, transport, protocol.AuthenticatorGetInfoResponse{
+		Versions: protocol.Versions{protocol.FIDO_2_3},
+		Extensions: []extension.ExtensionIdentifier{
+			extension.ExtensionIdentifierHMACSecret,
+			extension.ExtensionIdentifierHMACSecretMC,
+		},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		Options: map[protocol.Option]bool{
+			protocol.OptionMakeCredentialUvNotRequired: true,
+		},
+	})
+
+	resp, err := makeCredentialWithExtensions(
+		d,
+		&webauthn.CreateAuthenticationExtensionsClientInputs{
+			CreateHMACSecretMCInputs: &webauthn.CreateHMACSecretMCInputs{
+				HMACGetSecret: webauthn.HMACGetSecretInput{
+					Salt1: salt1,
+					Salt2: salt2,
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, resp.ExtensionOutputs.CreateHMACSecretMCOutputs)
+	assert.Nil(t, resp.ExtensionOutputs.CreatePRFOutputs)
+	assert.Equal(t, result[:32], resp.ExtensionOutputs.CreateHMACSecretMCOutputs.HMACGetSecret.Output1)
+	assert.Equal(t, result[32:], resp.ExtensionOutputs.CreateHMACSecretMCOutputs.HMACGetSecret.Output2)
+	assert.Equal(t, append(bytes.Clone(salt1), salt2...), transport.salts)
 }
 
 func TestMakeCredentialPRFEvaluatesAtCreationTimeWithAlwaysUV(t *testing.T) {
