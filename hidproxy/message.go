@@ -24,7 +24,7 @@ type Message struct {
 	Data    []byte
 }
 
-func parseMessage(reader io.Reader) (Message, error) {
+func ParseMessage(reader io.Reader) (Message, error) {
 	cmd := make([]byte, 1)
 	if _, err := io.ReadFull(reader, cmd); err != nil {
 		return Message{}, err

@@ -32,7 +32,7 @@ func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 			if _, writeErr := message.WriteTo(pipe); writeErr != nil {
 				return writeErr
 			}
-			message, err = parseMessage(pipe)
+			message, err = ParseMessage(pipe)
 			return err
 		})
 		if err != nil {
