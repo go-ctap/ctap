@@ -9,8 +9,8 @@ github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh
 github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/go-ctap/hid v0.10.0 h1:rL08D+bDEiLPl35M2m905PnddL0SafbF0Ktd5nHPSfQ=
 github.com/go-ctap/hid v0.10.0/go.mod h1:JDxD3E+4ixQRyLWk6aG0sa+lr0CFs3tiSB9LGFHS50E=
-github.com/go-ctap/windows-proxy v0.3.0 h1:J6YO3hvdCAi4UOEJhT/bODSn0oBFSn+Ys7kSskW/Tsg=
-github.com/go-ctap/windows-proxy v0.3.0/go.mod h1:LIH3ys7poP096+MazfzrcMOsLgfJBfEbkieLd31LGvY=
+github.com/go-ctap/windows-proxy v0.3.1 h1:NJ94VRoG6FtGU3BI9T1FNXGKgiDRXG6P2wEu6B4wTFA=
+github.com/go-ctap/windows-proxy v0.3.1/go.mod h1:4U2jlX61XWpuwyVDZ/XFycVu3XXlfY1dy/p5ykcS16s=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
