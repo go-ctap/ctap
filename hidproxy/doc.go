@@ -1,2 +1,2 @@
-// Package hidproxy connects to the go-ctaphid-windows-proxy named-pipe service.
+// Package hidproxy connects to the go-ctap/windows-proxy named-pipe service.
 package hidproxy

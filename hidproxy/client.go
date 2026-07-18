@@ -16,6 +16,14 @@ func Enumerate(context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 	}
 }
 
+type DeviceEvent struct {
+	Err error
+}
+
+func Events(context.Context) (<-chan DeviceEvent, error) {
+	return nil, ErrNotSupported
+}
+
 func openPath(context.Context, string) (ctaphid.Device, error) {
 	return nil, ErrNotSupported
 }

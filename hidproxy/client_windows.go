@@ -11,19 +11,20 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/transport/ctaphid"
 	ghid "github.com/go-ctap/hid"
+	proxyprotocol "github.com/go-ctap/windows-proxy/protocol"
 )
 
 // Enumerate returns HID authenticators reported by the proxy.
 func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 	return func(yield func(*ghid.DeviceInfo, error) bool) {
-		pipe, err := winio.DialPipeContext(ctx, NamedPipePath)
+		pipe, err := winio.DialPipeContext(ctx, proxyprotocol.NamedPipePath)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
 		defer pipe.Close()
 
-		message, err := NewMessage(CommandEnumerate, nil)
+		message, err := proxyprotocol.NewMessage(proxyprotocol.CommandEnumerate, nil)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -32,7 +33,8 @@ func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 			if _, writeErr := message.WriteTo(pipe); writeErr != nil {
 				return writeErr
 			}
-			message, err = ParseMessage(pipe)
+
+			message, err = proxyprotocol.ParseMessage(pipe)
 			return err
 		})
 		if err != nil {
@@ -58,17 +60,78 @@ func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 	}
 }
 
-func openPath(ctx context.Context, path string) (ctaphid.Device, error) {
-	pipe, err := winio.DialPipeContext(ctx, NamedPipePath)
+type DeviceEvent struct {
+	Err error
+}
+
+// Events reports when the proxy's HID device topology may have changed.
+func Events(ctx context.Context) (<-chan DeviceEvent, error) {
+	pipe, err := winio.DialPipeContext(ctx, proxyprotocol.NamedPipePath)
 	if err != nil {
 		return nil, err
 	}
 
-	message, err := NewMessage(CommandStart, path)
+	message, err := proxyprotocol.NewMessage(proxyprotocol.CommandDevicesChanged, nil)
 	if err != nil {
 		_ = pipe.Close()
 		return nil, err
 	}
+
+	if err := withContextIO(ctx, pipe, func() error {
+		_, writeErr := message.WriteTo(pipe)
+		return writeErr
+	}); err != nil {
+		_ = pipe.Close()
+		return nil, err
+	}
+
+	events := make(chan DeviceEvent)
+	go func() {
+		defer close(events)
+		defer pipe.Close()
+
+		stop := context.AfterFunc(ctx, func() { _ = pipe.Close() })
+		defer stop()
+
+		for {
+			event, err := proxyprotocol.ParseMessage(pipe)
+			if err != nil {
+				if ctx.Err() == nil {
+					select {
+					case events <- DeviceEvent{Err: err}:
+					case <-ctx.Done():
+					}
+				}
+				return
+			}
+
+			if event.Command != proxyprotocol.CommandDevicesChanged {
+				continue
+			}
+
+			select {
+			case events <- DeviceEvent{}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return events, nil
+}
+
+func openPath(ctx context.Context, path string) (ctaphid.Device, error) {
+	pipe, err := winio.DialPipeContext(ctx, proxyprotocol.NamedPipePath)
+	if err != nil {
+		return nil, err
+	}
+
+	message, err := proxyprotocol.NewMessage(proxyprotocol.CommandStart, path)
+	if err != nil {
+		_ = pipe.Close()
+		return nil, err
+	}
+
 	if err := withContextIO(ctx, pipe, func() error {
 		_, writeErr := message.WriteTo(pipe)
 		return writeErr

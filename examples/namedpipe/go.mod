@@ -9,6 +9,7 @@ require (
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
 	github.com/go-ctap/hid v0.9.1 // indirect
+	github.com/go-ctap/windows-proxy v0.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/samber/lo v1.53.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
