@@ -15,7 +15,7 @@ type CreateCredProtectOutput struct {
 }
 
 type CreateCredBlobInput struct {
-	CredBlob []byte `cbor:"credBlob,omitzero"`
+	CredBlob []byte `cbor:"credBlob,omitzero" ctapdiag:"redact"`
 }
 
 type CreateCredBlobOutput struct {
@@ -27,7 +27,7 @@ type GetCredBlobInput struct {
 }
 
 type GetCredBlobOutput struct {
-	CredBlob []byte `cbor:"credBlob,omitzero"`
+	CredBlob []byte `cbor:"credBlob,omitzero" ctapdiag:"redact"`
 }
 
 type CreateLargeBlobKeyInput struct {
@@ -52,7 +52,7 @@ type CreateLargeBlobOutput struct {
 
 type GetLargeBlobParams struct {
 	Read         bool   `cbor:"read,omitempty"`
-	Write        []byte `cbor:"write,omitzero"`
+	Write        []byte `cbor:"write,omitzero" ctapdiag:"redact"`
 	OriginalSize *uint  `cbor:"originalSize,omitempty"`
 }
 
@@ -62,7 +62,7 @@ type GetLargeBlobInput struct {
 
 type GetLargeBlobOutput struct {
 	Written      *bool  `cbor:"written,omitempty"`
-	Blob         []byte `cbor:"blob,omitzero"`
+	Blob         []byte `cbor:"blob,omitzero" ctapdiag:"redact"`
 	OriginalSize *uint  `cbor:"originalSize,omitempty"`
 }
 
@@ -84,8 +84,8 @@ type CreatePinComplexityPolicyOutput struct {
 
 type HMACSecret struct {
 	KeyAgreement      cose.Key          `cbor:"1,keyasint"`
-	SaltEnc           []byte            `cbor:"2,keyasint"`
-	SaltAuth          []byte            `cbor:"3,keyasint"`
+	SaltEnc           []byte            `cbor:"2,keyasint" ctapdiag:"redact"`
+	SaltAuth          []byte            `cbor:"3,keyasint" ctapdiag:"redact"`
 	PinUvAuthProtocol PinUvAuthProtocol `cbor:"4,keyasint,omitempty"`
 }
 
@@ -102,7 +102,7 @@ type GetHMACSecretInput struct {
 }
 
 type GetHMACSecretOutput struct {
-	HMACSecret []byte `cbor:"hmac-secret,omitzero"`
+	HMACSecret []byte `cbor:"hmac-secret,omitzero" ctapdiag:"redact"`
 }
 
 type CreateHMACSecretMCInput struct {
@@ -110,7 +110,7 @@ type CreateHMACSecretMCInput struct {
 }
 
 type CreateHMACSecretMCOutput struct {
-	HMACSecret []byte `cbor:"hmac-secret-mc,omitzero"`
+	HMACSecret []byte `cbor:"hmac-secret-mc,omitzero" ctapdiag:"redact"`
 }
 
 type CreateThirdPartyPaymentInput struct {

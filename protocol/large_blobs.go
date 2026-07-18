@@ -2,15 +2,15 @@ package protocol
 
 type AuthenticatorLargeBlobsRequest struct {
 	Get               *uint             `cbor:"1,keyasint,omitzero"`
-	Set               []byte            `cbor:"2,keyasint,omitzero"`
+	Set               []byte            `cbor:"2,keyasint,omitzero" ctapdiag:"redact"`
 	Offset            uint              `cbor:"3,keyasint"`
 	Length            uint              `cbor:"4,keyasint,omitempty"`
-	PinUvAuthParam    []byte            `cbor:"5,keyasint,omitempty"`
+	PinUvAuthParam    []byte            `cbor:"5,keyasint,omitempty" ctapdiag:"redact"`
 	PinUvAuthProtocol PinUvAuthProtocol `cbor:"6,keyasint,omitempty"`
 }
 
 type AuthenticatorLargeBlobsResponse struct {
-	Config []byte `cbor:"1,keyasint,omitzero"`
+	Config []byte `cbor:"1,keyasint,omitzero" ctapdiag:"redact"`
 }
 
 type LargeBlob struct {

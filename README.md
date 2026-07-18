@@ -133,6 +133,24 @@ operations may work without a token on an authenticator that has no PIN or UV pr
 - Match CTAP errors as `*transport.CTAPError` and Token2 ISO 7816 errors as `*token2.APDUError`.
 - Device I/O accepts `context.Context`. Cancellation depends on transport support.
 
+### Diagnostic logging
+
+Pass a `diagnostic.Sink` with `options.WithDiagnosticSink` to receive one typed
+event per CTAP command. The event includes command and subcommand metadata plus
+redacted request and response CBOR diagnostic notation; raw wire bytes are
+never passed to the sink. The sink runs synchronously after the transport
+exchange, has no error return, and should return promptly.
+
+Diagnostic notation is decoded and re-encoded through the known protocol
+structure. It is therefore a normalized view for troubleshooting, not a
+byte-exact dump: unknown CBOR fields are omitted. Fields tagged
+`ctapdiag:"redact"` are replaced with `[REDACTED]` before the log record is
+created.
+
+Diagnostic events are redacted, not anonymized. They may contain relying party,
+user, credential, and biometric template identifiers and should be treated as
+sensitive data.
+
 ## Examples
 
 Each example is a separate Go module.

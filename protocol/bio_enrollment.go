@@ -5,7 +5,7 @@ type AuthenticatorBioEnrollmentRequest struct {
 	SubCommand        BioEnrollmentSubCommand       `cbor:"2,keyasint,omitempty"`
 	SubCommandParams  BioEnrollmentSubCommandParams `cbor:"3,keyasint,omitzero"`
 	PinUvAuthProtocol PinUvAuthProtocol             `cbor:"4,keyasint,omitempty"`
-	PinUvAuthParam    []byte                        `cbor:"5,keyasint,omitempty"`
+	PinUvAuthParam    []byte                        `cbor:"5,keyasint,omitempty" ctapdiag:"redact"`
 	GetModality       bool                          `cbor:"6,keyasint,omitempty"`
 }
 

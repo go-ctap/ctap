@@ -9,7 +9,7 @@ type AuthenticatorCredentialManagementRequest struct {
 	SubCommand        CredentialManagementSubCommand       `cbor:"1,keyasint"`
 	SubCommandParams  CredentialManagementSubCommandParams `cbor:"2,keyasint,omitzero"`
 	PinUvAuthProtocol PinUvAuthProtocol                    `cbor:"3,keyasint,omitempty"`
-	PinUvAuthParam    []byte                               `cbor:"4,keyasint,omitempty"`
+	PinUvAuthParam    []byte                               `cbor:"4,keyasint,omitempty" ctapdiag:"redact"`
 }
 
 type CredentialManagementSubCommandParams struct {
@@ -29,6 +29,6 @@ type AuthenticatorCredentialManagementResponse struct {
 	PublicKey                                    cose.Key                                 `cbor:"8,keyasint,omitempty"`
 	TotalCredentials                             uint                                     `cbor:"9,keyasint,omitzero"`
 	CredProtect                                  uint                                     `cbor:"10,keyasint,omitzero"`
-	LargeBlobKey                                 []byte                                   `cbor:"11,keyasint,omitempty"`
+	LargeBlobKey                                 []byte                                   `cbor:"11,keyasint,omitempty" ctapdiag:"redact"`
 	ThirdPartyPayment                            *bool                                    `cbor:"12,keyasint,omitempty"`
 }

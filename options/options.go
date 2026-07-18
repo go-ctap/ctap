@@ -1,26 +1,25 @@
 package options
 
 import (
-	"log/slog"
-
 	"github.com/fxamacker/cbor/v2"
+	"github.com/go-ctap/ctap/diagnostic"
 	ctaptransport "github.com/go-ctap/ctap/transport"
 )
 
 type Options struct {
-	Logger       *slog.Logger
-	EncMode      cbor.EncMode
-	DecMode      cbor.DecMode
-	Paths        []string
-	UseNamedPipe bool
-	Transport    ctaptransport.CBOR
+	DiagnosticSink diagnostic.Sink
+	EncMode        cbor.EncMode
+	DecMode        cbor.DecMode
+	Paths          []string
+	UseNamedPipe   bool
+	Transport      ctaptransport.CBOR
 }
 
 type Option func(*Options)
 
-func WithLogger(logger *slog.Logger) Option {
+func WithDiagnosticSink(sink diagnostic.Sink) Option {
 	return func(opts *Options) {
-		opts.Logger = logger
+		opts.DiagnosticSink = sink
 	}
 }
 
@@ -64,11 +63,7 @@ func NewOptions(opts ...Option) *Options {
 	decMode, _ := cbor.DecOptions{
 		UTF8: cbor.UTF8DecodeInvalid,
 	}.DecMode()
-	oo := &Options{
-		Logger:  slog.Default(),
-		EncMode: encMode,
-		DecMode: decMode,
-	}
+	oo := &Options{EncMode: encMode, DecMode: decMode}
 
 	for _, opt := range opts {
 		opt(oo)
