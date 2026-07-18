@@ -1,9 +1,9 @@
-# go-ctap
+# go-ctap/ctap
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/go-ctap/ctap.svg)](https://pkg.go.dev/github.com/go-ctap/ctap)
 [![Go](https://github.com/go-ctap/ctap/actions/workflows/go.yml/badge.svg)](https://github.com/go-ctap/ctap/actions/workflows/go.yml)
 
-`go-ctap` is a Go library for direct communication with FIDO2 authenticators. It provides both CTAP commands and a
+`go-ctap/ctap` is a Go library for direct communication with FIDO2 authenticators. It provides both CTAP commands and a
 stateful API for common authenticator workflows.
 
 > [!WARNING]
