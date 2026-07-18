@@ -107,11 +107,6 @@ func SelectDevice(ctx context.Context, opts ...options.Option) (*authenticator.D
 				decided = true
 				selectedDev = result.device
 				cancel()
-				cleanupErr = closeDevices(selectedDev)
-				if cleanupErr != nil {
-					cleanupErr = errors.Join(cleanupErr, selectedDev.Close())
-					selectedDev = nil
-				}
 				ctxDone = nil
 				continue
 			}
@@ -121,23 +116,21 @@ func SelectDevice(ctx context.Context, opts ...options.Option) (*authenticator.D
 		case <-ctxDone:
 			decided = true
 			cancel()
-			cleanupErr = closeDevices(nil)
 			ctxDone = nil
 		}
 	}
 
 	if selectedDev != nil {
+		cleanupErr = closeDevices(selectedDev)
+		if cleanupErr != nil {
+			return nil, errors.Join(cleanupErr, selectedDev.Close())
+		}
 		return selectedDev, nil
 	}
 	if err := ctx.Err(); err != nil {
-		if !decided {
-			cancel()
-			cleanupErr = closeDevices(nil)
-		}
+		cleanupErr = closeDevices(nil)
 		return nil, errors.Join(err, cleanupErr)
 	}
-	if !decided {
-		cleanupErr = closeDevices(nil)
-	}
+	cleanupErr = closeDevices(nil)
 	return nil, errors.Join(selectionErr, cleanupErr)
 }
