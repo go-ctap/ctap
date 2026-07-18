@@ -45,11 +45,11 @@ and automated tests. A feature listed above may still be unavailable on a specif
 
 ## Transports
 
-| Transport | Setup |
-|---|---|
-| USB HID | Uses the cgo-free [`go-ctap/hid`](https://github.com/go-ctap/hid) backend |
-| Windows named pipe | Connects to a running `go-ctaphid-windows-proxy`; see [`examples/namedpipe`](examples/namedpipe) |
-| Token2 CTAP over APDU | Requires a PC/SC implementation such as [`go-ctap/pcsc`](https://github.com/go-ctap/pcsc); see [`examples/token2`](examples/token2) |
+| Transport             | Setup                                                                                                                                     |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| USB HID               | Uses the cgo-free [`go-ctap/hid`](https://github.com/go-ctap/hid) backend                                                                 |
+| Windows named pipe    | Connects to a running [`go-ctap/windows-proxy`](https://github.com/go-ctap/windows-proxy); see [`examples/namedpipe`](examples/namedpipe) |
+| Token2 CTAP over APDU | Requires a PC/SC implementation such as [`go-ctap/pcsc`](https://github.com/go-ctap/pcsc); see [`examples/token2`](examples/token2)       |
 
 Generic NFC, BLE, hybrid, and digital-credential transports are not supported. Token2 support is experimental because
 its protocol is not publicly documented by the vendor.
