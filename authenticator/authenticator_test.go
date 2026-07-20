@@ -112,9 +112,9 @@ func newTestDevice(fake *testhid.Device, info protocol.AuthenticatorGetInfoRespo
 	d := &Device{
 		transport:  transport,
 		ctapClient: ctapClient,
+		info:       info,
+		infoValid:  true,
 	}
-	d.cacheInfo(info)
-
 	return d
 }
 
@@ -134,14 +134,52 @@ func TestNewUsesConfiguredTransport(t *testing.T) {
 
 	device, err := New(testContext, transport)
 	require.NoError(t, err)
-	assert.Equal(t, protocol.Versions{protocol.FIDO_2_1}, device.GetInfo().Versions)
-	assert.Equal(t, [][]byte{{byte(protocol.AuthenticatorGetInfo)}}, transport.requests)
+	info, err := device.GetInfo(testContext)
+	require.NoError(t, err)
+	assert.Equal(t, protocol.Versions{protocol.FIDO_2_1}, info.Versions)
+	assert.Equal(t, [][]byte{
+		{byte(protocol.AuthenticatorGetInfo)},
+		{byte(protocol.AuthenticatorGetInfo)},
+	}, transport.requests)
 
 	require.NoError(t, device.Close())
 	assert.True(t, transport.closed)
 }
 
-func TestCacheInfoSelectsFirstSupportedPinUvAuthProtocol(t *testing.T) {
+func TestGetInfoAlwaysRequestsCurrentDeviceInfo(t *testing.T) {
+	first := protocol.AuthenticatorGetInfoResponse{
+		Versions:           protocol.Versions{protocol.FIDO_2_1},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
+	}
+	second := protocol.AuthenticatorGetInfoResponse{
+		Versions:           protocol.Versions{protocol.FIDO_2_3},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+	}
+	fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, first), encodeCBOR(t, second))
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+	})
+
+	got, err := d.GetInfo(testContext)
+	require.NoError(t, err)
+	assert.Equal(t, first.Versions, got.Versions)
+
+	got, err = d.GetInfo(testContext)
+	require.NoError(t, err)
+	assert.Equal(t, second.Versions, got.Versions)
+	selected, err := d.requirePinUvAuthProtocol()
+	require.NoError(t, err)
+	assert.Equal(t, protocol.PinUvAuthProtocolOne, selected)
+
+	requests := fake.Requests(t)
+	require.Len(t, requests, 2)
+	for _, request := range requests {
+		command, _ := request.CTAPPayload(t)
+		assert.Equal(t, protocol.AuthenticatorGetInfo, command)
+	}
+}
+
+func TestRequirePinUvAuthProtocolSelectsFirstSupported(t *testing.T) {
 	tests := []struct {
 		name       string
 		advertised []protocol.PinUvAuthProtocol
@@ -170,10 +208,15 @@ func TestCacheInfoSelectsFirstSupportedPinUvAuthProtocol(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := &Device{}
-			d.cacheInfo(protocol.AuthenticatorGetInfoResponse{PinUvAuthProtocols: tt.advertised})
+			d := &Device{info: protocol.AuthenticatorGetInfoResponse{PinUvAuthProtocols: tt.advertised}}
+			got, err := d.requirePinUvAuthProtocol()
+			if tt.want == 0 {
+				require.ErrorIs(t, err, ErrNotSupported)
+				return
+			}
 
-			assert.Equal(t, tt.want, d.pinUvAuthProtocol)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -1190,15 +1233,11 @@ func TestSetPINAddsPINPolicyURLToAuthenticatorError(t *testing.T) {
 	assert.Equal(t, ctaptransport.CTAP2_ERR_PIN_POLICY_VIOLATION, ctapErr.StatusCode)
 }
 
-func TestSetPINRefreshesCachedGetInfo(t *testing.T) {
+func TestSetPINDoesNotRequestGetInfo(t *testing.T) {
 	keyAgreement := encodeCBOR(t, &protocol.AuthenticatorClientPINResponse{
 		KeyAgreement: testKeyAgreement(t),
 	})
-	updatedInfo := encodeCBOR(t, &protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
-		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
-	})
-	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil, updatedInfo)
+	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil)
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
@@ -1206,9 +1245,45 @@ func TestSetPINRefreshesCachedGetInfo(t *testing.T) {
 
 	require.NoError(t, d.SetPIN(testContext, "1234"))
 
-	info := d.GetInfo()
-	assert.True(t, info.Options[protocol.OptionClientPIN])
-	assert.Equal(t, protocol.PinUvAuthProtocolTwo, d.pinUvAuthProtocol)
+	requests := fake.Requests(t)
+	require.Len(t, requests, 2)
+	for _, request := range requests {
+		command, _ := request.CTAPPayload(t)
+		assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+	}
+}
+
+func TestSetPINInvalidatesInfoAndChangePINRefreshesIt(t *testing.T) {
+	keyAgreement := encodeCBOR(t, &protocol.AuthenticatorClientPINResponse{
+		KeyAgreement: testKeyAgreement(t),
+	})
+	currentInfo := encodeCBOR(t, protocol.AuthenticatorGetInfoResponse{
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
+	})
+	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil, currentInfo, keyAgreement, nil)
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
+	})
+
+	require.NoError(t, d.SetPIN(testContext, "1234"))
+	require.NoError(t, d.ChangePIN(testContext, "1234", "5678"))
+
+	requests := fake.Requests(t)
+	require.Len(t, requests, 5)
+	commands := make([]protocol.Command, 0, len(requests))
+	for _, request := range requests {
+		command, _ := request.CTAPPayload(t)
+		commands = append(commands, command)
+	}
+	assert.Equal(t, []protocol.Command{
+		protocol.AuthenticatorClientPIN,
+		protocol.AuthenticatorClientPIN,
+		protocol.AuthenticatorGetInfo,
+		protocol.AuthenticatorClientPIN,
+		protocol.AuthenticatorClientPIN,
+	}, commands)
 }
 
 func TestChangePINValidatesNewPINBeforeCommand(t *testing.T) {
@@ -1229,12 +1304,7 @@ func TestChangePINRemainsAvailableWhenPINChangeIsRequired(t *testing.T) {
 	keyAgreement := encodeCBOR(t, &protocol.AuthenticatorClientPINResponse{
 		KeyAgreement: testKeyAgreement(t),
 	})
-	updatedInfo := protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
-		ForcePINChange:     false,
-		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
-	}
-	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil, encodeCBOR(t, updatedInfo))
+	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil)
 	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
 		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
 		ForcePINChange:     true,
@@ -1242,7 +1312,12 @@ func TestChangePINRemainsAvailableWhenPINChangeIsRequired(t *testing.T) {
 	})
 
 	require.NoError(t, d.ChangePIN(testContext, "1234", "5678"))
-	assert.False(t, d.GetInfo().ForcePINChange)
+	requests := fake.Requests(t)
+	require.Len(t, requests, 2)
+	for _, request := range requests {
+		command, _ := request.CTAPPayload(t)
+		assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+	}
 }
 
 func TestGetAssertionValidatesHMACSecretSalts(t *testing.T) {

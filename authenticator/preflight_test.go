@@ -556,7 +556,7 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		assert.NotContains(t, request, uint64(4))
 	})
 
-	t.Run("enables long touch and refreshes getInfo", func(t *testing.T) {
+	t.Run("enables long touch without requesting getInfo", func(t *testing.T) {
 		info := protocol.AuthenticatorGetInfoResponse{
 			Versions: protocol.Versions{protocol.FIDO_2_3},
 			Options: map[protocol.Option]bool{
@@ -567,15 +567,14 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 				protocol.ConfigSubCommandEnableLongTouchForReset,
 			},
 		}
-		updatedInfo := info
-		updatedInfo.LongTouchForReset = new(true)
-		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, updatedInfo))
+		fake := testhid.NewCBORDevice(t, testCID, nil)
 		d := newTestDevice(fake, info)
 
 		require.NoError(t, d.EnableLongTouchForReset(testContext, nil))
-		assert.True(t, *d.GetInfo().LongTouchForReset)
 
-		command, request := fake.FirstCTAPRequestMap(t)
+		requests := fake.Requests(t)
+		require.Len(t, requests, 1)
+		command, request := requests[0].CTAPRequestMap(t)
 		assert.Equal(t, protocol.AuthenticatorConfig, command)
 		assert.Len(t, request, 1)
 		assert.Contains(t, request, uint64(1))
@@ -596,24 +595,6 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		err := d.EnableLongTouchForReset(testContext, nil)
 		require.ErrorIs(t, err, ErrNotSupported)
 		assert.Empty(t, fake.Writes())
-	})
-
-	t.Run("long touch verifies refreshed state", func(t *testing.T) {
-		info := protocol.AuthenticatorGetInfoResponse{
-			Versions: protocol.Versions{protocol.FIDO_2_3},
-			Options: map[protocol.Option]bool{
-				protocol.OptionAuthenticatorConfig: true,
-			},
-			LongTouchForReset: new(false),
-			AuthenticatorConfigCommands: []protocol.ConfigSubCommand{
-				protocol.ConfigSubCommandEnableLongTouchForReset,
-			},
-		}
-		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, info))
-		d := newTestDevice(fake, info)
-
-		err := d.EnableLongTouchForReset(testContext, nil)
-		require.ErrorIs(t, err, ErrSpecViolation)
 	})
 
 	t.Run("setMinPINLength rejects decreasing minimum", func(t *testing.T) {

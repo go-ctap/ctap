@@ -31,7 +31,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	info := device.GetInfo()
+	info, err := device.GetInfo(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("path: %s\n", device.Path)
 	fmt.Printf("versions: %v\n", info.Versions)
 	fmt.Printf("AAGUID: %s\n", info.AAGUID)

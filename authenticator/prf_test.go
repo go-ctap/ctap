@@ -133,8 +133,7 @@ func newPRFRoundTripDevice(
 
 	ctapClient, err := client.NewClient(options.WithTransport(transport))
 	require.NoError(t, err)
-	d := &Device{transport: transport, ctapClient: ctapClient}
-	d.cacheInfo(info)
+	d := &Device{transport: transport, ctapClient: ctapClient, info: info, infoValid: true}
 	return d
 }
 

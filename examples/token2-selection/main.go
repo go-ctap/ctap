@@ -50,7 +50,11 @@ func run(ctx context.Context) (err error) {
 	}()
 
 	fmt.Printf("PC/SC reader: %s\n", readerName)
-	fmt.Printf("CTAP versions: %v\n", device.GetInfo().Versions)
+	info, err := device.GetInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("get authenticator info: %w", err)
+	}
+	fmt.Printf("CTAP versions: %v\n", info.Versions)
 	fmt.Println("Touch the Token2 now. Waiting for authenticatorSelection...")
 	if err := device.Selection(ctx); err != nil {
 		return fmt.Errorf("authenticatorSelection: %w", err)

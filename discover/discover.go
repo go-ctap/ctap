@@ -61,7 +61,10 @@ func SelectDevice(ctx context.Context, opts ...options.Option) (*authenticator.D
 			return nil, errors.Join(err, closeDevices(nil))
 		}
 
-		info := dev.GetInfo()
+		info, err := dev.GetInfo(ctx)
+		if err != nil {
+			return nil, errors.Join(err, dev.Close(), closeDevices(nil))
+		}
 		if !info.Versions.Supports(protocol.FIDO_2_1) &&
 			!info.Versions.Supports(protocol.FIDO_2_1_PRE) &&
 			!info.Versions.Supports(protocol.FIDO_2_3) {

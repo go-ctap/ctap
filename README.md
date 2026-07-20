@@ -24,7 +24,7 @@ Main features include:
 - credential management and biometric enrollment;
 - authenticator configuration and reset;
 - legacy and CTAP 2.3 large-blob storage;
-- persistent credential store state;
+- `encIdentifier` and `encCredStoreState` decryption;
 - PIN/UV Auth Protocols One and Two;
 - the `credProtect`, `credBlob`, `largeBlobKey`, `largeBlob`, `minPinLength`, `pinComplexityPolicy`, `hmac-secret`,
   `hmac-secret-mc`, `thirdPartyPayment`, and WebAuthn `prf` extensions.
@@ -85,7 +85,10 @@ func main() {
 	}
 	defer device.Close()
 
-	info := device.GetInfo()
+	info, err := device.GetInfo(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("path: %s\nversions: %v\nAAGUID: %s\n", device.Path, info.Versions, info.AAGUID)
 }
 ```
@@ -107,7 +110,7 @@ For a custom transport, implement `transport.Device` and pass it to `authenticat
 
 ## PIN and user verification
 
-`authenticator.Device` checks the cached device capabilities before it starts a workflow. It selects the preferred
+`authenticator.Device` checks the device capabilities before it starts a workflow. It selects the preferred
 PIN/UV protocol and uses permission-based tokens when supported. On older devices, it can use the legacy token flow.
 
 Request only the permissions required by the next commands. Include an RP ID when requesting
@@ -128,7 +131,8 @@ operations may work without a token on an authenticator that has no PIN or UV pr
 ## Usage notes
 
 - Always close `authenticator.Device`. It owns the transport and runs one command at a time.
-- `Device.GetInfo()` returns cached data. The library refreshes it after operations that change device state.
+- `Device.GetInfo(ctx)` always sends `authenticatorGetInfo` and returns the current device data. The response is also
+  cached for capability checks; known state changes invalidate it, and the next check refreshes it lazily.
 - Finish assertion and credential-management iterators before sending another command.
 - Match CTAP errors as `*transport.CTAPError` and Token2 ISO 7816 errors as `*token2.APDUError`.
 - Device I/O accepts `context.Context`. Cancellation depends on transport support.

@@ -301,7 +301,7 @@ func selectPinTokenFlowUsingPIN(
 		return 0, newErrorMessage(ErrNotSupported, "device doesn't support AuthenticatorConfiguration permission")
 	}
 	if permission&protocol.PermissionPersistentCredentialManagementReadOnly != 0 &&
-		!info.Options[protocol.OptionCredentialManagementReadOnly] {
+		!info.Options[protocol.OptionPersistentCredentialManagementReadOnly] {
 		return 0, newErrorMessage(ErrNotSupported, "device doesn't support PersistentCredentialManagementReadOnly permission")
 	}
 
@@ -374,7 +374,7 @@ func validatePinUvAuthTokenUsingUV(
 		}
 	}
 	if permission&protocol.PermissionPersistentCredentialManagementReadOnly != 0 &&
-		!info.Options[protocol.OptionCredentialManagementReadOnly] {
+		!info.Options[protocol.OptionPersistentCredentialManagementReadOnly] {
 		return newErrorMessage(ErrNotSupported, "device doesn't support PersistentCredentialManagementReadOnly permission")
 	}
 
