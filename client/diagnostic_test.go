@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/fxamacker/cbor/v2"
 	ctapdiag "github.com/go-ctap/ctap/diagnostic"
 	"github.com/go-ctap/ctap/options"
 	"github.com/go-ctap/ctap/protocol"
@@ -35,9 +36,51 @@ func TestRenderDiagnosticRedactsTaggedFieldsAndShowsOtherFields(t *testing.T) {
 
 	require.Empty(t, diagnostic.Error)
 	assert.Contains(t, diagnostic.Notation, diagnosticRedacted)
+	assert.Contains(t, diagnostic.Notation, "h'/[REDACTED]/'")
 	assert.Contains(t, diagnostic.Notation, "engineers.example")
 	assert.NotContains(t, diagnostic.Notation, hex.EncodeToString(secret))
 	assert.Equal(t, []string{"PinHashEnc"}, diagnostic.RedactedFields)
+}
+
+func TestDiagnosticRedactionPreservesCBORMajorType(t *testing.T) {
+	configured := options.NewOptions()
+	formatter := diagnosticFormatter{decoder: configured.DecMode}
+
+	tests := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{"unsigned integer", uint64(42), `/[REDACTED]/ 0`},
+		{"negative integer", int64(-42), `/[REDACTED]/ -1`},
+		{"byte string", []byte("secret-canary"), `h'/[REDACTED]/'`},
+		{"text string", "secret-canary", `/[REDACTED]/ ""`},
+		{"array", []any{"secret-canary"}, "[\n  /[REDACTED]/\n]"},
+		{"map", map[string]any{"secret": "secret-canary"}, "{\n  /[REDACTED]/\n}"},
+		{"tag", cbor.Tag{Number: 24, Content: []byte("secret-canary")}, `24(h'/[REDACTED]/')`},
+		{"boolean", true, `/[REDACTED]/ false`},
+		{"null", nil, `/[REDACTED]/ null`},
+		{"undefined", cbor.SimpleValue(23), `/[REDACTED]/ undefined`},
+		{"float", 1.5, `/[REDACTED]/ 0.0`},
+		{"simple value", cbor.SimpleValue(16), `/[REDACTED]/ simple(0)`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			encoder := configured.EncMode
+			if _, ok := test.value.(cbor.Tag); ok {
+				encoder, _ = cbor.EncOptions{}.EncMode()
+			}
+
+			raw, err := encoder.Marshal(test.value)
+			require.NoError(t, err)
+
+			notation, err := formatter.redactedNotation(raw, 0)
+			require.NoError(t, err)
+			assert.Equal(t, test.want, notation)
+			assert.NotContains(t, notation, "secret-canary")
+		})
+	}
 }
 
 func TestRenderDiagnosticRedactsNestedExtensionFields(t *testing.T) {
@@ -202,6 +245,67 @@ func TestRenderDiagnosticUsesConfigSubCommandParamsSchema(t *testing.T) {
 	assert.Contains(t, diagnostic.Notation, "/newMinPINLength/ 1:")
 	assert.Contains(t, diagnostic.Notation, "/pinComplexityPolicy/ 4:")
 	assert.Contains(t, diagnostic.Notation, "vendor-param-canary")
+}
+
+func TestRenderDiagnosticRedactsKnownUnsignedExtensionOutputFields(t *testing.T) {
+	secret := []byte("large-blob-canary")
+	configured := options.NewOptions()
+	raw, err := configured.EncMode.Marshal(map[uint64]any{
+		8: map[string]any{
+			"largeBlob": map[string]any{
+				"written":      true,
+				"blob":         secret,
+				"originalSize": 42,
+			},
+			"vendor.example": map[string]any{
+				"debug": "vendor-canary",
+			},
+		},
+	})
+	require.NoError(t, err)
+	_, responseSchema := exchangeSchemas(protocol.AuthenticatorGetAssertion)
+
+	diagnostic, _ := renderDiagnostic(
+		configured.DecMode,
+		configured.EncMode,
+		raw,
+		responseSchema,
+	)
+
+	require.Empty(t, diagnostic.Error)
+	assert.Contains(t, diagnostic.Notation, "/unsignedExtensionOutputs/ 8:")
+	assert.Contains(t, diagnostic.Notation, `"written": true`)
+	assert.Contains(t, diagnostic.Notation, `"blob": h'/[REDACTED]/'`)
+	assert.Contains(t, diagnostic.Notation, `"originalSize": 42`)
+	assert.Contains(t, diagnostic.Notation, "vendor-canary")
+	assert.NotContains(t, diagnostic.Notation, hex.EncodeToString(secret))
+	assert.Equal(t, []string{"UnsignedExtensionOutputs.Blob"}, diagnostic.RedactedFields)
+}
+
+func TestRenderDiagnosticShowsSafeMakeCredentialUnsignedExtensionOutputs(t *testing.T) {
+	configured := options.NewOptions()
+	raw, err := configured.EncMode.Marshal(map[uint64]any{
+		6: map[string]any{
+			"largeBlob": map[string]any{
+				"supported": true,
+			},
+		},
+	})
+	require.NoError(t, err)
+	_, responseSchema := exchangeSchemas(protocol.AuthenticatorMakeCredential)
+
+	diagnostic, _ := renderDiagnostic(
+		configured.DecMode,
+		configured.EncMode,
+		raw,
+		responseSchema,
+	)
+
+	require.Empty(t, diagnostic.Error)
+	assert.Contains(t, diagnostic.Notation, "/unsignedExtensionOutputs/ 6:")
+	assert.Contains(t, diagnostic.Notation, `"supported": true`)
+	assert.NotContains(t, diagnostic.Notation, diagnosticRedacted)
+	assert.Empty(t, diagnostic.RedactedFields)
 }
 
 func TestRenderDiagnosticWithoutSchemaShowsRawCBOR(t *testing.T) {

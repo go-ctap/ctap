@@ -28,7 +28,7 @@ type AuthenticatorGetAssertionResponse struct {
 	NumberOfCredentials      uint                                               `cbor:"5,keyasint,omitzero"`
 	UserSelected             bool                                               `cbor:"6,keyasint,omitzero"`
 	LargeBlobKey             []byte                                             `cbor:"7,keyasint,omitempty" ctapdiag:"-,redact"`
-	UnsignedExtensionOutputs map[extension.ExtensionIdentifier]any              `cbor:"8,keyasint,omitempty" ctapdiag:"-,redact"`
+	UnsignedExtensionOutputs map[extension.ExtensionIdentifier]any              `cbor:"8,keyasint,omitempty"`
 	ExtensionOutputs         *webauthn.GetAuthenticationExtensionsClientOutputs `cbor:"-"`
 }
 

@@ -13,11 +13,20 @@ import (
 	ctapdiag "github.com/go-ctap/ctap/diagnostic"
 )
 
-const diagnosticRedacted = "[REDACTED]"
+const (
+	diagnosticRedacted        = "[REDACTED]"
+	diagnosticRedactedComment = "/" + diagnosticRedacted + "/"
+)
+
+type diagnosticMapValueKey struct {
+	path string
+	key  string
+}
 
 type diagnosticMessageSchema struct {
 	typeInfo         reflect.Type
 	subCommandParams map[uint64]reflect.Type
+	mapValueTypes    map[diagnosticMapValueKey]reflect.Type
 }
 
 type diagnosticField struct {
@@ -34,6 +43,9 @@ type diagnosticFormatter struct {
 	encoder  cbor.EncMode
 	diagnose cbor.DiagMode
 	redacted []string
+
+	subCommandParams map[uint64]reflect.Type
+	mapValueTypes    map[diagnosticMapValueKey]reflect.Type
 }
 
 func renderDiagnostic(
@@ -54,9 +66,11 @@ func renderDiagnostic(
 	}
 
 	formatter := diagnosticFormatter{
-		decoder:  decoder,
-		encoder:  encoder,
-		diagnose: diagnosticMode,
+		decoder:          decoder,
+		encoder:          encoder,
+		diagnose:         diagnosticMode,
+		subCommandParams: schema.subCommandParams,
+		mapValueTypes:    schema.mapValueTypes,
 	}
 
 	var subCommand uint64
@@ -64,7 +78,6 @@ func renderDiagnostic(
 		raw,
 		schema.typeInfo,
 		"",
-		schema.subCommandParams,
 		0,
 	)
 	if err != nil {
@@ -83,7 +96,6 @@ func (f *diagnosticFormatter) render(
 	raw []byte,
 	schema reflect.Type,
 	path string,
-	subCommandParams map[uint64]reflect.Type,
 	depth int,
 ) (string, uint64, error) {
 	if len(raw) == 0 {
@@ -108,7 +120,7 @@ func (f *diagnosticFormatter) render(
 		for index, value := range values {
 			writeDiagnosticIndent(&builder, depth+1)
 
-			notation, _, err := f.render(value, childSchema, path, nil, depth+1)
+			notation, _, err := f.render(value, childSchema, path, depth+1)
 			if err != nil {
 				return "", 0, err
 			}
@@ -125,7 +137,7 @@ func (f *diagnosticFormatter) render(
 
 		return builder.String(), 0, nil
 	case 5:
-		return f.renderMap(raw, schema, path, subCommandParams, depth)
+		return f.renderMap(raw, schema, path, depth)
 	default:
 		notation, err := f.diagnose.Diagnose(raw)
 		return notation, 0, err
@@ -136,7 +148,6 @@ func (f *diagnosticFormatter) renderMap(
 	raw []byte,
 	schema reflect.Type,
 	path string,
-	subCommandParams map[uint64]reflect.Type,
 	depth int,
 ) (string, uint64, error) {
 	var values map[any]cbor.RawMessage
@@ -155,6 +166,7 @@ func (f *diagnosticFormatter) renderMap(
 	}
 
 	type entry struct {
+		key       any
 		keyCBOR   []byte
 		valueCBOR cbor.RawMessage
 		field     *diagnosticField
@@ -175,6 +187,7 @@ func (f *diagnosticFormatter) renderMap(
 		}
 
 		entries = append(entries, entry{
+			key:       key,
 			keyCBOR:   keyCBOR,
 			valueCBOR: value,
 			field:     field,
@@ -218,17 +231,25 @@ func (f *diagnosticFormatter) renderMap(
 
 		childSchema := mapValueType
 		var valueNotation string
+		if key, ok := entry.key.(string); ok {
+			if variant := f.mapValueTypes[diagnosticMapValueKey{path: path, key: key}]; variant != nil {
+				childSchema = variant
+			}
+		}
 
 		if entry.field != nil {
 			childSchema = entry.field.typeInfo
 			if entry.field.goName == "SubCommandParams" {
-				if variant := subCommandParams[subCommand]; variant != nil {
+				if variant := f.subCommandParams[subCommand]; variant != nil {
 					childSchema = variant
 				}
 			}
 
 			if entry.field.redact {
-				valueNotation = strconv.Quote(diagnosticRedacted)
+				valueNotation, err = f.redactedNotation(entry.valueCBOR, depth+1)
+				if err != nil {
+					return "", 0, err
+				}
 				f.redacted = append(f.redacted, entry.field.path)
 			}
 		}
@@ -238,7 +259,6 @@ func (f *diagnosticFormatter) renderMap(
 				entry.valueCBOR,
 				childSchema,
 				fieldPath(path, entry.field),
-				nil,
 				depth+1,
 			)
 			if err != nil {
@@ -257,6 +277,67 @@ func (f *diagnosticFormatter) renderMap(
 	builder.WriteByte('}')
 
 	return builder.String(), subCommand, nil
+}
+
+func (f *diagnosticFormatter) redactedNotation(raw []byte, depth int) (string, error) {
+	if len(raw) == 0 {
+		return "", fmt.Errorf("empty CBOR item")
+	}
+
+	switch raw[0] >> 5 {
+	case 0:
+		return diagnosticRedactedComment + " 0", nil
+	case 1:
+		return diagnosticRedactedComment + " -1", nil
+	case 2:
+		return "h'" + diagnosticRedactedComment + "'", nil
+	case 3:
+		return diagnosticRedactedComment + ` ""`, nil
+	case 4:
+		return redactedCollection('[', ']', depth), nil
+	case 5:
+		return redactedCollection('{', '}', depth), nil
+	case 6:
+		var tag cbor.RawTag
+		if err := f.decoder.Unmarshal(raw, &tag); err != nil {
+			return "", err
+		}
+
+		content, err := f.redactedNotation(tag.Content, depth)
+		if err != nil {
+			return "", err
+		}
+
+		return strconv.FormatUint(tag.Number, 10) + "(" + content + ")", nil
+	case 7:
+		switch raw[0] & 0x1f {
+		case 20, 21:
+			return diagnosticRedactedComment + " false", nil
+		case 22:
+			return diagnosticRedactedComment + " null", nil
+		case 23:
+			return diagnosticRedactedComment + " undefined", nil
+		case 25, 26, 27:
+			return diagnosticRedactedComment + " 0.0", nil
+		default:
+			return diagnosticRedactedComment + " simple(0)", nil
+		}
+	default:
+		panic("unreachable")
+	}
+}
+
+func redactedCollection(open, close byte, depth int) string {
+	var builder strings.Builder
+	builder.WriteByte(open)
+	builder.WriteByte('\n')
+	writeDiagnosticIndent(&builder, depth+1)
+	builder.WriteString(diagnosticRedactedComment)
+	builder.WriteByte('\n')
+	writeDiagnosticIndent(&builder, depth)
+	builder.WriteByte(close)
+
+	return builder.String()
 }
 
 func writeDiagnosticIndent(builder *strings.Builder, depth int) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-ctap/ctap/diagnostic"
+	"github.com/go-ctap/ctap/extension"
 	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
 )
@@ -62,19 +63,34 @@ type diagnosticExchangeSchema struct {
 	requestType             reflect.Type
 	responseType            reflect.Type
 	requestSubCommandParams map[uint64]reflect.Type
+	responseMapValueTypes   map[diagnosticMapValueKey]reflect.Type
+}
+
+var unsignedExtensionOutputLargeBlobKey = diagnosticMapValueKey{
+	path: "UnsignedExtensionOutputs",
+	key:  string(extension.ExtensionIdentifierLargeBlob),
+}
+
+var getAssertionDiagnosticMapValueTypes = map[diagnosticMapValueKey]reflect.Type{
+	unsignedExtensionOutputLargeBlobKey: reflect.TypeFor[protocol.GetLargeBlobOutput](),
 }
 
 var diagnosticExchangeSchemas = map[protocol.Command]diagnosticExchangeSchema{
 	protocol.AuthenticatorMakeCredential: {
 		requestType:  reflect.TypeFor[protocol.AuthenticatorMakeCredentialRequest](),
 		responseType: reflect.TypeFor[protocol.AuthenticatorMakeCredentialResponse](),
+		responseMapValueTypes: map[diagnosticMapValueKey]reflect.Type{
+			unsignedExtensionOutputLargeBlobKey: reflect.TypeFor[protocol.CreateLargeBlobOutput](),
+		},
 	},
 	protocol.AuthenticatorGetAssertion: {
-		requestType:  reflect.TypeFor[protocol.AuthenticatorGetAssertionRequest](),
-		responseType: reflect.TypeFor[protocol.AuthenticatorGetAssertionResponse](),
+		requestType:           reflect.TypeFor[protocol.AuthenticatorGetAssertionRequest](),
+		responseType:          reflect.TypeFor[protocol.AuthenticatorGetAssertionResponse](),
+		responseMapValueTypes: getAssertionDiagnosticMapValueTypes,
 	},
 	protocol.AuthenticatorGetNextAssertion: {
-		responseType: reflect.TypeFor[protocol.AuthenticatorGetAssertionResponse](),
+		responseType:          reflect.TypeFor[protocol.AuthenticatorGetAssertionResponse](),
+		responseMapValueTypes: getAssertionDiagnosticMapValueTypes,
 	},
 	protocol.AuthenticatorGetInfo: {
 		responseType: reflect.TypeFor[protocol.AuthenticatorGetInfoResponse](),
@@ -118,7 +134,8 @@ func exchangeSchemas(command protocol.Command) (diagnosticMessageSchema, diagnos
 		subCommandParams: schema.requestSubCommandParams,
 	}
 	response := diagnosticMessageSchema{
-		typeInfo: schema.responseType,
+		typeInfo:      schema.responseType,
+		mapValueTypes: schema.responseMapValueTypes,
 	}
 
 	return request, response

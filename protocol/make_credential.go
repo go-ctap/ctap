@@ -31,7 +31,7 @@ type AuthenticatorMakeCredentialResponse struct {
 	AttestationStatement     map[string]any                                        `cbor:"3,keyasint,omitzero" ctapdiag:"attStmt"`
 	EnterpriseAttestation    bool                                                  `cbor:"4,keyasint,omitzero" ctapdiag:"epAtt"`
 	LargeBlobKey             []byte                                                `cbor:"5,keyasint,omitempty" ctapdiag:"-,redact"`
-	UnsignedExtensionOutputs map[extension.ExtensionIdentifier]any                 `cbor:"6,keyasint,omitempty" ctapdiag:"-,redact"`
+	UnsignedExtensionOutputs map[extension.ExtensionIdentifier]any                 `cbor:"6,keyasint,omitempty"`
 	ExtensionOutputs         *webauthn.CreateAuthenticationExtensionsClientOutputs `cbor:"-"`
 }
 
