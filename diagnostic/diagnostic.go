@@ -9,7 +9,7 @@ import (
 	"github.com/go-ctap/ctap/transport"
 )
 
-// Message is normalized CBOR diagnostic notation for one side of an exchange.
+// Message is normalized, pretty-printed extended CBOR diagnostic notation for one side of an exchange.
 type Message struct {
 	Notation       string
 	Bytes          int

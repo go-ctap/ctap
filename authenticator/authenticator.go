@@ -33,7 +33,8 @@ type Device struct {
 	info       protocol.AuthenticatorGetInfoResponse
 	infoValid  bool
 	ctapClient *client.Client
-	mu         sync.Mutex // global mutex to serialize requests to the device
+	mu         sync.Mutex   // global mutex to serialize requests to the device
+	infoMu     sync.RWMutex // protects info and infoValid for cache-only access
 }
 
 func newHMACSecretInput(
@@ -98,13 +99,18 @@ func (d *Device) refreshInfoLocked(ctx context.Context) (protocol.AuthenticatorG
 		return protocol.AuthenticatorGetInfoResponse{}, err
 	}
 
+	d.infoMu.Lock()
 	d.info = info
 	d.infoValid = true
+	d.infoMu.Unlock()
 	return info, nil
 }
 
 func (d *Device) ensureInfoLocked(ctx context.Context) error {
-	if d.infoValid {
+	d.infoMu.RLock()
+	valid := d.infoValid
+	d.infoMu.RUnlock()
+	if valid {
 		return nil
 	}
 
@@ -113,6 +119,9 @@ func (d *Device) ensureInfoLocked(ctx context.Context) error {
 }
 
 func (d *Device) invalidateInfoLocked() {
+	d.infoMu.Lock()
+	defer d.infoMu.Unlock()
+
 	d.infoValid = false
 }
 
@@ -966,6 +975,15 @@ func (d *Device) GetInfo(ctx context.Context) (protocol.AuthenticatorGetInfoResp
 	defer d.mu.Unlock()
 
 	return d.refreshInfoLocked(ctx)
+}
+
+// GetInfoCached returns the last authenticator metadata snapshot and whether
+// it is still valid. It never communicates with the authenticator.
+func (d *Device) GetInfoCached() (protocol.AuthenticatorGetInfoResponse, bool) {
+	d.infoMu.RLock()
+	defer d.infoMu.RUnlock()
+
+	return d.info, d.infoValid
 }
 
 // GetYubiKeyDeviceInfo returns Yubico-specific device metadata using the

@@ -30,7 +30,7 @@ func TestRenderDiagnosticRedactsTaggedFieldsAndShowsOtherFields(t *testing.T) {
 		configured.DecMode,
 		configured.EncMode,
 		raw,
-		reflect.TypeFor[protocol.AuthenticatorClientPINRequest](),
+		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorClientPINRequest]()},
 	)
 
 	require.Empty(t, diagnostic.Error)
@@ -61,7 +61,7 @@ func TestRenderDiagnosticRedactsNestedExtensionFields(t *testing.T) {
 		configured.DecMode,
 		configured.EncMode,
 		raw,
-		reflect.TypeFor[protocol.AuthenticatorGetAssertionRequest](),
+		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorGetAssertionRequest]()},
 	)
 
 	require.Empty(t, diagnostic.Error)
@@ -73,7 +73,7 @@ func TestRenderDiagnosticRedactsNestedExtensionFields(t *testing.T) {
 	}, diagnostic.RedactedFields)
 }
 
-func TestRenderDiagnosticDropsUnknownFields(t *testing.T) {
+func TestRenderDiagnosticPreservesUnknownFields(t *testing.T) {
 	configured := options.NewOptions()
 	raw, err := configured.EncMode.Marshal(map[uint64]any{
 		2:  uint64(protocol.ClientPINSubCommandGetPINRetries),
@@ -86,12 +86,221 @@ func TestRenderDiagnosticDropsUnknownFields(t *testing.T) {
 		configured.DecMode,
 		configured.EncMode,
 		raw,
-		reflect.TypeFor[protocol.AuthenticatorClientPINRequest](),
+		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorClientPINRequest]()},
 	)
 
 	require.Empty(t, diagnostic.Error)
 	assert.Contains(t, diagnostic.Notation, "engineers.example")
-	assert.NotContains(t, diagnostic.Notation, "unknown-field-canary")
+	assert.Contains(t, diagnostic.Notation, "unknown-field-canary")
+	assert.Contains(t, diagnostic.Notation, "/subCommand/ 2:")
+	assert.Contains(t, diagnostic.Notation, "/rpId/ 10:")
+}
+
+func TestRenderDiagnosticPreservesNestedUnknownFieldsAndRedactsKnownWrongType(t *testing.T) {
+	configured := options.NewOptions()
+	raw, err := configured.EncMode.Marshal(map[uint64]any{
+		2: uint64(protocol.ClientPINSubCommandGetPINRetries),
+		6: map[string]any{"unexpected": "secret-canary"},
+		99: map[uint64]any{
+			1: "nested-unknown-canary",
+		},
+	})
+	require.NoError(t, err)
+
+	diagnostic, subCommand := renderDiagnostic(
+		configured.DecMode,
+		configured.EncMode,
+		raw,
+		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorClientPINRequest]()},
+	)
+
+	require.Empty(t, diagnostic.Error)
+	assert.Equal(t, uint64(protocol.ClientPINSubCommandGetPINRetries), subCommand)
+	assert.Contains(t, diagnostic.Notation, "nested-unknown-canary")
+	assert.Contains(t, diagnostic.Notation, diagnosticRedacted)
+	assert.NotContains(t, diagnostic.Notation, "secret-canary")
+	assert.Equal(t, []string{"PinHashEnc"}, diagnostic.RedactedFields)
+}
+
+func TestRenderDiagnosticUsesExplicitAndDerivedFieldNames(t *testing.T) {
+	configured := options.NewOptions()
+	raw, err := configured.EncMode.Marshal(map[uint64]any{
+		1: "none",
+		2: []byte("auth-data-canary"),
+		3: map[string]any{"alg": -7},
+		4: true,
+	})
+	require.NoError(t, err)
+
+	diagnostic, _ := renderDiagnostic(
+		configured.DecMode,
+		configured.EncMode,
+		raw,
+		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorMakeCredentialResponse]()},
+	)
+
+	require.Empty(t, diagnostic.Error)
+	assert.Contains(t, diagnostic.Notation, "/fmt/ 1:")
+	assert.Contains(t, diagnostic.Notation, "/authData/ 2:")
+	assert.Contains(t, diagnostic.Notation, "/attStmt/ 3:")
+	assert.Contains(t, diagnostic.Notation, "/epAtt/ 4:")
+	assert.NotContains(t, diagnostic.Notation, "auth-data-canary")
+	assert.Equal(t, []string{"AuthDataRaw"}, diagnostic.RedactedFields)
+}
+
+func TestRenderDiagnosticUsesProtocolSpellingOverrides(t *testing.T) {
+	tests := []struct {
+		name   string
+		key    uint64
+		schema reflect.Type
+		want   string
+	}{
+		{"rpId", 1, reflect.TypeFor[protocol.AuthenticatorGetAssertionRequest](), "/rpId/ 1:"},
+		{"rpIDHash", 4, reflect.TypeFor[protocol.AuthenticatorCredentialManagementResponse](), "/rpIDHash/ 4:"},
+		{"templateId", 4, reflect.TypeFor[protocol.AuthenticatorBioEnrollmentResponse](), "/templateId/ 4:"},
+	}
+	configured := options.NewOptions()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw, err := configured.EncMode.Marshal(map[uint64]any{test.key: "value"})
+			require.NoError(t, err)
+			diagnostic, _ := renderDiagnostic(
+				configured.DecMode,
+				configured.EncMode,
+				raw,
+				diagnosticMessageSchema{typeInfo: test.schema},
+			)
+			require.Empty(t, diagnostic.Error)
+			assert.Contains(t, diagnostic.Notation, test.want)
+		})
+	}
+}
+
+func TestRenderDiagnosticUsesConfigSubCommandParamsSchema(t *testing.T) {
+	configured := options.NewOptions()
+	raw, err := configured.EncMode.Marshal(map[uint64]any{
+		1: uint64(protocol.ConfigSubCommandSetMinPINLength),
+		2: map[uint64]any{
+			1:  8,
+			4:  true,
+			99: "vendor-param-canary",
+		},
+	})
+	require.NoError(t, err)
+	requestSchema, _ := exchangeSchemas(protocol.AuthenticatorConfig)
+
+	diagnostic, subCommand := renderDiagnostic(
+		configured.DecMode,
+		configured.EncMode,
+		raw,
+		requestSchema,
+	)
+
+	require.Empty(t, diagnostic.Error)
+	assert.Equal(t, uint64(protocol.ConfigSubCommandSetMinPINLength), subCommand)
+	assert.Contains(t, diagnostic.Notation, "/subCommandParams/ 2:")
+	assert.Contains(t, diagnostic.Notation, "/newMinPINLength/ 1:")
+	assert.Contains(t, diagnostic.Notation, "/pinComplexityPolicy/ 4:")
+	assert.Contains(t, diagnostic.Notation, "vendor-param-canary")
+}
+
+func TestRenderDiagnosticWithoutSchemaShowsRawCBOR(t *testing.T) {
+	configured := options.NewOptions()
+	raw, err := configured.EncMode.Marshal(map[uint64]any{
+		99: []any{"vendor", map[string]any{"future": true}},
+	})
+	require.NoError(t, err)
+
+	diagnostic, _ := renderDiagnostic(
+		configured.DecMode,
+		configured.EncMode,
+		raw,
+		diagnosticMessageSchema{},
+	)
+
+	require.Empty(t, diagnostic.Error)
+	assert.Contains(t, diagnostic.Notation, "vendor")
+	assert.Contains(t, diagnostic.Notation, "future")
+}
+
+func TestRenderDiagnosticHasDeterministicMapOrder(t *testing.T) {
+	configured := options.NewOptions()
+	raw, err := configured.EncMode.Marshal(map[uint64]any{
+		10: "example.com",
+		2:  uint64(protocol.ClientPINSubCommandGetPINRetries),
+		1:  uint64(protocol.PinUvAuthProtocolOne),
+	})
+	require.NoError(t, err)
+
+	diagnostic, _ := renderDiagnostic(
+		configured.DecMode,
+		configured.EncMode,
+		raw,
+		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorClientPINRequest]()},
+	)
+
+	require.Empty(t, diagnostic.Error)
+	assert.Equal(t,
+		`{
+  /pinUvAuthProtocol/ 1: 1,
+  /subCommand/ 2: 1,
+  /rpId/ 10: "example.com"
+}`,
+		diagnostic.Notation,
+	)
+}
+
+func TestRenderDiagnosticPrettyPrintsNestedCollections(t *testing.T) {
+	configured := options.NewOptions()
+	raw, err := configured.EncMode.Marshal(map[uint64]any{
+		99: []any{
+			map[string]any{
+				"empty": []any{},
+				"value": true,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	diagnostic, _ := renderDiagnostic(
+		configured.DecMode,
+		configured.EncMode,
+		raw,
+		diagnosticMessageSchema{},
+	)
+
+	require.Empty(t, diagnostic.Error)
+	assert.Equal(t,
+		`{
+  99: [
+    {
+      "empty": [],
+      "value": true
+    }
+  ]
+}`,
+		diagnostic.Notation,
+	)
+}
+
+func TestRenderDiagnosticRejectsMalformedCBORWithoutNotation(t *testing.T) {
+	configured := options.NewOptions()
+	diagnostic, _ := renderDiagnostic(
+		configured.DecMode,
+		configured.EncMode,
+		[]byte{0xa1, 0x06},
+		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorClientPINRequest]()},
+	)
+
+	assert.NotEmpty(t, diagnostic.Error)
+	assert.Empty(t, diagnostic.Notation)
+}
+
+func TestLowerCamel(t *testing.T) {
+	assert.Equal(t, "clientDataHash", lowerCamel("ClientDataHash"))
+	assert.Equal(t, "pinComplexityPolicy", lowerCamel("PINComplexityPolicy"))
+	assert.Equal(t, "aaguid", lowerCamel("AAGUID"))
+	assert.Equal(t, "maxRPIDsForSetMinPINLength", lowerCamel("MaxRPIDsForSetMinPINLength"))
 }
 
 func TestExchangeLogsStructuredRedactedDiagnostic(t *testing.T) {
@@ -103,13 +312,13 @@ func TestExchangeLogsStructuredRedactedDiagnostic(t *testing.T) {
 		PinHashEnc:        requestSecret,
 		RPID:              "engineers.example",
 	}
-	response := protocol.AuthenticatorClientPINResponse{
-		PinUvAuthToken: responseSecret,
-	}
 	configured := options.NewOptions()
 	requestBody, err := configured.EncMode.Marshal(request)
 	require.NoError(t, err)
-	responseBody, err := configured.EncMode.Marshal(response)
+	responseBody, err := configured.EncMode.Marshal(map[uint64]any{
+		2:  responseSecret,
+		99: "response-unknown-canary",
+	})
 	require.NoError(t, err)
 
 	var events []ctapdiag.Exchange
@@ -144,6 +353,7 @@ func TestExchangeLogsStructuredRedactedDiagnostic(t *testing.T) {
 	assert.Equal(t, []string{"PinHashEnc"}, event.Request.RedactedFields)
 
 	assert.Contains(t, event.Response.Notation, "REDACTED")
+	assert.Contains(t, event.Response.Notation, "response-unknown-canary")
 	assert.NotContains(t, event.Response.Notation, hex.EncodeToString(responseSecret))
 	assert.Equal(t, []string{"PinUvAuthToken"}, event.Response.RedactedFields)
 }

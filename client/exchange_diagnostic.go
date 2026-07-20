@@ -39,9 +39,9 @@ func (cl *Client) emitDiagnostic(
 		requestBody = data[1:]
 	}
 
-	requestType, responseType := exchangeSchemas(command)
-	request, subCommand := renderDiagnostic(cl.decMode, cl.encMode, requestBody, requestType)
-	responseDiagnostic, _ := renderDiagnostic(cl.decMode, cl.encMode, response.Data, responseType)
+	requestSchema, responseSchema := exchangeSchemas(command)
+	request, subCommand := renderDiagnostic(cl.decMode, cl.encMode, requestBody, requestSchema)
+	responseDiagnostic, _ := renderDiagnostic(cl.decMode, cl.encMode, response.Data, responseSchema)
 	event := diagnostic.Exchange{
 		StartedAt:  started.UTC(),
 		Duration:   duration,
@@ -58,36 +58,70 @@ func (cl *Client) emitDiagnostic(
 	cl.diagnosticSink(ctx, event)
 }
 
-func exchangeSchemas(command protocol.Command) (reflect.Type, reflect.Type) {
-	switch command {
-	case protocol.AuthenticatorMakeCredential:
-		return reflect.TypeFor[protocol.AuthenticatorMakeCredentialRequest](),
-			reflect.TypeFor[protocol.AuthenticatorMakeCredentialResponse]()
-	case protocol.AuthenticatorGetAssertion:
-		return reflect.TypeFor[protocol.AuthenticatorGetAssertionRequest](),
-			reflect.TypeFor[protocol.AuthenticatorGetAssertionResponse]()
-	case protocol.AuthenticatorGetNextAssertion:
-		return nil, reflect.TypeFor[protocol.AuthenticatorGetAssertionResponse]()
-	case protocol.AuthenticatorGetInfo:
-		return nil, reflect.TypeFor[protocol.AuthenticatorGetInfoResponse]()
-	case protocol.AuthenticatorClientPIN:
-		return reflect.TypeFor[protocol.AuthenticatorClientPINRequest](),
-			reflect.TypeFor[protocol.AuthenticatorClientPINResponse]()
-	case protocol.AuthenticatorBioEnrollment, protocol.PrototypeAuthenticatorBioEnrollment:
-		return reflect.TypeFor[protocol.AuthenticatorBioEnrollmentRequest](),
-			reflect.TypeFor[protocol.AuthenticatorBioEnrollmentResponse]()
-	case protocol.AuthenticatorCredentialManagement,
-		protocol.PrototypeAuthenticatorCredentialManagement:
-		return reflect.TypeFor[protocol.AuthenticatorCredentialManagementRequest](),
-			reflect.TypeFor[protocol.AuthenticatorCredentialManagementResponse]()
-	case protocol.AuthenticatorLargeBlobs:
-		return reflect.TypeFor[protocol.AuthenticatorLargeBlobsRequest](),
-			reflect.TypeFor[protocol.AuthenticatorLargeBlobsResponse]()
-	case protocol.AuthenticatorConfig:
-		return reflect.TypeFor[protocol.AuthenticatorConfigRequest](), nil
-	default:
-		return nil, nil
+type diagnosticExchangeSchema struct {
+	requestType             reflect.Type
+	responseType            reflect.Type
+	requestSubCommandParams map[uint64]reflect.Type
+}
+
+var diagnosticExchangeSchemas = map[protocol.Command]diagnosticExchangeSchema{
+	protocol.AuthenticatorMakeCredential: {
+		requestType:  reflect.TypeFor[protocol.AuthenticatorMakeCredentialRequest](),
+		responseType: reflect.TypeFor[protocol.AuthenticatorMakeCredentialResponse](),
+	},
+	protocol.AuthenticatorGetAssertion: {
+		requestType:  reflect.TypeFor[protocol.AuthenticatorGetAssertionRequest](),
+		responseType: reflect.TypeFor[protocol.AuthenticatorGetAssertionResponse](),
+	},
+	protocol.AuthenticatorGetNextAssertion: {
+		responseType: reflect.TypeFor[protocol.AuthenticatorGetAssertionResponse](),
+	},
+	protocol.AuthenticatorGetInfo: {
+		responseType: reflect.TypeFor[protocol.AuthenticatorGetInfoResponse](),
+	},
+	protocol.AuthenticatorClientPIN: {
+		requestType:  reflect.TypeFor[protocol.AuthenticatorClientPINRequest](),
+		responseType: reflect.TypeFor[protocol.AuthenticatorClientPINResponse](),
+	},
+	protocol.AuthenticatorBioEnrollment: {
+		requestType:  reflect.TypeFor[protocol.AuthenticatorBioEnrollmentRequest](),
+		responseType: reflect.TypeFor[protocol.AuthenticatorBioEnrollmentResponse](),
+	},
+	protocol.PrototypeAuthenticatorBioEnrollment: {
+		requestType:  reflect.TypeFor[protocol.AuthenticatorBioEnrollmentRequest](),
+		responseType: reflect.TypeFor[protocol.AuthenticatorBioEnrollmentResponse](),
+	},
+	protocol.AuthenticatorCredentialManagement: {
+		requestType:  reflect.TypeFor[protocol.AuthenticatorCredentialManagementRequest](),
+		responseType: reflect.TypeFor[protocol.AuthenticatorCredentialManagementResponse](),
+	},
+	protocol.PrototypeAuthenticatorCredentialManagement: {
+		requestType:  reflect.TypeFor[protocol.AuthenticatorCredentialManagementRequest](),
+		responseType: reflect.TypeFor[protocol.AuthenticatorCredentialManagementResponse](),
+	},
+	protocol.AuthenticatorLargeBlobs: {
+		requestType:  reflect.TypeFor[protocol.AuthenticatorLargeBlobsRequest](),
+		responseType: reflect.TypeFor[protocol.AuthenticatorLargeBlobsResponse](),
+	},
+	protocol.AuthenticatorConfig: {
+		requestType: reflect.TypeFor[protocol.AuthenticatorConfigRequest](),
+		requestSubCommandParams: map[uint64]reflect.Type{
+			uint64(protocol.ConfigSubCommandSetMinPINLength): reflect.TypeFor[protocol.SetMinPINLengthConfigSubCommandParams](),
+		},
+	},
+}
+
+func exchangeSchemas(command protocol.Command) (diagnosticMessageSchema, diagnosticMessageSchema) {
+	schema := diagnosticExchangeSchemas[command]
+	request := diagnosticMessageSchema{
+		typeInfo:         schema.requestType,
+		subCommandParams: schema.requestSubCommandParams,
 	}
+	response := diagnosticMessageSchema{
+		typeInfo: schema.responseType,
+	}
+
+	return request, response
 }
 
 func exchangeStatus(

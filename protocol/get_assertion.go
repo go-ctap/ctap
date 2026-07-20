@@ -10,25 +10,25 @@ import (
 )
 
 type AuthenticatorGetAssertionRequest struct {
-	RPID              string                                     `cbor:"1,keyasint"`
+	RPID              string                                     `cbor:"1,keyasint" ctapdiag:"rpId"`
 	ClientDataHash    []byte                                     `cbor:"2,keyasint"`
 	AllowList         []credential.PublicKeyCredentialDescriptor `cbor:"3,keyasint,omitempty"`
 	Extensions        GetExtensionInputs                         `cbor:"4,keyasint,omitzero"`
 	Options           map[Option]bool                            `cbor:"5,keyasint,omitempty"`
-	PinUvAuthParam    []byte                                     `cbor:"6,keyasint,omitzero" ctapdiag:"redact"`
+	PinUvAuthParam    []byte                                     `cbor:"6,keyasint,omitzero" ctapdiag:"-,redact"`
 	PinUvAuthProtocol PinUvAuthProtocol                          `cbor:"7,keyasint,omitempty"`
 }
 
 type AuthenticatorGetAssertionResponse struct {
 	Credential               credential.PublicKeyCredentialDescriptor           `cbor:"1,keyasint,omitzero"`
-	AuthDataRaw              []byte                                             `cbor:"2,keyasint" ctapdiag:"redact"`
+	AuthDataRaw              []byte                                             `cbor:"2,keyasint" ctapdiag:"authData,redact"`
 	AuthData                 *GetAssertionAuthData                              `cbor:"-"`
 	Signature                []byte                                             `cbor:"3,keyasint"`
 	User                     *credential.PublicKeyCredentialUserEntity          `cbor:"4,keyasint,omitempty"`
 	NumberOfCredentials      uint                                               `cbor:"5,keyasint,omitzero"`
 	UserSelected             bool                                               `cbor:"6,keyasint,omitzero"`
-	LargeBlobKey             []byte                                             `cbor:"7,keyasint,omitempty" ctapdiag:"redact"`
-	UnsignedExtensionOutputs map[extension.ExtensionIdentifier]any              `cbor:"8,keyasint,omitempty" ctapdiag:"redact"`
+	LargeBlobKey             []byte                                             `cbor:"7,keyasint,omitempty" ctapdiag:"-,redact"`
+	UnsignedExtensionOutputs map[extension.ExtensionIdentifier]any              `cbor:"8,keyasint,omitempty" ctapdiag:"-,redact"`
 	ExtensionOutputs         *webauthn.GetAuthenticationExtensionsClientOutputs `cbor:"-"`
 }
 

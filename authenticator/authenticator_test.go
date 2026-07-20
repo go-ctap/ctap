@@ -9,6 +9,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/attestation"
@@ -176,6 +177,64 @@ func TestGetInfoAlwaysRequestsCurrentDeviceInfo(t *testing.T) {
 	for _, request := range requests {
 		command, _ := request.CTAPPayload(t)
 		assert.Equal(t, protocol.AuthenticatorGetInfo, command)
+	}
+}
+
+func TestGetInfoCachedReportsValidityWithoutRequestingDeviceInfo(t *testing.T) {
+	initial := protocol.AuthenticatorGetInfoResponse{
+		Versions: protocol.Versions{protocol.FIDO_2_1},
+	}
+	current := protocol.AuthenticatorGetInfoResponse{
+		Versions: protocol.Versions{protocol.FIDO_2_3},
+	}
+	fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, current))
+	d := newTestDevice(fake, initial)
+
+	got, valid := d.GetInfoCached()
+	assert.True(t, valid)
+	assert.Equal(t, initial.Versions, got.Versions)
+	assert.Empty(t, fake.Requests(t))
+
+	d.invalidateInfoLocked()
+	got, valid = d.GetInfoCached()
+	assert.False(t, valid)
+	assert.Equal(t, initial.Versions, got.Versions)
+	assert.Empty(t, fake.Requests(t))
+
+	got, err := d.GetInfo(testContext)
+	require.NoError(t, err)
+	assert.Equal(t, current.Versions, got.Versions)
+
+	got, valid = d.GetInfoCached()
+	assert.True(t, valid)
+	assert.Equal(t, current.Versions, got.Versions)
+	requests := fake.Requests(t)
+	require.Len(t, requests, 1)
+	command, _ := requests[0].CTAPPayload(t)
+	assert.Equal(t, protocol.AuthenticatorGetInfo, command)
+}
+
+func TestGetInfoCachedDoesNotWaitForDeviceRequestMutex(t *testing.T) {
+	d := &Device{
+		info: protocol.AuthenticatorGetInfoResponse{
+			Versions: protocol.Versions{protocol.FIDO_2_1},
+		},
+		infoValid: true,
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		d.GetInfoCached()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("GetInfoCached waited for the device request mutex")
 	}
 }
 
@@ -1244,6 +1303,8 @@ func TestSetPINDoesNotRequestGetInfo(t *testing.T) {
 	})
 
 	require.NoError(t, d.SetPIN(testContext, "1234"))
+	_, valid := d.GetInfoCached()
+	assert.False(t, valid)
 
 	requests := fake.Requests(t)
 	require.Len(t, requests, 2)
