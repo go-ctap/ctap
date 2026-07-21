@@ -3,15 +3,16 @@ module github.com/go-ctap/ctap/examples/token2
 go 1.26.3
 
 require (
-	github.com/go-ctap/ctap v0.0.0
-	github.com/go-ctap/pcsc v0.3.0
+	github.com/go-ctap/ctap v0.33.0
+	github.com/go-ctap/pcsc v0.4.1
 )
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/ebitengine/purego v0.10.1 // indirect
+	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
-	github.com/go-ctap/hid v0.9.1 // indirect
+	github.com/go-ctap/hid v0.10.0 // indirect
+	github.com/go-ctap/windows-proxy v0.3.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/samber/lo v1.53.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect

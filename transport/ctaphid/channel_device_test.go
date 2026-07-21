@@ -99,6 +99,24 @@ func TestChannelDeviceStopLeavesDeviceOpen(t *testing.T) {
 	require.NoError(t, dev.Close())
 }
 
+func TestChannelDeviceCloseCancelsReaderBeforeWaiting(t *testing.T) {
+	dev := newCancelOnlyDevice()
+	channel := newChannelDevice(dev, BROADCAST_CID)
+	receive(t, dev.readStarted, "channel reader did not start")
+
+	closed := make(chan error, 1)
+	go func() {
+		closed <- channel.Close()
+	}()
+
+	require.NoError(t, receive(t, closed, "Close did not cancel the channel reader"))
+	select {
+	case <-dev.closed:
+	default:
+		t.Fatal("Close did not close the underlying device")
+	}
+}
+
 func readChannelReport(t *testing.T, channel *channelDevice) []byte {
 	t.Helper()
 
@@ -117,6 +135,42 @@ type multiplexedDevice struct {
 	closed    chan struct{}
 	closeOnce sync.Once
 	cid       ChannelID
+}
+
+type cancelOnlyDevice struct {
+	readStarted chan struct{}
+	closed      chan struct{}
+	startOnce   sync.Once
+	closeOnce   sync.Once
+}
+
+func newCancelOnlyDevice() *cancelOnlyDevice {
+	return &cancelOnlyDevice{
+		readStarted: make(chan struct{}),
+		closed:      make(chan struct{}),
+	}
+}
+
+func (d *cancelOnlyDevice) Read(ctx context.Context, _ []byte) (int, error) {
+	d.startOnce.Do(func() {
+		close(d.readStarted)
+	})
+	<-ctx.Done()
+	return 0, ctx.Err()
+}
+
+func (d *cancelOnlyDevice) Write(ctx context.Context, p []byte) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (d *cancelOnlyDevice) Close() error {
+	d.closeOnce.Do(func() {
+		close(d.closed)
+	})
+	return nil
 }
 
 func newMultiplexedDevice(cid ChannelID) *multiplexedDevice {

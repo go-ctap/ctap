@@ -70,8 +70,10 @@ func (d *channelDevice) Write(ctx context.Context, p []byte) (int, error) {
 
 func (d *channelDevice) Close() error {
 	d.closeOnce.Do(func() {
-		defer d.cancel()
-
+		// Cancel the contextual reader before waiting for it.  On Linux, closing a
+		// file descriptor from another goroutine does not reliably interrupt a
+		// read that is already blocked in the kernel.
+		d.cancel()
 		d.closeErr = d.device.Close()
 		<-d.stopped
 	})
