@@ -18,7 +18,7 @@ type channelDevice struct {
 	device Device
 
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 
 	mu      sync.Mutex
 	cid     ChannelID
@@ -33,7 +33,7 @@ type channelDevice struct {
 }
 
 func newChannelDevice(device Device, cid ChannelID) *channelDevice {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	d := &channelDevice{
 		device:  ioDevice{Device: device},
 		cid:     cid,
@@ -75,7 +75,7 @@ func (d *channelDevice) Close() error {
 		// Cancel the contextual reader before waiting for it.  On Linux, closing a
 		// file descriptor from another goroutine does not reliably interrupt a
 		// read that is already blocked in the kernel.
-		d.cancel()
+		d.cancel(io.ErrClosedPipe)
 		d.closeErr = d.device.Close()
 		<-d.stopped
 	})
@@ -91,7 +91,7 @@ func (d *channelDevice) setCID(cid ChannelID) {
 }
 
 func (d *channelDevice) stop() {
-	d.cancel()
+	d.cancel(context.Canceled)
 	<-d.stopped
 }
 
@@ -144,10 +144,9 @@ func (d *channelDevice) enqueue(report []byte) bool {
 }
 
 func (d *channelDevice) finish(err error) {
-	// The reader uses a private context so Close can interrupt devices whose
-	// underlying read is not unblocked by closing the handle.  Do not expose
-	// that implementation-detail cancellation as a caller cancellation.
-	if d.ctx.Err() != nil && errors.Is(err, context.Canceled) {
+	// ghid.WithContext reports ctx.Err(), which does not retain a cancellation
+	// cause. Restore the explicit Close cause at the channel boundary.
+	if errors.Is(err, context.Canceled) && errors.Is(context.Cause(d.ctx), io.ErrClosedPipe) {
 		err = &ctaptransport.IOError{
 			Operation: ctaptransport.IORead,
 			Err:       io.ErrClosedPipe,

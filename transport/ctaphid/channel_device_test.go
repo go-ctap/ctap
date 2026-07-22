@@ -96,6 +96,9 @@ func TestChannelDeviceStopLeavesDeviceOpen(t *testing.T) {
 		t.Fatal("stop closed the underlying device")
 	default:
 	}
+	_, err := channel.nextReport()
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, io.ErrClosedPipe)
 	require.NoError(t, dev.Close())
 }
 
@@ -115,6 +118,11 @@ func TestChannelDeviceCloseCancelsReaderBeforeWaiting(t *testing.T) {
 	default:
 		t.Fatal("Close did not close the underlying device")
 	}
+	_, err := channel.nextReport()
+	require.ErrorIs(t, err, io.ErrClosedPipe)
+	var readErr *ctaptransport.IOError
+	require.ErrorAs(t, err, &readErr)
+	assert.Equal(t, ctaptransport.IORead, readErr.Operation)
 }
 
 func readChannelReport(t *testing.T, channel *channelDevice) []byte {
