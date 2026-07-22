@@ -2,9 +2,11 @@ package ctaphid
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 
+	ctaptransport "github.com/go-ctap/ctap/transport"
 	ghid "github.com/go-ctap/hid"
 )
 
@@ -142,6 +144,16 @@ func (d *channelDevice) enqueue(report []byte) bool {
 }
 
 func (d *channelDevice) finish(err error) {
+	// The reader uses a private context so Close can interrupt devices whose
+	// underlying read is not unblocked by closing the handle.  Do not expose
+	// that implementation-detail cancellation as a caller cancellation.
+	if d.ctx.Err() != nil && errors.Is(err, context.Canceled) {
+		err = &ctaptransport.IOError{
+			Operation: ctaptransport.IORead,
+			Err:       io.ErrClosedPipe,
+		}
+	}
+
 	d.mu.Lock()
 	d.readErr = err
 	d.mu.Unlock()
