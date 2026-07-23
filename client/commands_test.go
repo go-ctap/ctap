@@ -73,6 +73,35 @@ func assertRequestKeys(t *testing.T, request map[uint64]any, keys ...uint64) {
 	assert.ElementsMatch(t, keys, actual)
 }
 
+func TestGetUVRetriesIncludesPinUvAuthProtocol(t *testing.T) {
+	fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
+		UvRetries: new(uint(5)),
+	}))
+
+	retries, err := newTestClient(fake).GetUVRetries(context.Background(), protocol.PinUvAuthProtocolOne)
+	require.NoError(t, err)
+	assert.Equal(t, uint(5), retries)
+
+	command, request := fake.FirstCTAPRequestMap(t)
+	assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+	assertRequestKeys(t, request, 1, 2)
+	assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)])
+	assert.Equal(t, uint64(protocol.ClientPINSubCommandGetUVRetries), request[uint64(2)])
+}
+
+func TestGetUVRetriesOmitsUnspecifiedPinUvAuthProtocol(t *testing.T) {
+	fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
+		UvRetries: new(uint(5)),
+	}))
+
+	_, err := newTestClient(fake).GetUVRetries(context.Background(), 0)
+	require.NoError(t, err)
+
+	command, request := fake.FirstCTAPRequestMap(t)
+	assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+	assertRequestKeys(t, request, 2)
+}
+
 func testKeyAgreement(t *testing.T) cose.Key {
 	t.Helper()
 

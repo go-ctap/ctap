@@ -275,9 +275,15 @@ func (cl *Client) GetPINRetries(
 	return *resp.PinRetries, resp.PowerCycleState, nil
 }
 
-func (cl *Client) GetUVRetries(ctx context.Context) (uint, error) {
+// GetUVRetries returns the remaining built-in user-verification attempts.
+// pinUvAuthProtocol may be zero when the authenticator does not require it.
+func (cl *Client) GetUVRetries(
+	ctx context.Context,
+	pinUvAuthProtocol protocol.PinUvAuthProtocol,
+) (uint, error) {
 	req := &protocol.AuthenticatorClientPINRequest{
-		SubCommand: protocol.ClientPINSubCommandGetUVRetries,
+		PinUvAuthProtocol: pinUvAuthProtocol,
+		SubCommand:        protocol.ClientPINSubCommandGetUVRetries,
 	}
 
 	b, err := cl.encMode.Marshal(req)

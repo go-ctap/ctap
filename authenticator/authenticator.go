@@ -1042,7 +1042,12 @@ func (d *Device) GetUVRetries(ctx context.Context) (uint, error) {
 		return 0, newErrorMessage(ErrNotSupported, "device doesn't support user verification")
 	}
 
-	return d.ctapClient.GetUVRetries(ctx)
+	var pinUvAuthProtocol protocol.PinUvAuthProtocol
+	if len(d.info.PinUvAuthProtocols) > 0 {
+		pinUvAuthProtocol = d.info.PinUvAuthProtocols[0]
+	}
+
+	return d.ctapClient.GetUVRetries(ctx, pinUvAuthProtocol)
 }
 
 // SetPIN sets a new PIN on the device if the clientPin option is supported and no PIN exists.

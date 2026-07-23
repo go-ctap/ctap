@@ -755,6 +755,8 @@ func TestRetryQueriesWorkBeforePINOrUVConfiguration(t *testing.T) {
 			UvRetries: new(uint(5)),
 		}))
 		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			Versions:           protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1_PRE},
+			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
 			Options: map[protocol.Option]bool{
 				protocol.OptionUserVerification: false,
 			},
@@ -763,6 +765,31 @@ func TestRetryQueriesWorkBeforePINOrUVConfiguration(t *testing.T) {
 		retries, err := d.GetUVRetries(testContext)
 		require.NoError(t, err)
 		assert.Equal(t, uint(5), retries)
+
+		command, request := fake.FirstCTAPRequestMap(t)
+		assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+		assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)])
+		assert.Equal(t, uint64(protocol.ClientPINSubCommandGetUVRetries), request[uint64(2)])
+	})
+
+	t.Run("UV without pinUvAuthProtocol", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
+			UvRetries: new(uint(5)),
+		}))
+		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			Versions: protocol.Versions{protocol.FIDO_2_1},
+			Options: map[protocol.Option]bool{
+				protocol.OptionUserVerification: false,
+			},
+		})
+
+		retries, err := d.GetUVRetries(testContext)
+		require.NoError(t, err)
+		assert.Equal(t, uint(5), retries)
+
+		_, request := fake.FirstCTAPRequestMap(t)
+		_, present := request[uint64(1)]
+		assert.False(t, present)
 	})
 }
 
