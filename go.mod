@@ -7,7 +7,7 @@ tool golang.org/x/tools/cmd/stringer
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/fxamacker/cbor/v2 v2.9.2
-	github.com/go-ctap/hid v0.10.0
+	github.com/go-ctap/hid v0.10.1
 	github.com/go-ctap/windows-proxy v0.3.1
 	github.com/google/uuid v1.6.0
 	github.com/samber/lo v1.53.0
@@ -18,7 +18,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/ebitengine/purego v0.10.1 // indirect
+	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
