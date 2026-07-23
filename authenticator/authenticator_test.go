@@ -1212,6 +1212,54 @@ func TestGetPinUvAuthTokenUsingPINRequiresPINChangeBeforeCommand(t *testing.T) {
 	assert.Empty(t, fake.Writes())
 }
 
+func TestGetPinUvAuthTokenUsingUVUsesPreviewRequestShape(t *testing.T) {
+	keyAgreement := encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
+		KeyAgreement: testKeyAgreement(t),
+	})
+	encryptedToken := encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
+		PinUvAuthToken: make([]byte, 16),
+	})
+	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, encryptedToken)
+	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		Versions: protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1_PRE},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{
+			protocol.PinUvAuthProtocolTwo,
+			protocol.PinUvAuthProtocolOne,
+		},
+		Options: map[protocol.Option]bool{
+			protocol.OptionUserVerification:            true,
+			protocol.OptionUvToken:                     true,
+			protocol.OptionUserVerificationMgmtPreview: true,
+		},
+	})
+
+	token, err := d.GetPinUvAuthTokenUsingUV(testContext, protocol.PermissionBioEnrollment, "")
+	require.NoError(t, err)
+	assert.Len(t, token, 16)
+
+	requests := fake.Requests(t)
+	require.Len(t, requests, 2)
+
+	command, request := requests[0].CTAPRequestMap(t)
+	assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+	assert.Len(t, request, 2)
+	assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)])
+	assert.Equal(t, uint64(protocol.ClientPINSubCommandGetKeyAgreement), request[uint64(2)])
+
+	command, request = requests[1].CTAPRequestMap(t)
+	assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+	assert.Len(t, request, 3)
+	assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)])
+	assert.Equal(
+		t,
+		uint64(protocol.ClientPINSubCommandGetPinUvAuthTokenUsingUvWithPermissions),
+		request[uint64(2)],
+	)
+	assert.Contains(t, request, uint64(3))
+	assert.NotContains(t, request, uint64(9))
+	assert.NotContains(t, request, uint64(10))
+}
+
 func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 	t.Run("rejects too short PIN", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)

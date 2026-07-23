@@ -584,8 +584,33 @@ func (cl *Client) GetPinUvAuthTokenUsingPinWithPermissions(
 	return pinUvAuthToken, nil
 }
 
+// GetPinUvAuthTokenUsingUv obtains the legacy FIDO_2_1_PRE UV token. That
+// command uses pinUvAuthProtocol 1 and does not carry permissions or an RP ID.
+func (cl *Client) GetPinUvAuthTokenUsingUv(
+	ctx context.Context,
+	keyAgreement cose.Key,
+) ([]byte, error) {
+	return cl.getPinUvAuthTokenUsingUv(
+		ctx,
+		protocol.PinUvAuthProtocolOne,
+		keyAgreement,
+		protocol.PermissionNone,
+		"",
+	)
+}
+
 // GetPinUvAuthTokenUsingUvWithPermissions allows getting a PinUvAuthToken with specific permissions using User Verification.
 func (cl *Client) GetPinUvAuthTokenUsingUvWithPermissions(
+	ctx context.Context,
+	pinUvAuthProtocol protocol.PinUvAuthProtocol,
+	keyAgreement cose.Key,
+	permissions protocol.Permission,
+	rpID string,
+) ([]byte, error) {
+	return cl.getPinUvAuthTokenUsingUv(ctx, pinUvAuthProtocol, keyAgreement, permissions, rpID)
+}
+
+func (cl *Client) getPinUvAuthTokenUsingUv(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 	keyAgreement cose.Key,

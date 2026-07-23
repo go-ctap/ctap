@@ -76,6 +76,13 @@ func (d *Device) requirePinUvAuthProtocol() (protocol.PinUvAuthProtocol, error) 
 		}
 	}
 
+	// FIDO_2_1_PRE RD 2019 makes pinUvAuthProtocols optional and defines
+	// protocol 1 as the only valid protocol for the uvToken flow.
+	if len(d.info.PinUvAuthProtocols) == 0 &&
+		d.info.Versions.IsPreviewOnly() && d.info.Options[protocol.OptionUvToken] {
+		return protocol.PinUvAuthProtocolOne, nil
+	}
+
 	return 0, newErrorMessage(ErrNotSupported, "device didn't report a supported pinUvAuthProtocol")
 }
 
@@ -1194,8 +1201,7 @@ func (d *Device) GetPinUvAuthTokenUsingPIN(
 }
 
 // GetPinUvAuthTokenUsingUV obtains a pinUvAuthToken by performing user verification (UV) on a compatible device.
-// Returns an error if the device does not support pinUvAuthToken or user verification features.
-// Requires the permission type and optionally Relying Party ID (rpID) in some cases to execute successfully.
+// It supports both the legacy FIDO_2_1_PRE uvToken flow and the permissioned CTAP 2.1 flow.
 func (d *Device) GetPinUvAuthTokenUsingUV(ctx context.Context, permission protocol.Permission, rpID string) ([]byte, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -1204,22 +1210,35 @@ func (d *Device) GetPinUvAuthTokenUsingUV(ctx context.Context, permission protoc
 		return nil, err
 	}
 
-	if err := validatePinUvAuthTokenUsingUV(d.info, permission, rpID); err != nil {
-		return nil, err
-	}
-
-	pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement(ctx)
+	flow, err := selectPinUvAuthTokenFlowUsingUV(d.info, permission, rpID)
 	if err != nil {
 		return nil, err
 	}
 
-	return d.ctapClient.GetPinUvAuthTokenUsingUvWithPermissions(
-		ctx,
-		pinUvAuthProtocol,
-		keyAgreement,
-		permission,
-		rpID,
-	)
+	switch flow {
+	case uvTokenFlowPreview:
+		keyAgreement, err := d.ctapClient.GetKeyAgreement(ctx, protocol.PinUvAuthProtocolOne)
+		if err != nil {
+			return nil, err
+		}
+
+		return d.ctapClient.GetPinUvAuthTokenUsingUv(ctx, keyAgreement)
+	case uvTokenFlowWithPermissions:
+		pinUvAuthProtocol, keyAgreement, err := d.pinUvAuthProtocolWithKeyAgreement(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return d.ctapClient.GetPinUvAuthTokenUsingUvWithPermissions(
+			ctx,
+			pinUvAuthProtocol,
+			keyAgreement,
+			permission,
+			rpID,
+		)
+	default:
+		return nil, newErrorMessage(ErrSpecViolation, "invalid UV token flow")
+	}
 }
 
 // Reset performs a factory reset on the device, clearing all stored user data and resetting it to its default state.

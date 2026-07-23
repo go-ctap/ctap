@@ -101,6 +101,7 @@ const (
 	OptionClientPIN                              Option = "clientPin"
 	OptionUserPresence                           Option = "up"
 	OptionUserVerification                       Option = "uv"
+	OptionUvToken                                Option = "uvToken"
 	OptionPinUvAuthToken                         Option = "pinUvAuthToken"
 	OptionNoMcGaPermissionsWithClientPin         Option = "noMcGaPermissionsWithClientPin"
 	OptionLargeBlobs                             Option = "largeBlobs"

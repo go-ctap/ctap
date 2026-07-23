@@ -92,7 +92,8 @@ func (d *Device) pinUvAuthProtocolForRequest(
 	// bytes for protocol 1 and exactly 32 bytes for protocol 2:
 	// https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pin-uv-auth-protocol-one
 	// https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pin-uv-auth-protocol-two
-	if !isFIDO20Only(d.info.Versions) && pinUvAuthProtocol == protocol.PinUvAuthProtocolOne &&
+	if !isFIDO20Only(d.info.Versions) && !d.info.Versions.IsPreviewOnly() &&
+		pinUvAuthProtocol == protocol.PinUvAuthProtocolOne &&
 		len(pinUvAuthToken) != 16 && len(pinUvAuthToken) != 32 {
 		return 0, newErrorMessage(
 			SyntaxError,
@@ -331,54 +332,102 @@ func selectPinTokenFlowUsingPIN(
 	return pinTokenFlowWithPermissions, nil
 }
 
-func validatePinUvAuthTokenUsingUV(
+type uvTokenFlow uint8
+
+const (
+	uvTokenFlowPreview uvTokenFlow = iota + 1
+	uvTokenFlowWithPermissions
+)
+
+func selectPinUvAuthTokenFlowUsingUV(
 	info protocol.AuthenticatorGetInfoResponse,
 	permission protocol.Permission,
 	rpID string,
-) error {
+) (uvTokenFlow, error) {
 	if err := validatePinUvAuthTokenPermissionSet(permission); err != nil {
-		return err
+		return 0, err
+	}
+
+	uv, ok := info.Options[protocol.OptionUserVerification]
+	if !ok {
+		return 0, newErrorMessage(ErrNotSupported, "device doesn't support user verification")
+	}
+	if !uv {
+		return 0, newErrorMessage(ErrUvNotConfigured, "please configure UV first (e.g. enroll biometry)")
+	}
+
+	// FIDO_2_1_PRE RD 2019 § 5.5.8 (getUvToken) defines a legacy UV-token
+	// flow gated by the uvToken option. It uses pinUvAuthProtocol 1 and carries
+	// neither permissions nor rpId. Preview biometric and credential-management
+	// commands are authorized with that legacy token.
+	// https://fidoalliance.org/specs/fido-v2.1-rd-20191217/fido-client-to-authenticator-protocol-v2.1-rd-20191217.html#getUvToken
+	if info.Versions.IsPreviewOnly() && info.Options[protocol.OptionUvToken] {
+		if len(info.PinUvAuthProtocols) != 0 &&
+			!slices.Contains(info.PinUvAuthProtocols, protocol.PinUvAuthProtocolOne) {
+			return 0, newErrorMessage(
+				ErrNotSupported,
+				"device advertises uvToken without pinUvAuthProtocol 1",
+			)
+		}
+
+		legacyPermissions := protocol.PermissionMakeCredential | protocol.PermissionGetAssertion
+		if permission&protocol.PermissionCredentialManagement != 0 {
+			if _, err := credentialManagementMode(info); err != nil {
+				return 0, err
+			}
+			legacyPermissions |= protocol.PermissionCredentialManagement
+		}
+		if permission&protocol.PermissionBioEnrollment != 0 {
+			if _, err := bioEnrollmentMode(info); err != nil {
+				return 0, err
+			}
+			legacyPermissions |= protocol.PermissionBioEnrollment
+		}
+		if permission&^legacyPermissions != 0 {
+			return 0, newErrorMessage(
+				ErrNotSupported,
+				"preview getUvToken cannot grant the requested permissions",
+			)
+		}
+
+		return uvTokenFlowPreview, nil
 	}
 
 	// CTAP 2.1 PS § 6.5.5.7.3 (getPinUvAuthTokenUsingUvWithPermissions):
 	// https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#getPinUvAuthTokenUsingUvWithPermissions
 	if !permissionedPinUvAuthTokensSupported(info) {
-		return newErrorMessage(ErrNotSupported, "device doesn't support pinUvAuthToken")
-	}
-
-	uv, ok := info.Options[protocol.OptionUserVerification]
-	if !ok {
-		return newErrorMessage(ErrNotSupported, "device doesn't support user verification")
-	}
-	if !uv {
-		return newErrorMessage(ErrUvNotConfigured, "please configure UV first (e.g. enroll biometry)")
+		return 0, newErrorMessage(ErrNotSupported, "device doesn't support pinUvAuthToken")
 	}
 
 	// CTAP 2.3 PS § 6.5.5.7.3 (cm, be, lbw, acfg, and pcmr permission prerequisites):
 	// https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html#getPinUvAuthTokenUsingUvWithPermissions
 	if permission&protocol.PermissionCredentialManagement != 0 &&
 		!info.Options[protocol.OptionCredentialManagement] {
-		return newErrorMessage(ErrNotSupported, "device doesn't support CredentialManagement permission")
+		return 0, newErrorMessage(ErrNotSupported, "device doesn't support CredentialManagement permission")
 	}
 	if permission&protocol.PermissionBioEnrollment != 0 {
 		if _, ok := info.Options[protocol.OptionBioEnroll]; !ok || !info.Options[protocol.OptionUvBioEnroll] {
-			return newErrorMessage(ErrNotSupported, "device doesn't support obtaining BioEnrollment permission using built-in UV")
+			return 0, newErrorMessage(ErrNotSupported, "device doesn't support obtaining BioEnrollment permission using built-in UV")
 		}
 	}
 	if permission&protocol.PermissionLargeBlobWrite != 0 && !info.Options[protocol.OptionLargeBlobs] {
-		return newErrorMessage(ErrNotSupported, "device doesn't support LargeBlobWrite permission")
+		return 0, newErrorMessage(ErrNotSupported, "device doesn't support LargeBlobWrite permission")
 	}
 	if permission&protocol.PermissionAuthenticatorConfiguration != 0 {
 		if !info.Options[protocol.OptionAuthenticatorConfig] || !info.Options[protocol.OptionUvAcfg] {
-			return newErrorMessage(ErrNotSupported, "device doesn't support obtaining AuthenticatorConfiguration permission using built-in UV")
+			return 0, newErrorMessage(ErrNotSupported, "device doesn't support obtaining AuthenticatorConfiguration permission using built-in UV")
 		}
 	}
 	if permission&protocol.PermissionPersistentCredentialManagementReadOnly != 0 &&
 		!info.Options[protocol.OptionPersistentCredentialManagementReadOnly] {
-		return newErrorMessage(ErrNotSupported, "device doesn't support PersistentCredentialManagementReadOnly permission")
+		return 0, newErrorMessage(ErrNotSupported, "device doesn't support PersistentCredentialManagementReadOnly permission")
 	}
 
-	return validatePinUvAuthTokenPermissionRPID(permission, rpID)
+	if err := validatePinUvAuthTokenPermissionRPID(permission, rpID); err != nil {
+		return 0, err
+	}
+
+	return uvTokenFlowWithPermissions, nil
 }
 
 func bioEnrollmentMode(info protocol.AuthenticatorGetInfoResponse) (preview bool, err error) {

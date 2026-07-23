@@ -2,6 +2,7 @@ package authenticator
 
 import (
 	"errors"
+	"maps"
 	"testing"
 
 	"github.com/go-ctap/ctap/extension"
@@ -140,6 +141,17 @@ func TestPinUvAuthTokenLengthUsesCTAPVersion(t *testing.T) {
 
 		_, err := d.pinUvAuthProtocolForRequest(make([]byte, 48), true)
 		require.ErrorIs(t, err, SyntaxError)
+	})
+
+	t.Run("FIDO 2.1 Preview accepts a longer protocol 1 token", func(t *testing.T) {
+		d := newTestDevice(testhid.NewCBORDevice(t, testCID), protocol.AuthenticatorGetInfoResponse{
+			Versions:           protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1_PRE},
+			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		})
+
+		got, err := d.pinUvAuthProtocolForRequest(make([]byte, 48), true)
+		require.NoError(t, err)
+		assert.Equal(t, protocol.PinUvAuthProtocolOne, got)
 	})
 }
 
@@ -284,7 +296,7 @@ func TestSelectPinTokenFlowUsingPIN(t *testing.T) {
 	}
 }
 
-func TestValidatePinUvAuthTokenUsingUVPermissions(t *testing.T) {
+func TestSelectPinUvAuthTokenFlowUsingUV(t *testing.T) {
 	baseInfo := protocol.AuthenticatorGetInfoResponse{
 		Versions: protocol.Versions{protocol.FIDO_2_3},
 		Options: map[protocol.Option]bool{
@@ -301,11 +313,13 @@ func TestValidatePinUvAuthTokenUsingUVPermissions(t *testing.T) {
 			protocol.OptionBioEnroll:        false,
 		}
 
-		err := validatePinUvAuthTokenUsingUV(info, protocol.PermissionBioEnrollment, "")
+		_, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionBioEnrollment, "")
 		require.ErrorIs(t, err, ErrNotSupported)
 
 		info.Options[protocol.OptionUvBioEnroll] = true
-		require.NoError(t, validatePinUvAuthTokenUsingUV(info, protocol.PermissionBioEnrollment, ""))
+		flow, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionBioEnrollment, "")
+		require.NoError(t, err)
+		assert.Equal(t, uvTokenFlowWithPermissions, flow)
 	})
 
 	t.Run("acfg requires uvAcfg and authnrCfg", func(t *testing.T) {
@@ -316,24 +330,103 @@ func TestValidatePinUvAuthTokenUsingUVPermissions(t *testing.T) {
 			protocol.OptionUvAcfg:           true,
 		}
 
-		err := validatePinUvAuthTokenUsingUV(info, protocol.PermissionAuthenticatorConfiguration, "")
+		_, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionAuthenticatorConfiguration, "")
 		require.ErrorIs(t, err, ErrNotSupported)
 
 		info.Options[protocol.OptionAuthenticatorConfig] = true
-		require.NoError(t, validatePinUvAuthTokenUsingUV(info, protocol.PermissionAuthenticatorConfiguration, ""))
+		flow, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionAuthenticatorConfiguration, "")
+		require.NoError(t, err)
+		assert.Equal(t, uvTokenFlowWithPermissions, flow)
 	})
 
 	t.Run("ga requires RP ID", func(t *testing.T) {
-		err := validatePinUvAuthTokenUsingUV(baseInfo, protocol.PermissionGetAssertion, "")
+		_, err := selectPinUvAuthTokenFlowUsingUV(baseInfo, protocol.PermissionGetAssertion, "")
 		require.ErrorIs(t, err, SyntaxError)
-		require.NoError(t, validatePinUvAuthTokenUsingUV(baseInfo, protocol.PermissionGetAssertion, "example.com"))
+
+		flow, err := selectPinUvAuthTokenFlowUsingUV(baseInfo, protocol.PermissionGetAssertion, "example.com")
+		require.NoError(t, err)
+		assert.Equal(t, uvTokenFlowWithPermissions, flow)
 	})
 
 	t.Run("FIDO 2.0 ignores unknown pinUvAuthToken option", func(t *testing.T) {
 		info := baseInfo
 		info.Versions = protocol.Versions{protocol.FIDO_2_0}
 
-		err := validatePinUvAuthTokenUsingUV(info, protocol.PermissionGetAssertion, "example.com")
+		_, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionGetAssertion, "example.com")
+		require.ErrorIs(t, err, ErrNotSupported)
+	})
+
+	previewInfo := protocol.AuthenticatorGetInfoResponse{
+		Versions: protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1_PRE},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{
+			protocol.PinUvAuthProtocolOne,
+		},
+		Options: map[protocol.Option]bool{
+			protocol.OptionUserVerification:            true,
+			protocol.OptionUvToken:                     true,
+			protocol.OptionCredentialManagementPreview: true,
+			protocol.OptionUserVerificationMgmtPreview: false,
+		},
+	}
+
+	t.Run("preview bio enrollment uses legacy UV token", func(t *testing.T) {
+		flow, err := selectPinUvAuthTokenFlowUsingUV(
+			previewInfo,
+			protocol.PermissionBioEnrollment,
+			"",
+		)
+		require.NoError(t, err)
+		assert.Equal(t, uvTokenFlowPreview, flow)
+	})
+
+	t.Run("preview credential management uses legacy UV token", func(t *testing.T) {
+		flow, err := selectPinUvAuthTokenFlowUsingUV(
+			previewInfo,
+			protocol.PermissionCredentialManagement,
+			"",
+		)
+		require.NoError(t, err)
+		assert.Equal(t, uvTokenFlowPreview, flow)
+	})
+
+	t.Run("preview get assertion does not require RP ID", func(t *testing.T) {
+		flow, err := selectPinUvAuthTokenFlowUsingUV(
+			previewInfo,
+			protocol.PermissionGetAssertion,
+			"",
+		)
+		require.NoError(t, err)
+		assert.Equal(t, uvTokenFlowPreview, flow)
+	})
+
+	t.Run("preview requires uvToken option", func(t *testing.T) {
+		info := previewInfo
+		info.Options = maps.Clone(previewInfo.Options)
+		delete(info.Options, protocol.OptionUvToken)
+
+		_, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionBioEnrollment, "")
+		require.ErrorIs(t, err, ErrNotSupported)
+	})
+
+	t.Run("preview requires protocol one", func(t *testing.T) {
+		info := previewInfo
+		info.PinUvAuthProtocols = []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo}
+
+		_, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionBioEnrollment, "")
+		require.ErrorIs(t, err, ErrNotSupported)
+	})
+
+	t.Run("preview allows omitted optional protocol list", func(t *testing.T) {
+		info := previewInfo
+		info.PinUvAuthProtocols = nil
+
+		flow, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionBioEnrollment, "")
+		require.NoError(t, err)
+		assert.Equal(t, uvTokenFlowPreview, flow)
+	})
+
+	t.Run("preview rejects permissions not granted by getUvToken", func(t *testing.T) {
+		_, err := selectPinUvAuthTokenFlowUsingUV(previewInfo, protocol.PermissionLargeBlobWrite, "")
 		require.ErrorIs(t, err, ErrNotSupported)
 	})
 }

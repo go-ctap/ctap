@@ -708,6 +708,51 @@ func TestClientPINRequestShapes(t *testing.T) {
 		require.Error(t, err)
 		assert.Empty(t, fake.Writes())
 	})
+
+	t.Run("get preview UV token omits permissions and RP ID", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
+			PinUvAuthToken: make([]byte, 16),
+		}))
+
+		token, err := newTestClient(fake).GetPinUvAuthTokenUsingUv(
+			context.Background(),
+			testKeyAgreement(t),
+		)
+		require.NoError(t, err)
+		assert.Len(t, token, 16)
+
+		command, request := fake.FirstCTAPRequestMap(t)
+		assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+		assertRequestKeys(t, request, 1, 2, 3)
+		assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)])
+		assert.Equal(
+			t,
+			uint64(protocol.ClientPINSubCommandGetPinUvAuthTokenUsingUvWithPermissions),
+			request[uint64(2)],
+		)
+	})
+
+	t.Run("get permissioned UV token includes permissions and RP ID", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
+			PinUvAuthToken: make([]byte, 16),
+		}))
+
+		token, err := newTestClient(fake).GetPinUvAuthTokenUsingUvWithPermissions(
+			context.Background(),
+			protocol.PinUvAuthProtocolOne,
+			testKeyAgreement(t),
+			protocol.PermissionGetAssertion,
+			"example.com",
+		)
+		require.NoError(t, err)
+		assert.Len(t, token, 16)
+
+		command, request := fake.FirstCTAPRequestMap(t)
+		assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+		assertRequestKeys(t, request, 1, 2, 3, 9, 10)
+		assert.Equal(t, uint64(protocol.PermissionGetAssertion), request[uint64(9)])
+		assert.Equal(t, "example.com", request[uint64(10)])
+	})
 }
 
 func TestBioEnrollmentRequestShapeAndPINAuthParam(t *testing.T) {
