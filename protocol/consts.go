@@ -1,6 +1,6 @@
 package protocol
 
-//go:generate go tool stringer -type=Command,ClientPINSubCommand,BioEnrollmentSubCommand,LastEnrollSampleStatus,CredentialManagementSubCommand,ConfigSubCommand,Permission -output=consts_string.go
+//go:generate go tool stringer -type=Command,ClientPINSubCommand,BioEnrollmentSubCommand,LastEnrollSampleStatus,CredentialManagementSubCommand,ConfigSubCommand -output=consts_string.go
 type Command byte
 
 const (
