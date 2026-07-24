@@ -1,6 +1,9 @@
 package protocol
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/go-ctap/ctap/attestation"
 	"github.com/go-ctap/ctap/credential"
 	"github.com/go-ctap/ctap/extension"
@@ -27,53 +30,68 @@ const (
 	PinUvAuthProtocolTwo
 )
 
+// FIDO Registry of Predefined Values 2.3 §3.1 User Verification Methods:
+// https://fidoalliance.org/specs/common-specs/fido-registry-v2.3-ps-20260105.html#user-verification-methods
 const (
-	UserVerifyPresenceInternal UserVerify = 1 << iota
-	UserVerifyFingerprintInternal
-	UserVerifyPasscodeInternal
-	UserVerifyVoiceprintInternal
-	UserVerifyFaceprintInternal
-	UserVerifyLocationInternal
-	UserVerifyEyeprintInternal
-	UserVerifyPatternInternal
-	UserVerifyHandprintInternal
-	UserVerifyPasscodeExternal
-	UserVerifyPatternExternal
-	UserVerifyNone
-	UserVerifyAll
+	UserVerifyPresenceInternal    UserVerify = 0x00000001
+	UserVerifyFingerprintInternal UserVerify = 0x00000002
+	UserVerifyPasscodeInternal    UserVerify = 0x00000004
+	UserVerifyVoiceprintInternal  UserVerify = 0x00000008
+	UserVerifyFaceprintInternal   UserVerify = 0x00000010
+	UserVerifyLocationInternal    UserVerify = 0x00000020
+	UserVerifyEyeprintInternal    UserVerify = 0x00000040
+	UserVerifyPatternInternal     UserVerify = 0x00000080
+	UserVerifyHandprintInternal   UserVerify = 0x00000100
+	UserVerifyNone                UserVerify = 0x00000200
+	UserVerifyAll                 UserVerify = 0x00000400
+	UserVerifyPasscodeExternal    UserVerify = 0x00000800
+	UserVerifyPatternExternal     UserVerify = 0x00001000
 )
 
+type namedUserVerification struct {
+	value UserVerify
+	name  string
+}
+
+var namedUserVerifications = [...]namedUserVerification{
+	{UserVerifyPresenceInternal, "presence_internal"},
+	{UserVerifyFingerprintInternal, "fingerprint_internal"},
+	{UserVerifyPasscodeInternal, "passcode_internal"},
+	{UserVerifyVoiceprintInternal, "voiceprint_internal"},
+	{UserVerifyFaceprintInternal, "faceprint_internal"},
+	{UserVerifyLocationInternal, "location_internal"},
+	{UserVerifyEyeprintInternal, "eyeprint_internal"},
+	{UserVerifyPatternInternal, "pattern_internal"},
+	{UserVerifyHandprintInternal, "handprint_internal"},
+	{UserVerifyNone, "none"},
+	{UserVerifyAll, "all"},
+	{UserVerifyPasscodeExternal, "passcode_external"},
+	{UserVerifyPatternExternal, "pattern_external"},
+}
+
+// String returns the symbolic FIDO Registry names of the user verification
+// methods in uv. Multiple methods are returned in ascending bit order,
+// separated by commas. Undefined method bits are preserved as a hexadecimal
+// suffix.
 func (uv UserVerify) String() string {
-	switch uv {
-	case UserVerifyPresenceInternal:
-		return "presence_internal"
-	case UserVerifyFingerprintInternal:
-		return "fingerprint_internal"
-	case UserVerifyPasscodeInternal:
-		return "passcode_internal"
-	case UserVerifyVoiceprintInternal:
-		return "voiceprint_internal"
-	case UserVerifyFaceprintInternal:
-		return "faceprint_internal"
-	case UserVerifyLocationInternal:
-		return "location_internal"
-	case UserVerifyEyeprintInternal:
-		return "eyeprint_internal"
-	case UserVerifyPatternInternal:
-		return "pattern_internal"
-	case UserVerifyHandprintInternal:
-		return "handprint_internal"
-	case UserVerifyPasscodeExternal:
-		return "passcode_external"
-	case UserVerifyPatternExternal:
-		return "pattern_external"
-	case UserVerifyNone:
-		return "none"
-	case UserVerifyAll:
-		return "all"
-	default:
+	if uv == 0 {
 		return ""
 	}
+
+	parts := make([]string, 0, len(namedUserVerifications)+1)
+	known := UserVerify(0)
+	for _, named := range namedUserVerifications {
+		known |= named.value
+		if uv&named.value != 0 {
+			parts = append(parts, named.name)
+		}
+	}
+
+	if unknown := uv &^ known; unknown != 0 {
+		parts = append(parts, fmt.Sprintf("unknown(0x%x)", uint(unknown)))
+	}
+
+	return strings.Join(parts, ",")
 }
 
 const (

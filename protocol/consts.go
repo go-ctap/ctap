@@ -1,6 +1,6 @@
 package protocol
 
-//go:generate go tool stringer -type=Command,ClientPINSubCommand,BioEnrollmentSubCommand,LastEnrollSampleStatus,CredentialManagementSubCommand,ConfigSubCommand -output=consts_string.go
+//go:generate go tool stringer -type=Command,ClientPINSubCommand,BioEnrollmentSubCommand,CredentialManagementSubCommand,ConfigSubCommand -output=consts_string.go
 type Command byte
 
 const (
@@ -47,12 +47,17 @@ const (
 
 type BioModality uint
 
+// CTAP 2.3 §6.7 authenticatorBioEnrollment:
+// https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html#authenticatorBioEnrollment
 const (
 	BioModalityFingerprint BioModality = iota + 1
 )
 
+// LastEnrollSampleStatus is an authenticator's fingerprint enrollment feedback.
 type LastEnrollSampleStatus uint
 
+// CTAP 2.3 §6.7 authenticatorBioEnrollment, lastEnrollSampleStatus types:
+// https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html#authenticatorBioEnrollment
 const (
 	LastEnrollSampleStatusFingerprintGood LastEnrollSampleStatus = iota
 	LastEnrollSampleStatusFingerprintTooHigh
@@ -121,6 +126,8 @@ const (
 
 type Permission byte
 
+// CTAP 2.3 §6.5.5.7 pinUvAuthToken permissions:
+// https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html#gettingPinUvAuthToken
 const (
 	PermissionNone                                   Permission = 0x00
 	PermissionMakeCredential                         Permission = 0x01
