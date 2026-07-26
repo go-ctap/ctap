@@ -155,7 +155,7 @@ func TestMakeCredentialPRFReportsCapabilityWithoutRequiringEvaluation(t *testing
 				}),
 			})
 			fake := testhid.NewCBORDevice(t, testCID, response)
-			d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 				Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
 				Options: map[protocol.Option]bool{
 					protocol.OptionMakeCredentialUvNotRequired: true,
@@ -189,7 +189,7 @@ func TestMakeCredentialPRFWithoutHMACSecretReturnsDisabledOutput(t *testing.T) {
 		AuthDataRaw: minimalAuthData(),
 	})
 	fake := testhid.NewCBORDevice(t, testCID, response)
-	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 		Options: map[protocol.Option]bool{protocol.OptionMakeCredentialUvNotRequired: true},
 	})
 
@@ -342,7 +342,7 @@ func TestMakeCredentialPRFSkipsCreationTimeEvaluationWithoutExplicitUserVerifica
 		}),
 	})
 	fake := testhid.NewCBORDevice(t, testCID, response)
-	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 		Extensions: []extension.ExtensionIdentifier{
 			extension.ExtensionIdentifierHMACSecret,
 			extension.ExtensionIdentifierHMACSecretMC,
@@ -392,7 +392,7 @@ func TestMakeCredentialPRFRejectsResultsWhenHMACSecretWasNotEnabled(t *testing.T
 		AuthDataRaw: authData,
 	})
 	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, response)
-	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 		Extensions: []extension.ExtensionIdentifier{
 			extension.ExtensionIdentifierHMACSecret,
 			extension.ExtensionIdentifierHMACSecretMC,
@@ -440,7 +440,7 @@ func TestGetAssertionPRFInitializesEmptyOutputWhenNoEvaluationIsSent(t *testing.
 				Signature:   []byte("signature"),
 			})
 			fake := testhid.NewCBORDevice(t, testCID, response)
-			d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{Extensions: tt.extensions})
+			d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{Extensions: tt.extensions})
 
 			var assertions []protocol.AuthenticatorGetAssertionResponse
 			for assertion, err := range d.GetAssertion(
@@ -586,7 +586,7 @@ func TestGetAssertionPRFRejectsResultCountMismatch(t *testing.T) {
 
 func TestGetAssertionPRFRequiresExplicitUserVerification(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID)
-	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 		Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
 		Options: map[protocol.Option]bool{
 			protocol.OptionUserVerification: true,
@@ -614,7 +614,7 @@ func TestGetAssertionPRFRequiresExplicitUserVerification(t *testing.T) {
 	}
 	require.ErrorIs(t, gotErr, ErrBuiltInUVRequired)
 	assert.False(t, callerOptions[protocol.OptionUserVerification])
-	assert.Empty(t, fake.Writes())
+	assertNoAuthenticatorIO(t, fake)
 }
 
 func TestPRFResultsRequireUserVerification(t *testing.T) {
@@ -628,7 +628,7 @@ func TestPRFResultsRequireUserVerification(t *testing.T) {
 		Signature: []byte("signature"),
 	})
 	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, assertion)
-	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 		Extensions:         []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
 		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
 		Options: map[protocol.Option]bool{
@@ -660,7 +660,7 @@ func TestPRFResultsRequireUserVerification(t *testing.T) {
 func TestPRFPreflightFailuresPerformNoAuthenticatorIO(t *testing.T) {
 	t.Run("registration rejects even an empty evalByCredential", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Options: map[protocol.Option]bool{
 				protocol.OptionMakeCredentialUvNotRequired: true,
 			},
@@ -674,12 +674,12 @@ func TestPRFPreflightFailuresPerformNoAuthenticatorIO(t *testing.T) {
 			},
 		})
 		require.ErrorIs(t, err, ErrNotSupported)
-		assert.Empty(t, fake.Writes())
+		assertNoAuthenticatorIO(t, fake)
 	})
 
 	t.Run("authentication rejects user presence false", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
 			Options: map[protocol.Option]bool{
 				protocol.OptionUserVerification: true,
@@ -705,12 +705,12 @@ func TestPRFPreflightFailuresPerformNoAuthenticatorIO(t *testing.T) {
 			gotErr = err
 		}
 		require.ErrorIs(t, gotErr, ErrNotSupported)
-		assert.Empty(t, fake.Writes())
+		assertNoAuthenticatorIO(t, fake)
 	})
 
 	t.Run("authentication requires a PIN UV auth token on a PIN-only device", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
 			Options: map[protocol.Option]bool{
 				protocol.OptionClientPIN: true,
@@ -736,12 +736,12 @@ func TestPRFPreflightFailuresPerformNoAuthenticatorIO(t *testing.T) {
 			gotErr = err
 		}
 		require.ErrorIs(t, gotErr, ErrPinUvAuthTokenRequired)
-		assert.Empty(t, fake.Writes())
+		assertNoAuthenticatorIO(t, fake)
 	})
 
 	t.Run("hmac-secret-mc without hmac-secret is an authenticator violation", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecretMC},
 			Options: map[protocol.Option]bool{
 				protocol.OptionMakeCredentialUvNotRequired: true,
@@ -752,7 +752,7 @@ func TestPRFPreflightFailuresPerformNoAuthenticatorIO(t *testing.T) {
 			PRFInputs: &webauthn.PRFInputs{},
 		})
 		require.ErrorIs(t, err, ErrSpecViolation)
-		assert.Empty(t, fake.Writes())
+		assertNoAuthenticatorIO(t, fake)
 	})
 }
 

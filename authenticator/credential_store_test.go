@@ -2,6 +2,7 @@ package authenticator
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/go-ctap/ctap/attestation"
@@ -19,7 +20,7 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 			AuthDataRaw: minimalAuthData(),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Options: map[protocol.Option]bool{
 				protocol.OptionMakeCredentialUvNotRequired: true,
 			},
@@ -50,7 +51,7 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 
 	t.Run("DeleteCredential", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Versions:           protocol.Versions{protocol.FIDO_2_1},
 			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 			Options: map[protocol.Option]bool{
@@ -72,7 +73,7 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 
 	t.Run("UpdateUserInformation", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Versions:           protocol.Versions{protocol.FIDO_2_1},
 			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 			Options: map[protocol.Option]bool{
@@ -100,7 +101,7 @@ func TestMakeCredentialDoesNotRequestGetInfoAfterSuccess(t *testing.T) {
 		AuthDataRaw: minimalAuthData(),
 	})
 	fake := testhid.NewCBORDevice(t, testCID, response)
-	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 		Options: map[protocol.Option]bool{
 			protocol.OptionMakeCredentialUvNotRequired: true,
 		},
@@ -128,4 +129,61 @@ func TestMakeCredentialDoesNotRequestGetInfoAfterSuccess(t *testing.T) {
 	require.Len(t, requests, 1)
 	command, _ := requests[0].CTAPPayload(t)
 	assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
+}
+
+func TestCredentialManagementUnsupportedIteratorsReturnBeforeCommand(t *testing.T) {
+	t.Run("enumerate RPs", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID)
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{Options: map[protocol.Option]bool{}})
+
+		var count int
+		for rp, err := range d.EnumerateRPs(testContext, nil) {
+			count++
+			assert.Equal(t, protocol.AuthenticatorCredentialManagementResponse{}, rp)
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, ErrNotSupported))
+		}
+
+		assert.Equal(t, 1, count)
+		assertNoAuthenticatorIO(t, fake)
+	})
+
+	t.Run("enumerate credentials", func(t *testing.T) {
+		fake := testhid.NewCBORDevice(t, testCID)
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{Options: map[protocol.Option]bool{}})
+
+		var count int
+		for cred, err := range d.EnumerateCredentials(testContext, nil, make([]byte, 32)) {
+			count++
+			assert.Equal(t, protocol.AuthenticatorCredentialManagementResponse{}, cred)
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, ErrNotSupported))
+		}
+
+		assert.Equal(t, 1, count)
+		assertNoAuthenticatorIO(t, fake)
+	})
+}
+
+func TestUpdateUserInformationUsesPreviewCommandForPreviewOnlyDevice(t *testing.T) {
+	info := protocol.AuthenticatorGetInfoResponse{
+		Versions:           protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1_PRE},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		Options: map[protocol.Option]bool{
+			protocol.OptionCredentialManagementPreview: true,
+		},
+	}
+	fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, info))
+	d := newTestDevice(t, fake, info)
+
+	err := d.UpdateUserInformation(
+		testContext,
+		make([]byte, 32),
+		credential.PublicKeyCredentialDescriptor{ID: []byte("credential-id")},
+		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id")},
+	)
+	require.NoError(t, err)
+
+	command, _ := fake.FirstCTAPPayload(t)
+	assert.Equal(t, protocol.PrototypeAuthenticatorCredentialManagement, command)
 }

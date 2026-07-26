@@ -426,18 +426,6 @@ func TestTransportCloseReturnsTypedIOError(t *testing.T) {
 	assert.True(t, dev.closed)
 }
 
-func receive[T any](t *testing.T, ch <-chan T, message string) T {
-	t.Helper()
-	select {
-	case value := <-ch:
-		return value
-	case <-time.After(time.Second):
-		t.Fatal(message)
-		var zero T
-		return zero
-	}
-}
-
 type orderedDevice struct {
 	response       *bytes.Reader
 	responses      chan []byte

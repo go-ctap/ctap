@@ -3,8 +3,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"crypto/ecdh"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -20,73 +18,27 @@ import (
 	"github.com/go-ctap/ctap/options"
 	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
-	"github.com/go-ctap/ctap/transport/ctaphid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-var testCID = ctaphid.ChannelID{1, 2, 3, 4}
-
-func newTestClient(device *testhid.Device) *Client {
-	client, err := NewClient(options.WithTransport(ctaphid.NewTransport(device, testCID)))
-	if err != nil {
-		panic(err)
-	}
-	return client
-}
-
-type fakeCBORTransport struct {
-	t        *testing.T
-	request  []byte
-	response []byte
-	status   ctaptransport.StatusCode
-}
-
-func (f *fakeCBORTransport) CBOR(_ context.Context, data []byte) (ctaptransport.CBORResponse, error) {
-	f.t.Helper()
-	assert.Equal(f.t, f.request, data)
-	return ctaptransport.ValidateCBORResponse(protocol.Command(data[0]), ctaptransport.CBORResponse{
-		StatusCode: f.status,
-		Data:       slices.Clone(f.response),
-	})
-}
-
-func encodeCBOR(t *testing.T, v any) []byte {
-	t.Helper()
-
-	b, err := cbor.Marshal(v)
-	require.NoError(t, err)
-	return b
-}
-
-func minimalAuthData() []byte {
-	return make([]byte, 37)
-}
-
-func assertRequestKeys(t *testing.T, request map[uint64]any, keys ...uint64) {
-	t.Helper()
-
-	actual := make([]uint64, 0, len(request))
-	for key := range request {
-		actual = append(actual, key)
-	}
-	assert.ElementsMatch(t, keys, actual)
-}
 
 func TestGetUVRetriesIncludesPinUvAuthProtocol(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
 		UvRetries: new(uint(5)),
 	}))
 
-	retries, err := newTestClient(fake).GetUVRetries(context.Background(), protocol.PinUvAuthProtocolOne)
+	retries, err := newTestClient(t, fake).GetUVRetries(context.Background(), protocol.PinUvAuthProtocolOne)
 	require.NoError(t, err)
 	assert.Equal(t, uint(5), retries)
 
-	command, request := fake.FirstCTAPRequestMap(t)
-	assert.Equal(t, protocol.AuthenticatorClientPIN, command)
-	assertRequestKeys(t, request, 1, 2)
-	assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)])
-	assert.Equal(t, uint64(protocol.ClientPINSubCommandGetUVRetries), request[uint64(2)])
+	assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorClientPIN,
+		keys:    []uint64{1, 2},
+		fields: map[uint64]any{
+			1: uint64(protocol.PinUvAuthProtocolOne),
+			2: uint64(protocol.ClientPINSubCommandGetUVRetries),
+		},
+	})
 }
 
 func TestGetUVRetriesOmitsUnspecifiedPinUvAuthProtocol(t *testing.T) {
@@ -94,33 +46,13 @@ func TestGetUVRetriesOmitsUnspecifiedPinUvAuthProtocol(t *testing.T) {
 		UvRetries: new(uint(5)),
 	}))
 
-	_, err := newTestClient(fake).GetUVRetries(context.Background(), 0)
+	_, err := newTestClient(t, fake).GetUVRetries(context.Background(), 0)
 	require.NoError(t, err)
 
-	command, request := fake.FirstCTAPRequestMap(t)
-	assert.Equal(t, protocol.AuthenticatorClientPIN, command)
-	assertRequestKeys(t, request, 2)
-}
-
-func testKeyAgreement(t *testing.T) cose.Key {
-	t.Helper()
-
-	privateKey, err := ecdh.P256().GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	coseKey, err := cose.KeyFromP256PublicKey(privateKey.PublicKey())
-	require.NoError(t, err)
-
-	return coseKey
-}
-
-func pinUvAuthToken() []byte {
-	return bytes.Repeat([]byte{0x11}, 32)
-}
-
-func testClientDataHash() []byte {
-	clientDataHash := sha256.Sum256([]byte("client-data"))
-	return clientDataHash[:]
+	assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorClientPIN,
+		keys:    []uint64{2},
+	})
 }
 
 func TestClientUsesConfiguredTransport(t *testing.T) {
@@ -221,7 +153,7 @@ func TestMakeCredentialRequestShapeAndPINAuthParam(t *testing.T) {
 		AuthDataRaw: minimalAuthData(),
 	}))
 
-	resp, err := newTestClient(fake).MakeCredential(
+	resp, err := newTestClient(t, fake).MakeCredential(
 		context.Background(),
 		protocol.PinUvAuthProtocolOne,
 		token,
@@ -257,7 +189,7 @@ func TestMakeCredentialMinimalRequestOmitsEmptyExcludeList(t *testing.T) {
 		AuthDataRaw: minimalAuthData(),
 	}))
 
-	resp, err := newTestClient(fake).MakeCredential(
+	resp, err := newTestClient(t, fake).MakeCredential(
 		context.Background(),
 		0,
 		nil,
@@ -290,7 +222,7 @@ func TestMakeCredentialFullRequestShape(t *testing.T) {
 		AuthDataRaw: minimalAuthData(),
 	}))
 
-	resp, err := newTestClient(fake).MakeCredential(
+	resp, err := newTestClient(t, fake).MakeCredential(
 		context.Background(),
 		protocol.PinUvAuthProtocolOne,
 		token,
@@ -336,7 +268,7 @@ func TestMakeCredentialFullRequestShape(t *testing.T) {
 func TestMakeCredentialRejectsInvalidClientDataHashBeforeCommand(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID)
 
-	_, err := newTestClient(fake).MakeCredential(
+	_, err := newTestClient(t, fake).MakeCredential(
 		context.Background(),
 		0,
 		nil,
@@ -361,7 +293,7 @@ func TestMakeCredentialReturnsResponseDecodeErrors(t *testing.T) {
 	t.Run("invalid CBOR", func(t *testing.T) {
 		fake := testhid.New(t, testhid.CBOROK(testCID, []byte{0xff}))
 
-		_, err := newTestClient(fake).MakeCredential(
+		_, err := newTestClient(t, fake).MakeCredential(
 			context.Background(),
 			0,
 			nil,
@@ -387,7 +319,7 @@ func TestMakeCredentialReturnsResponseDecodeErrors(t *testing.T) {
 			AuthDataRaw: []byte{1},
 		}))
 
-		_, err := newTestClient(fake).MakeCredential(
+		_, err := newTestClient(t, fake).MakeCredential(
 			context.Background(),
 			0,
 			nil,
@@ -417,7 +349,7 @@ func TestGetAssertionRequestShapeAndPINAuthParam(t *testing.T) {
 	}))
 
 	var assertions int
-	for assertion, err := range newTestClient(fake).GetAssertion(
+	for assertion, err := range newTestClient(t, fake).GetAssertion(
 		context.Background(),
 		protocol.PinUvAuthProtocolOne,
 		token,
@@ -451,7 +383,7 @@ func TestGetAssertionMinimalRequestOmitsEmptyAllowList(t *testing.T) {
 	}))
 
 	var assertions int
-	for assertion, err := range newTestClient(fake).GetAssertion(
+	for assertion, err := range newTestClient(t, fake).GetAssertion(
 		context.Background(),
 		0,
 		nil,
@@ -481,7 +413,7 @@ func TestGetAssertionFullRequestShape(t *testing.T) {
 	}))
 
 	var assertions int
-	for assertion, err := range newTestClient(fake).GetAssertion(
+	for assertion, err := range newTestClient(t, fake).GetAssertion(
 		context.Background(),
 		protocol.PinUvAuthProtocolOne,
 		token,
@@ -520,7 +452,7 @@ func TestGetAssertionRejectsInvalidClientDataHashBeforeCommand(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID)
 
 	var yielded int
-	for assertion, err := range newTestClient(fake).GetAssertion(
+	for assertion, err := range newTestClient(t, fake).GetAssertion(
 		context.Background(),
 		0,
 		nil,
@@ -555,7 +487,7 @@ func TestGetAssertionFetchesNextAssertions(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, first, second, third)
 
 	var signatures [][]byte
-	for assertion, err := range newTestClient(fake).GetAssertion(
+	for assertion, err := range newTestClient(t, fake).GetAssertion(
 		context.Background(),
 		0,
 		nil,
@@ -591,7 +523,7 @@ func TestGetAssertionStopsBeforeGetNextAssertionWhenIteratorStops(t *testing.T) 
 	fake := testhid.NewCBORDevice(t, testCID, first)
 
 	var assertions int
-	for assertion, err := range newTestClient(fake).GetAssertion(
+	for assertion, err := range newTestClient(t, fake).GetAssertion(
 		context.Background(),
 		0,
 		nil,
@@ -616,7 +548,7 @@ func TestGetAssertionReturnsResponseDecodeErrors(t *testing.T) {
 		fake := testhid.New(t, testhid.CBOROK(testCID, []byte{0xff}))
 
 		var yielded int
-		for assertion, err := range newTestClient(fake).GetAssertion(
+		for assertion, err := range newTestClient(t, fake).GetAssertion(
 			context.Background(),
 			0,
 			nil,
@@ -640,7 +572,7 @@ func TestGetAssertionReturnsResponseDecodeErrors(t *testing.T) {
 		}))
 
 		var yielded int
-		for assertion, err := range newTestClient(fake).GetAssertion(
+		for assertion, err := range newTestClient(t, fake).GetAssertion(
 			context.Background(),
 			0,
 			nil,
@@ -661,7 +593,7 @@ func TestGetAssertionReturnsResponseDecodeErrors(t *testing.T) {
 func TestClientPINRequestShapes(t *testing.T) {
 	t.Run("set PIN", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil)
-		err := newTestClient(fake).SetPIN(context.Background(), protocol.PinUvAuthProtocolOne, testKeyAgreement(t), "1234")
+		err := newTestClient(t, fake).SetPIN(context.Background(), protocol.PinUvAuthProtocolOne, testKeyAgreement(t), "1234")
 		require.NoError(t, err)
 
 		command, request := fake.FirstCTAPRequestMap(t)
@@ -675,7 +607,7 @@ func TestClientPINRequestShapes(t *testing.T) {
 
 	t.Run("change PIN", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil)
-		err := newTestClient(fake).ChangePIN(context.Background(), protocol.PinUvAuthProtocolOne, testKeyAgreement(t), "1234", "5678")
+		err := newTestClient(t, fake).ChangePIN(context.Background(), protocol.PinUvAuthProtocolOne, testKeyAgreement(t), "1234", "5678")
 		require.NoError(t, err)
 
 		command, request := fake.FirstCTAPRequestMap(t)
@@ -690,14 +622,14 @@ func TestClientPINRequestShapes(t *testing.T) {
 
 	t.Run("get PIN token validates PIN before command", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
-		_, err := newTestClient(fake).GetPinToken(context.Background(), protocol.PinUvAuthProtocolOne, testKeyAgreement(t), "123\x00")
+		_, err := newTestClient(t, fake).GetPinToken(context.Background(), protocol.PinUvAuthProtocolOne, testKeyAgreement(t), "123\x00")
 		require.Error(t, err)
 		assert.Empty(t, fake.Writes())
 	})
 
 	t.Run("get PIN/UV auth token with permissions validates PIN before command", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
-		_, err := newTestClient(fake).GetPinUvAuthTokenUsingPinWithPermissions(
+		_, err := newTestClient(t, fake).GetPinUvAuthTokenUsingPinWithPermissions(
 			context.Background(),
 			protocol.PinUvAuthProtocolOne,
 			testKeyAgreement(t),
@@ -714,7 +646,7 @@ func TestClientPINRequestShapes(t *testing.T) {
 			PinUvAuthToken: make([]byte, 16),
 		}))
 
-		token, err := newTestClient(fake).GetPinUvAuthTokenUsingUv(
+		token, err := newTestClient(t, fake).GetPinUvAuthTokenUsingUv(
 			context.Background(),
 			testKeyAgreement(t),
 		)
@@ -737,7 +669,7 @@ func TestClientPINRequestShapes(t *testing.T) {
 			PinUvAuthToken: make([]byte, 16),
 		}))
 
-		token, err := newTestClient(fake).GetPinUvAuthTokenUsingUvWithPermissions(
+		token, err := newTestClient(t, fake).GetPinUvAuthTokenUsingUvWithPermissions(
 			context.Background(),
 			protocol.PinUvAuthProtocolOne,
 			testKeyAgreement(t),
@@ -760,7 +692,7 @@ func TestBioEnrollmentRequestShapeAndPINAuthParam(t *testing.T) {
 	timeoutMilliseconds := uint(1000)
 	fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, &protocol.AuthenticatorBioEnrollmentResponse{}))
 
-	resp, err := newTestClient(fake).EnrollBegin(context.Background(), false, protocol.PinUvAuthProtocolOne, token, timeoutMilliseconds)
+	resp, err := newTestClient(t, fake).EnrollBegin(context.Background(), false, protocol.PinUvAuthProtocolOne, token, timeoutMilliseconds)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
@@ -784,7 +716,7 @@ func TestCredentialManagementRequestShapeAndPINAuthParam(t *testing.T) {
 	token := pinUvAuthToken()
 	fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, &protocol.AuthenticatorCredentialManagementResponse{}))
 
-	resp, err := newTestClient(fake).GetCredsMetadata(context.Background(), false, protocol.PinUvAuthProtocolOne, token)
+	resp, err := newTestClient(t, fake).GetCredsMetadata(context.Background(), false, protocol.PinUvAuthProtocolOne, token)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
@@ -855,7 +787,7 @@ func TestCredentialEnumerationRejectsMissingOrZeroTotals(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, &tc.response))
-			err := tc.invoke(newTestClient(fake))
+			err := tc.invoke(newTestClient(t, fake))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "spec violation")
 			assert.Contains(t, err.Error(), tc.field)
@@ -896,7 +828,7 @@ func TestLargeBlobsRequestShapeAndPINAuthParam(t *testing.T) {
 	length := uint(9)
 	fake := testhid.NewCBORDevice(t, testCID, nil)
 
-	resp, err := newTestClient(fake).LargeBlobs(context.Background(), protocol.PinUvAuthProtocolOne, token, 0, set, offset, length)
+	resp, err := newTestClient(t, fake).LargeBlobs(context.Background(), protocol.PinUvAuthProtocolOne, token, 0, set, offset, length)
 	require.NoError(t, err)
 	require.Empty(t, resp.Config)
 
@@ -924,7 +856,7 @@ func TestLargeBlobsPreservesZeroLengthReadAndWritePresence(t *testing.T) {
 	t.Run("get zero", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorLargeBlobsResponse{Config: []byte{}}))
 
-		resp, err := newTestClient(fake).LargeBlobs(context.Background(), 0, nil, 0, nil, 0, 0)
+		resp, err := newTestClient(t, fake).LargeBlobs(context.Background(), 0, nil, 0, nil, 0, 0)
 		require.NoError(t, err)
 		require.NotNil(t, resp.Config)
 		require.Empty(t, resp.Config)
@@ -938,7 +870,7 @@ func TestLargeBlobsPreservesZeroLengthReadAndWritePresence(t *testing.T) {
 	t.Run("set empty", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil)
 
-		_, err := newTestClient(fake).LargeBlobs(context.Background(), 0, nil, 0, []byte{}, 0, 17)
+		_, err := newTestClient(t, fake).LargeBlobs(context.Background(), 0, nil, 0, []byte{}, 0, 17)
 		require.NoError(t, err)
 
 		command, request := fake.FirstCTAPRequestMap(t)
@@ -958,7 +890,7 @@ func TestConfigRequestShapeAndPINAuthParam(t *testing.T) {
 		ForceChangePIN:    true,
 	}
 
-	err := newTestClient(fake).SetMinPINLength(context.Background(), protocol.PinUvAuthProtocolOne, token, params)
+	err := newTestClient(t, fake).SetMinPINLength(context.Background(), protocol.PinUvAuthProtocolOne, token, params)
 	require.NoError(t, err)
 
 	command, request := fake.FirstCTAPRequestMap(t)
@@ -978,7 +910,7 @@ func TestConfigRequestShapeAndPINAuthParam(t *testing.T) {
 
 func TestConfigRequestWithoutTokenOmitsAuthorization(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, nil)
-	err := newTestClient(fake).SetMinPINLength(context.Background(), 0, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+	err := newTestClient(t, fake).SetMinPINLength(context.Background(), 0, nil, protocol.SetMinPINLengthConfigSubCommandParams{
 		NewMinPINLength: new(uint(8)),
 	})
 	require.NoError(t, err)
@@ -992,7 +924,7 @@ func TestConfigRequestWithoutTokenOmitsAuthorization(t *testing.T) {
 func TestSetMinPINLengthPreservesZeroMinimumAndOmitsEquivalentZeroValues(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, nil)
 
-	err := newTestClient(fake).SetMinPINLength(
+	err := newTestClient(t, fake).SetMinPINLength(
 		context.Background(),
 		0,
 		nil,
@@ -1016,7 +948,7 @@ func TestEnableLongTouchForResetRequestShape(t *testing.T) {
 	t.Run("without authorization", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil)
 
-		err := newTestClient(fake).EnableLongTouchForReset(context.Background(), 0, nil)
+		err := newTestClient(t, fake).EnableLongTouchForReset(context.Background(), 0, nil)
 		require.NoError(t, err)
 
 		command, request := fake.FirstCTAPRequestMap(t)
@@ -1029,7 +961,7 @@ func TestEnableLongTouchForResetRequestShape(t *testing.T) {
 		token := pinUvAuthToken()
 		fake := testhid.NewCBORDevice(t, testCID, nil)
 
-		err := newTestClient(fake).EnableLongTouchForReset(
+		err := newTestClient(t, fake).EnableLongTouchForReset(
 			context.Background(),
 			protocol.PinUvAuthProtocolOne,
 			token,
@@ -1056,7 +988,7 @@ func TestProtectedCommandsRejectInvalidTokenBeforeTransport(t *testing.T) {
 	t.Run("BioEnrollment", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
 
-		_, err := newTestClient(fake).EnrollBegin(
+		_, err := newTestClient(t, fake).EnrollBegin(
 			context.Background(),
 			false,
 			protocol.PinUvAuthProtocolTwo,
@@ -1070,7 +1002,7 @@ func TestProtectedCommandsRejectInvalidTokenBeforeTransport(t *testing.T) {
 	t.Run("CredentialManagement", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
 
-		_, err := newTestClient(fake).GetCredsMetadata(
+		_, err := newTestClient(t, fake).GetCredsMetadata(
 			context.Background(),
 			false,
 			protocol.PinUvAuthProtocolTwo,

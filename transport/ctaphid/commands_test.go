@@ -3,7 +3,6 @@ package ctaphid
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"testing"
 
@@ -89,6 +88,71 @@ func TestCBORReturnsTypedCTAPHIDError(t *testing.T) {
 	}
 }
 
+func TestCommandsReturnTypedCTAPHIDError(t *testing.T) {
+	tests := []struct {
+		name        string
+		cid         ChannelID
+		requestCmd  Command
+		requestData []byte
+		responseErr Error
+		invoke      func(context.Context, *scriptedDevice, ChannelID) error
+	}{
+		{
+			name:        "Init/invalid channel",
+			cid:         BROADCAST_CID,
+			requestCmd:  CTAPHID_INIT,
+			requestData: []byte{1, 2, 3, 4, 5, 6, 7, 8},
+			responseErr: ERR_INVALID_CHANNEL,
+			invoke: func(ctx context.Context, dev *scriptedDevice, cid ChannelID) error {
+				_, err := Init(ctx, dev, cid, []byte{1, 2, 3, 4, 5, 6, 7, 8})
+				return err
+			},
+		},
+		{
+			name:        "Ping/invalid length",
+			cid:         ChannelID{1, 2, 3, 4},
+			requestCmd:  CTAPHID_PING,
+			requestData: []byte("hello"),
+			responseErr: ERR_INVALID_LEN,
+			invoke: func(ctx context.Context, dev *scriptedDevice, cid ChannelID) error {
+				_, err := Ping(ctx, dev, cid, []byte("hello"))
+				return err
+			},
+		},
+		{
+			name:        "Wink/channel busy",
+			cid:         ChannelID{1, 2, 3, 4},
+			requestCmd:  CTAPHID_WINK,
+			responseErr: ERR_CHANNEL_BUSY,
+			invoke: func(ctx context.Context, dev *scriptedDevice, cid ChannelID) error {
+				return Wink(ctx, dev, cid)
+			},
+		},
+		{
+			name:        "Lock/lock required",
+			cid:         ChannelID{1, 2, 3, 4},
+			requestCmd:  CTAPHID_LOCK,
+			requestData: []byte{1},
+			responseErr: ERR_LOCK_REQUIRED,
+			invoke: func(ctx context.Context, dev *scriptedDevice, cid ChannelID) error {
+				return Lock(ctx, dev, cid, 1)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dev := &scriptedDevice{reads: bytes.NewReader(rawResponseMessage(
+				t, tt.cid, CTAPHID_ERROR, []byte{byte(tt.responseErr)},
+			))}
+
+			err := tt.invoke(context.Background(), dev, tt.cid)
+			requireCTAPHIDError(t, err, tt.responseErr)
+			assertSingleReportRequest(t, dev.writes.Bytes(), tt.cid, tt.requestCmd, tt.requestData)
+		})
+	}
+}
+
 func TestCBORRejectsMissingCommandByte(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
 
@@ -124,17 +188,6 @@ func TestInitAcceptsExtendedSuccessResponse(t *testing.T) {
 	assert.True(t, resp.ImplementsCBOR())
 	assert.False(t, resp.NotImplementsMSG())
 
-	assertSingleReportRequest(t, dev.writes.Bytes(), BROADCAST_CID, CTAPHID_INIT, nonce)
-}
-
-func TestInitReturnsCTAPHIDError(t *testing.T) {
-	nonce := []byte{1, 2, 3, 4, 5, 6, 7, 8}
-	dev := &scriptedDevice{
-		reads: bytes.NewReader(rawResponseMessage(t, BROADCAST_CID, CTAPHID_ERROR, []byte{byte(ERR_INVALID_CHANNEL)})),
-	}
-
-	_, err := Init(context.Background(), dev, BROADCAST_CID, nonce)
-	requireCTAPHIDError(t, err, ERR_INVALID_CHANNEL)
 	assertSingleReportRequest(t, dev.writes.Bytes(), BROADCAST_CID, CTAPHID_INIT, nonce)
 }
 
@@ -179,18 +232,6 @@ func TestPingSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_PING, data)
 }
 
-func TestPingReturnsCTAPHIDError(t *testing.T) {
-	cid := ChannelID{1, 2, 3, 4}
-	data := []byte("hello")
-	dev := &scriptedDevice{
-		reads: bytes.NewReader(rawResponseMessage(t, cid, CTAPHID_ERROR, []byte{byte(ERR_INVALID_LEN)})),
-	}
-
-	_, err := Ping(context.Background(), dev, cid, data)
-	requireCTAPHIDError(t, err, ERR_INVALID_LEN)
-	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_PING, data)
-}
-
 func TestCancelWritesRequestAndDoesNotReadResponse(t *testing.T) {
 	cid := ChannelID{1, 2, 3, 4}
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
@@ -209,16 +250,6 @@ func TestWinkWritesRequestAndAcceptsEmptySuccessResponse(t *testing.T) {
 	err := Wink(context.Background(), dev, cid)
 	require.NoError(t, err)
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_WINK, nil)
-}
-
-func TestWinkReturnsTypedCTAPHIDError(t *testing.T) {
-	cid := ChannelID{1, 2, 3, 4}
-	dev := &scriptedDevice{
-		reads: bytes.NewReader(rawResponseMessage(t, cid, CTAPHID_ERROR, []byte{byte(ERR_CHANNEL_BUSY)})),
-	}
-
-	err := Wink(context.Background(), dev, cid)
-	requireCTAPHIDError(t, err, ERR_CHANNEL_BUSY)
 }
 
 func TestLockRejectsInvalidDuration(t *testing.T) {
@@ -240,58 +271,4 @@ func TestLockWritesDurationAndAcceptsEmptySuccessResponse(t *testing.T) {
 	err := Lock(context.Background(), dev, cid, 10)
 	require.NoError(t, err)
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_LOCK, []byte{10})
-}
-
-func TestLockReturnsTypedCTAPHIDError(t *testing.T) {
-	cid := ChannelID{1, 2, 3, 4}
-	dev := &scriptedDevice{
-		reads: bytes.NewReader(rawResponseMessage(t, cid, CTAPHID_ERROR, []byte{byte(ERR_LOCK_REQUIRED)})),
-	}
-
-	err := Lock(context.Background(), dev, cid, 1)
-	requireCTAPHIDError(t, err, ERR_LOCK_REQUIRED)
-}
-
-func requireCTAPHIDError(t *testing.T, err error, want Error) {
-	t.Helper()
-	require.Error(t, err)
-
-	var response *ErrorResponse
-	require.ErrorAs(t, err, &response)
-	assert.Equal(t, want, response.ErrorCode)
-	assert.Equal(t, byte(want), byte(response.ErrorCode))
-	assert.EqualError(t, err, want.String())
-}
-
-func rawResponseMessage(t *testing.T, cid ChannelID, cmd Command, data []byte) []byte {
-	t.Helper()
-
-	msg, err := NewMessage(cid, cmd, data)
-	require.NoError(t, err)
-
-	buf := bytes.NewBuffer(nil)
-	for _, p := range msg {
-		_, err := p.WriteTo(buf)
-		require.NoError(t, err)
-	}
-
-	return buf.Bytes()
-}
-
-func assertSingleReportRequest(t *testing.T, written []byte, cid ChannelID, cmd Command, data []byte) {
-	t.Helper()
-
-	require.Len(t, written, hidReportPacketSize)
-	assert.Equal(t, byte(0), written[0], "report ID")
-
-	raw := written[1:]
-	assert.Equal(t, cid[:], raw[:4], "CID")
-	assert.Equal(t, byte(cmd)|INIT_PACKET_BIT, raw[4], "command")
-	assert.Equal(t, uint16(len(data)), binary.BigEndian.Uint16(raw[5:7]), "BCNT")
-	if len(data) == 0 {
-		assert.Empty(t, raw[initPacketHeaderSize:initPacketHeaderSize+len(data)])
-	} else {
-		assert.Equal(t, data, raw[initPacketHeaderSize:initPacketHeaderSize+len(data)])
-	}
-	assert.Equal(t, make([]byte, initPacketDataSize-len(data)), raw[initPacketHeaderSize+len(data):])
 }

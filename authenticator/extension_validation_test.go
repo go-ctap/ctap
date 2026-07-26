@@ -3,10 +3,12 @@ package authenticator
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/attestation"
+	"github.com/go-ctap/ctap/cose"
 	"github.com/go-ctap/ctap/credential"
 	"github.com/go-ctap/ctap/extension"
 	"github.com/go-ctap/ctap/internal/testhid"
@@ -78,7 +80,7 @@ func TestMakeCredentialVerifiesEnforcedCredentialProtectionOutput(t *testing.T) 
 				AuthDataRaw: authData,
 			})
 			fake := testhid.NewCBORDevice(t, testCID, response)
-			d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+			d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 				Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierCredentialProtection},
 				Options: map[protocol.Option]bool{
 					protocol.OptionMakeCredentialUvNotRequired: true,
@@ -107,7 +109,7 @@ func TestMakeCredentialIgnoresOversizedCredentialBlob(t *testing.T) {
 		AuthDataRaw: minimalAuthData(),
 	})
 	fake := testhid.NewCBORDevice(t, testCID, response)
-	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 		Extensions: []extension.ExtensionIdentifier{
 			extension.ExtensionIdentifierCredentialBlob,
 			extension.ExtensionIdentifierCredentialProtection,
@@ -140,7 +142,7 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 			AuthDataRaw: minimalAuthData(),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Options: map[protocol.Option]bool{
 				protocol.OptionMakeCredentialUvNotRequired: true,
 			},
@@ -172,7 +174,7 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 			Signature:   []byte("signature"),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{})
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{})
 
 		var count int
 		for _, err := range d.GetAssertion(
@@ -210,7 +212,7 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 			AuthDataRaw: minimalAuthData(),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierThirdPartyPayment},
 			Options: map[protocol.Option]bool{
 				protocol.OptionMakeCredentialUvNotRequired: true,
@@ -239,7 +241,7 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 			Signature: []byte("signature"),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierThirdPartyPayment},
 		})
 
@@ -273,7 +275,7 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 
 	t.Run("requires advertised support", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Options: map[protocol.Option]bool{
 				protocol.OptionMakeCredentialUvNotRequired: true,
 			},
@@ -285,7 +287,7 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 			},
 		})
 		require.ErrorIs(t, err, ErrNotSupported)
-		assert.Empty(t, fake.Writes())
+		assertNoAuthenticatorIO(t, fake)
 	})
 }
 
@@ -337,18 +339,18 @@ func TestCompositeExtensionCapabilitiesAreValidatedBeforeCommand(t *testing.T) {
 			tt.info.Options = map[protocol.Option]bool{
 				protocol.OptionMakeCredentialUvNotRequired: true,
 			}
-			d := newTestDevice(fake, tt.info)
+			d := newTestDevice(t, fake, tt.info)
 
 			_, err := makeCredentialWithExtensions(d, tt.extInputs)
 			require.ErrorIs(t, err, ErrSpecViolation)
-			assert.Empty(t, fake.Writes())
+			assertNoAuthenticatorIO(t, fake)
 		})
 	}
 }
 
 func TestGetAssertionRejectsHMACSecretWhenUserPresenceIsDisabledBeforeCommand(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID)
-	d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 		Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
 	})
 
@@ -370,7 +372,7 @@ func TestGetAssertionRejectsHMACSecretWhenUserPresenceIsDisabledBeforeCommand(t 
 	}
 
 	require.ErrorIs(t, gotErr, ErrNotSupported)
-	assert.Empty(t, fake.Writes())
+	assertNoAuthenticatorIO(t, fake)
 }
 
 func TestUnsolicitedExtensionOutputsAreRejectedWithoutPanic(t *testing.T) {
@@ -382,7 +384,7 @@ func TestUnsolicitedExtensionOutputsAreRejectedWithoutPanic(t *testing.T) {
 			}),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 			Options: map[protocol.Option]bool{
 				protocol.OptionMakeCredentialUvNotRequired: true,
 			},
@@ -400,7 +402,7 @@ func TestUnsolicitedExtensionOutputsAreRejectedWithoutPanic(t *testing.T) {
 			Signature: []byte("signature"),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
-		d := newTestDevice(fake, protocol.AuthenticatorGetInfoResponse{})
+		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{})
 
 		var gotErr error
 		for _, err := range d.GetAssertion(
@@ -433,17 +435,17 @@ func TestSetLargeBlobsValidatesAndCanonicalizesArray(t *testing.T) {
 		}
 		for _, blob := range tests {
 			fake := testhid.NewCBORDevice(t, testCID)
-			d := newTestDevice(fake, info)
+			d := newTestDevice(t, fake, info)
 
 			err := d.SetLargeBlobs(testContext, nil, []protocol.LargeBlob{blob})
 			require.ErrorIs(t, err, SyntaxError)
-			assert.Empty(t, fake.Writes())
+			assertNoAuthenticatorIO(t, fake)
 		}
 	})
 
 	t.Run("nil input becomes an empty array", func(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil)
-		d := newTestDevice(fake, info)
+		d := newTestDevice(t, fake, info)
 
 		require.NoError(t, d.SetLargeBlobs(testContext, nil, nil))
 
@@ -466,4 +468,203 @@ func TestValidateMakeCredentialExtensionOutputsRejectsUnsolicitedValues(t *testi
 		},
 	)
 	require.ErrorIs(t, err, ErrSpecViolation)
+}
+
+func TestGetAssertionValidatesHMACSecretSalts(t *testing.T) {
+	fake := testhid.NewCBORDevice(t, testCID)
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
+		Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
+	})
+
+	var count int
+	for assertion, err := range d.GetAssertion(
+		testContext,
+		nil,
+		"example.com",
+		[]byte("client-data"),
+		nil,
+		&webauthn.GetAuthenticationExtensionsClientInputs{
+			GetHMACSecretInputs: &webauthn.GetHMACSecretInputs{
+				HMACGetSecret: webauthn.HMACGetSecretInput{Salt1: make([]byte, 31)},
+			},
+		},
+		nil,
+	) {
+		count++
+		assert.Equal(t, protocol.AuthenticatorGetAssertionResponse{}, assertion)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, ErrInvalidSaltSize))
+	}
+
+	assert.Equal(t, 1, count)
+	assertNoAuthenticatorIO(t, fake)
+}
+
+func TestMakeCredentialValidatesHMACSecretMCSalts(t *testing.T) {
+	fake := testhid.NewCBORDevice(t, testCID)
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
+		Extensions: []extension.ExtensionIdentifier{
+			extension.ExtensionIdentifierHMACSecret,
+			extension.ExtensionIdentifierHMACSecretMC,
+		},
+		Options: map[protocol.Option]bool{
+			protocol.OptionMakeCredentialUvNotRequired: true,
+		},
+	})
+
+	_, err := d.MakeCredential(
+		testContext,
+		nil,
+		[]byte("client-data"),
+		credential.PublicKeyCredentialRpEntity{ID: "example.com", Name: "Example"},
+		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
+		[]credential.PublicKeyCredentialParameters{{
+			Type:      credential.PublicKeyCredentialTypePublicKey,
+			Algorithm: cose.AlgorithmES256,
+		}},
+		nil,
+		&webauthn.CreateAuthenticationExtensionsClientInputs{
+			CreateHMACSecretMCInputs: &webauthn.CreateHMACSecretMCInputs{
+				HMACGetSecret: webauthn.HMACGetSecretInput{Salt1: make([]byte, 32), Salt2: make([]byte, 31)},
+			},
+		},
+		nil,
+		0,
+		nil,
+	)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrInvalidSaltSize))
+	assertNoAuthenticatorIO(t, fake)
+}
+
+func TestMakeCredentialAllowsFIDO20BuiltInUV(t *testing.T) {
+	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
+		Format:      attestation.AttestationStatementFormatIdentifierPacked,
+		AuthDataRaw: minimalAuthData(),
+	})
+	fake := testhid.NewCBORDevice(t, testCID, response)
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
+		Versions: protocol.Versions{protocol.FIDO_2_0},
+		Options: map[protocol.Option]bool{
+			protocol.OptionUserVerification: true,
+		},
+	})
+
+	_, err := d.MakeCredential(
+		testContext,
+		nil,
+		[]byte("client-data"),
+		credential.PublicKeyCredentialRpEntity{ID: "example.com", Name: "Example"},
+		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
+		[]credential.PublicKeyCredentialParameters{{
+			Type:      credential.PublicKeyCredentialTypePublicKey,
+			Algorithm: cose.AlgorithmES256,
+		}},
+		nil,
+		nil,
+		map[protocol.Option]bool{protocol.OptionUserVerification: true},
+		0,
+		nil,
+	)
+	require.NoError(t, err)
+	assert.NotEmpty(t, fake.Writes())
+}
+
+func TestMakeCredentialCredPropsOutputDependsOnCredPropsInput(t *testing.T) {
+	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
+		Format:      attestation.AttestationStatementFormatIdentifierPacked,
+		AuthDataRaw: minimalAuthData(),
+	})
+	info := protocol.AuthenticatorGetInfoResponse{
+		Options: map[protocol.Option]bool{
+			protocol.OptionMakeCredentialUvNotRequired: true,
+		},
+	}
+	fake := testhid.NewCBORDevice(t, testCID, response, encodeCBOR(t, info))
+	d := newTestDevice(t, fake, info)
+
+	resp, err := d.MakeCredential(
+		testContext,
+		nil,
+		[]byte("client-data"),
+		credential.PublicKeyCredentialRpEntity{ID: "example.com", Name: "Example"},
+		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
+		[]credential.PublicKeyCredentialParameters{{
+			Type:      credential.PublicKeyCredentialTypePublicKey,
+			Algorithm: cose.AlgorithmES256,
+		}},
+		nil,
+		&webauthn.CreateAuthenticationExtensionsClientInputs{
+			CreateCredentialPropertiesInputs: &webauthn.CreateCredentialPropertiesInputs{CredentialProperties: true},
+		},
+		map[protocol.Option]bool{protocol.OptionResidentKeys: true},
+		0,
+		nil,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, resp.ExtensionOutputs.CreateCredentialPropertiesOutputs)
+	require.NotNil(t, resp.ExtensionOutputs.CreateCredentialPropertiesOutputs.CredentialProperties.ResidentKey)
+	assert.True(t, *resp.ExtensionOutputs.CreateCredentialPropertiesOutputs.CredentialProperties.ResidentKey)
+}
+
+func TestMakeCredentialRequiresMaxCredBlobLengthWhenCredBlobExtensionReported(t *testing.T) {
+	fake := testhid.NewCBORDevice(t, testCID)
+	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
+		Extensions: []extension.ExtensionIdentifier{
+			extension.ExtensionIdentifierCredentialBlob,
+			extension.ExtensionIdentifierCredentialProtection,
+		},
+		Options: map[protocol.Option]bool{
+			protocol.OptionMakeCredentialUvNotRequired: true,
+		},
+	})
+
+	_, err := d.MakeCredential(
+		testContext,
+		nil,
+		[]byte("client-data"),
+		credential.PublicKeyCredentialRpEntity{ID: "example.com", Name: "Example"},
+		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "user"},
+		[]credential.PublicKeyCredentialParameters{{
+			Type:      credential.PublicKeyCredentialTypePublicKey,
+			Algorithm: cose.AlgorithmES256,
+		}},
+		nil,
+		&webauthn.CreateAuthenticationExtensionsClientInputs{
+			CreateCredentialBlobInputs: &webauthn.CreateCredentialBlobInputs{CredBlob: []byte("blob")},
+		},
+		nil,
+		0,
+		nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "maxCredBlobLength")
+	assertNoAuthenticatorIO(t, fake)
+}
+
+func TestHMACSecretPinUvAuthProtocolWirePresence(t *testing.T) {
+	tests := []struct {
+		name       string
+		protocol   protocol.PinUvAuthProtocol
+		wantMember bool
+	}{
+		{name: "protocol one is implicit", protocol: protocol.PinUvAuthProtocolOne},
+		{name: "protocol two is explicit", protocol: protocol.PinUvAuthProtocolTwo, wantMember: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := newHMACSecretInput(cose.Key{1: 2}, []byte{3}, []byte{4}, tt.protocol)
+			raw, err := cbor.Marshal(input)
+			require.NoError(t, err)
+
+			var fields map[uint64]cbor.RawMessage
+			require.NoError(t, cbor.Unmarshal(raw, &fields))
+			if tt.wantMember {
+				require.Contains(t, fields, uint64(4))
+			} else {
+				require.NotContains(t, fields, uint64(4))
+			}
+		})
+	}
 }

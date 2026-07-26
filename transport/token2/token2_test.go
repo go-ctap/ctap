@@ -256,9 +256,9 @@ func TestCloseInterruptsBlockedTransmit(t *testing.T) {
 		resultc <- err
 	}()
 
-	<-card.started
+	receive(t, card.started, "card transmit did not start")
 	require.NoError(t, transport.Close())
-	err := <-resultc
+	err := receive(t, resultc, "blocked transmit did not stop after close")
 	require.ErrorIs(t, err, io.ErrClosedPipe)
 	var ioErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &ioErr)

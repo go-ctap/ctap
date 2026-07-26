@@ -31,6 +31,8 @@ Main features include:
 
 See the [Go API reference](https://pkg.go.dev/github.com/go-ctap/ctap) for command and type details.
 
+Contributors adding or changing tests should follow the [testing guide](TESTING.md).
+
 ### Hardware testing
 
 Automated tests cover the implemented protocol, validation, and state changes. Physical testing covers:

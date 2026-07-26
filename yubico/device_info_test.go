@@ -71,3 +71,21 @@ func TestParseDeviceInfoAllowsOmittedAndRepeatedFields(t *testing.T) {
 	assert.Equal(t, FormFactorUSBCKeychain, info.FormFactor)
 	assert.Zero(t, info.FirmwareVersion)
 }
+
+func TestFormFactorString(t *testing.T) {
+	tests := []struct {
+		name string
+		form FormFactor
+		want string
+	}{
+		{"unknown", FormFactorUnknown, "FormFactorUnknown"},
+		{"USB-C nano", FormFactorUSBCNano, "FormFactorUSBCNano"},
+		{"USB-C biometric keychain", FormFactorUSBCBiometricKeychain, "FormFactorUSBCBiometricKeychain"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.form.String())
+		})
+	}
+}
