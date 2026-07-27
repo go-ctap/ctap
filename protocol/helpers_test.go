@@ -302,3 +302,44 @@ func TestParseAuthDataRejectsMissingOrNonMapExtensionData(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestParseAuthDataRejectsTrailingBytes(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{
+			name: "without extension flag",
+			data: append(make([]byte, 37), 0x00),
+		},
+		{
+			name: "after extension map",
+			data: func() []byte {
+				data := make([]byte, 37)
+				data[32] = byte(AuthDataFlagExtensionDataIncluded)
+
+				return append(data, 0xa0, 0x00)
+			}(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ParseMakeCredentialAuthData(test.data)
+			require.Error(t, err)
+
+			_, err = ParseGetAssertionAuthData(test.data)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestParseAuthDataRejectsReservedFlags(t *testing.T) {
+	for _, flag := range []byte{1 << 1, 1 << 5} {
+		data := make([]byte, 37)
+		data[32] = flag
+
+		_, err := ParseGetAssertionAuthData(data)
+		require.Error(t, err, "reserved flag 0x%02x", flag)
+	}
+}

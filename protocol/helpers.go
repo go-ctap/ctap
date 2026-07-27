@@ -36,6 +36,9 @@ func parseAuthData(data []byte) (authData, error) {
 	if len(data) < 37 {
 		return authData{}, fmt.Errorf("auth data is too short: got %d bytes, want at least 37", len(data))
 	}
+	if reserved := AuthDataFlag(data[32]) & ((1 << 1) | (1 << 5)); reserved != 0 {
+		return authData{}, fmt.Errorf("auth data uses reserved flag bits 0x%02x", byte(reserved))
+	}
 
 	d := authData{
 		RPIDHash:  data[:32],
@@ -82,10 +85,27 @@ func parseAuthData(data []byte) (authData, error) {
 		if len(data) == offset {
 			return authData{}, fmt.Errorf("auth data is missing extension data")
 		}
-		if data[offset]>>5 != 5 {
+		extensions := data[offset:]
+		decoder := cbor.NewDecoder(bytes.NewReader(extensions))
+		var values map[string]any
+		if err := decoder.Decode(&values); err != nil {
+			return authData{}, fmt.Errorf("decode auth data extensions: %w", err)
+		}
+		if values == nil {
 			return authData{}, fmt.Errorf("auth data extension data must be a CBOR map")
 		}
-		d.Extensions = data[offset:]
+		if decoder.NumBytesRead() != len(extensions) {
+			return authData{}, fmt.Errorf(
+				"auth data extensions have %d trailing bytes",
+				len(extensions)-decoder.NumBytesRead(),
+			)
+		}
+		d.Extensions = extensions
+		offset = len(data)
+	}
+
+	if offset != len(data) {
+		return authData{}, fmt.Errorf("auth data has %d trailing bytes", len(data)-offset)
 	}
 
 	return d, nil
