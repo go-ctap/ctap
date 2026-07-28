@@ -108,9 +108,11 @@ If you know the HID path, use `authenticator.OpenHID(ctx, path)`.
 | `client` | Sending individual CTAP commands and managing state yourself |
 | `transport`, `transport/ctaphid`, `transport/token2`, `hidproxy` | Device I/O and framing |
 | `protocol`, `credential`, `attestation`, `extension`, `webauthn` | CTAP constants and data types |
-| `crypto`, `yubico` | Cryptographic helpers and Yubico-specific operations |
+| `crypto` | Cryptographic helpers |
 
 For a custom transport, implement `transport.Device` and pass it to `authenticator.New`.
+Yubico-specific device information and identity operations live in
+[`go-ctap/yubico`](https://github.com/go-ctap/yubico).
 
 ## PIN and user verification
 

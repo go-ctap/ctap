@@ -11,16 +11,14 @@ import (
 	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
 	"github.com/go-ctap/ctap/transport/ctaphid"
-	"github.com/go-ctap/ctap/yubico"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	_ pinger                 = (*ctaphid.Transport)(nil)
-	_ winker                 = (*ctaphid.Transport)(nil)
-	_ locker                 = (*ctaphid.Transport)(nil)
-	_ yubico.VendorTransport = (*ctaphid.Transport)(nil)
+	_ pinger = (*ctaphid.Transport)(nil)
+	_ winker = (*ctaphid.Transport)(nil)
+	_ locker = (*ctaphid.Transport)(nil)
 )
 
 type optionTransport struct {

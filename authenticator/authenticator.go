@@ -22,7 +22,6 @@ import (
 	ctaptransport "github.com/go-ctap/ctap/transport"
 	"github.com/go-ctap/ctap/transport/ctaphid"
 	"github.com/go-ctap/ctap/webauthn"
-	"github.com/go-ctap/ctap/yubico"
 	"github.com/samber/lo"
 )
 
@@ -993,18 +992,26 @@ func (d *Device) GetInfoCached() (protocol.AuthenticatorGetInfoResponse, bool) {
 	return d.info, d.infoValid
 }
 
-// GetYubiKeyDeviceInfo returns Yubico-specific device metadata using the
-// vendor HID command 0xc2. Non-Yubico authenticators will normally return a
-// CTAPHID invalid-command error.
-func (d *Device) GetYubiKeyDeviceInfo(ctx context.Context) (yubico.DeviceInfo, error) {
+// Vendor exchanges one CTAPHID vendor command on the authenticator's allocated
+// channel. It is unavailable for transports other than CTAPHID.
+func (d *Device) Vendor(
+	ctx context.Context,
+	command ctaphid.Command,
+	data []byte,
+) (ctaphid.VendorResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	transport, ok := d.transport.(yubico.VendorTransport)
+	transport, ok := d.transport.(interface {
+		Vendor(context.Context, ctaphid.Command, []byte) (ctaphid.VendorResponse, error)
+	})
 	if !ok {
-		return yubico.DeviceInfo{}, newErrorMessage(ErrNotSupported, "Yubico device info requires CTAPHID")
+		return ctaphid.VendorResponse{}, newErrorMessage(
+			ErrNotSupported,
+			"vendor commands require CTAPHID",
+		)
 	}
 
-	return yubico.GetDeviceInfo(ctx, transport)
+	return transport.Vendor(ctx, command, data)
 }
 
 // GetPINRetries retrieves the number of PIN retries remaining for the device, and if it requires a power cycle
