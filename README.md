@@ -51,10 +51,11 @@ and automated tests. A feature listed above may still be unavailable on a specif
 |-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
 | USB HID               | Uses the cgo-free [`go-ctap/hid`](https://github.com/go-ctap/hid) backend                                                                 |
 | Windows named pipe    | Connects to a running [`go-ctap/windows-proxy`](https://github.com/go-ctap/windows-proxy); see [`examples/namedpipe`](examples/namedpipe) |
+| ISO 7816 / NFC        | Wraps an exclusive raw APDU connection such as [`go-ctap/pcsc`](https://github.com/go-ctap/pcsc); see [`examples/iso7816`](examples/iso7816) |
 | Token2 CTAP over APDU | Requires a PC/SC implementation such as [`go-ctap/pcsc`](https://github.com/go-ctap/pcsc); see [`examples/token2`](examples/token2)       |
 
-Generic NFC, BLE, hybrid, and digital-credential transports are not supported. Token2 support is experimental because
-its protocol is not publicly documented by the vendor.
+BLE, hybrid, and digital-credential transports are not supported. Token2 support is experimental because its protocol
+is not publicly documented by the vendor.
 
 ## Installation
 
@@ -136,7 +137,9 @@ operations may work without a token on an authenticator that has no PIN or UV pr
 - `Device.GetInfo(ctx)` always sends `authenticatorGetInfo` and returns the current device data. The response is also
   cached for capability checks; known state changes invalidate it, and the next check refreshes it lazily.
 - Finish assertion and credential-management iterators before sending another command.
-- Match CTAP errors as `*transport.CTAPError` and Token2 ISO 7816 errors as `*token2.APDUError`.
+- Match CTAP errors as `*transport.CTAPError`, standard status-word errors as `*iso7816.APDUError` from
+  [`go-ctap/iso7816`](https://github.com/go-ctap/iso7816), and Token2 status-word errors as
+  `*token2.APDUError`.
 - Device I/O accepts `context.Context`. Cancellation depends on transport support.
 
 ### Diagnostic logging
@@ -170,6 +173,7 @@ Each example is a separate Go module.
 |---|---|---|
 | [`examples/pin`](examples/pin) | List credentials with a PIN | `FIDO2_PIN` |
 | [`examples/uv`](examples/uv) | List biometric enrollments and credentials with built-in UV | None |
+| [`examples/iso7816`](examples/iso7816) | Read authenticator information from a standard FIDO smart card | Optional `PCSC_READER` |
 | [`examples/token2`](examples/token2) | List credentials through Token2 and PC/SC | `FIDO2_PIN`, optional `PCSC_READER` |
 | [`examples/token2-selection`](examples/token2-selection) | Test device selection on Token2 | Optional `PCSC_READER` |
 | [`examples/namedpipe`](examples/namedpipe) | Ping and list credentials through the Windows proxy | `FIDO2_PIN`, running proxy |
