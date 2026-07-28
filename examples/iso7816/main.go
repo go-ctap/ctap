@@ -59,7 +59,6 @@ func run(ctx context.Context) (err error) {
 	}
 
 	fmt.Printf("PC/SC reader: %s\n", readerName)
-	fmt.Printf("Selected applet version: %s\n", isoTransport.Version())
 	fmt.Printf("CTAP versions: %v\n", info.Versions)
 	fmt.Printf("AAGUID: %s\n", info.AAGUID)
 	fmt.Printf("Options: %v\n", info.Options)

@@ -90,7 +90,6 @@ func (c ioCard) Close() error {
 // Transport carries CTAP2 commands through the standard FIDO ISO 7816 applet.
 type Transport struct {
 	card      ioCard
-	version   protocol.Version
 	mu        sync.Mutex
 	closeOnce sync.Once
 	closeErr  error
@@ -122,22 +121,13 @@ func New(ctx context.Context, card Card) (*Transport, error) {
 		)
 	}
 
-	version := protocol.Version(response.Data)
-	switch version {
+	switch protocol.Version(response.Data) {
 	case protocol.FIDO_2_0, protocol.U2F_V2:
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedVersion, response.Data)
 	}
-	t.version = version
 
 	return t, nil
-}
-
-// Version returns the capability string reported when the FIDO applet was
-// selected. U2F_V2 can identify either a CTAP1-only authenticator or one that
-// supports both CTAP1 and CTAP2; authenticatorGetInfo distinguishes them.
-func (t *Transport) Version() protocol.Version {
-	return t.version
 }
 
 // CBOR sends a CTAP command byte and CBOR payload through NFCCTAP_MSG. It uses

@@ -72,9 +72,8 @@ func commandBytes(t testing.TB, command baseiso7816.Command) []byte {
 }
 
 func TestNewSelectsFIDOApplet(t *testing.T) {
-	transport, card := newFakeTransport(t)
+	_, card := newFakeTransport(t)
 
-	assert.Equal(t, protocol.FIDO_2_0, transport.Version())
 	require.Empty(t, card.exchanges)
 }
 
@@ -84,10 +83,9 @@ func TestNewAcceptsCombinedCTAP1AndCTAP2Version(t *testing.T) {
 		response: append([]byte(protocol.U2F_V2), 0x90, 0x00),
 	}}}
 
-	transport, err := New(context.Background(), card)
+	_, err := New(context.Background(), card)
 
 	require.NoError(t, err)
-	assert.Equal(t, protocol.U2F_V2, transport.Version())
 }
 
 func TestNewReassemblesChainedSelectionResponse(t *testing.T) {
@@ -100,10 +98,9 @@ func TestNewReassemblesChainedSelectionResponse(t *testing.T) {
 		response: []byte{'2', '_', '0', 0x90, 0x00},
 	})
 
-	transport, err := New(context.Background(), card)
+	_, err := New(context.Background(), card)
 
 	require.NoError(t, err)
-	assert.Equal(t, protocol.FIDO_2_0, transport.Version())
 }
 
 func TestNewRejectsUnsupportedSelectionVersion(t *testing.T) {
@@ -451,7 +448,7 @@ func TestCloseReturnsTypedIOError(t *testing.T) {
 
 func TestCloseInterruptsBlockedTransmit(t *testing.T) {
 	card := newBlockingCard()
-	transport := &Transport{card: ioCard{Card: card}, version: protocol.FIDO_2_0}
+	transport := &Transport{card: ioCard{Card: card}}
 	resultc := make(chan error, 1)
 	go func() {
 		_, err := transport.CBOR(context.Background(), []byte{0x04})
