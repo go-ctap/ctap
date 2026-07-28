@@ -71,6 +71,24 @@ func commandBytes(t testing.TB, command baseiso7816.Command) []byte {
 	return apdu
 }
 
+func TestCTAP23ControlCommands(t *testing.T) {
+	assert.Equal(
+		t,
+		[]byte{0x80, 0x11, 0x00, 0x00, 0x00},
+		commandBytes(t, getResponseCommand),
+	)
+	assert.Equal(
+		t,
+		[]byte{0x80, 0x11, 0x11, 0x00, 0x00},
+		commandBytes(t, cancelGetResponseCommand),
+	)
+	assert.Equal(
+		t,
+		[]byte{0x80, 0x12, 0x01, 0x00},
+		commandBytes(t, endSessionCommand),
+	)
+}
+
 func TestNewSelectsFIDOApplet(t *testing.T) {
 	_, card := newFakeTransport(t)
 
@@ -423,18 +441,25 @@ func TestNewPreCanceledDoesNotTransmit(t *testing.T) {
 	require.Empty(t, card.exchanges)
 }
 
-func TestCloseDelegatesToCardOnce(t *testing.T) {
-	transport, card := newFakeTransport(t)
+func TestCloseEndsSessionAndClosesCardOnce(t *testing.T) {
+	transport, card := newFakeTransport(t, exchange{
+		request:  commandBytes(t, endSessionCommand),
+		response: []byte{0x90, 0x00},
+	})
 
 	require.NoError(t, transport.Close())
 	require.NoError(t, transport.Close())
 
 	assert.True(t, card.closed)
 	assert.Equal(t, 1, card.closeCalls)
+	require.Empty(t, card.exchanges)
 }
 
 func TestCloseReturnsTypedIOError(t *testing.T) {
-	transport, card := newFakeTransport(t)
+	transport, card := newFakeTransport(t, exchange{
+		request:  commandBytes(t, endSessionCommand),
+		response: []byte{0x90, 0x00},
+	})
 	wantErr := errors.New("reader unavailable")
 	card.closeErr = wantErr
 
@@ -444,6 +469,23 @@ func TestCloseReturnsTypedIOError(t *testing.T) {
 	var ioErr *ctaptransport.IOError
 	require.ErrorAs(t, err, &ioErr)
 	assert.Equal(t, ctaptransport.IOClose, ioErr.Operation)
+}
+
+func TestCloseClosesCardWhenEndSessionIsRejected(t *testing.T) {
+	transport, card := newFakeTransport(t, exchange{
+		request:  commandBytes(t, endSessionCommand),
+		response: []byte{0x6a, 0x86},
+	})
+
+	err := transport.Close()
+
+	var apduErr *baseiso7816.APDUError
+	require.ErrorAs(t, err, &apduErr)
+	assert.Equal(t, byte(0x6a), apduErr.SW1)
+	assert.Equal(t, byte(0x86), apduErr.SW2)
+	assert.True(t, card.closed)
+	assert.Equal(t, 1, card.closeCalls)
+	require.Empty(t, card.exchanges)
 }
 
 func TestCloseInterruptsBlockedTransmit(t *testing.T) {

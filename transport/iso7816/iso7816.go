@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/go-ctap/ctap/protocol"
 	ctaptransport "github.com/go-ctap/ctap/transport"
@@ -21,18 +22,25 @@ var (
 var fidoAppletAID = []byte{0xa0, 0x00, 0x00, 0x06, 0x47, 0x2f, 0x00, 0x01}
 
 const (
-	claISO                   = 0x00
-	claCTAP                  = 0x80
-	insSelect                = 0xa4
-	insNFCCTAPMsg            = 0x10
-	insNFCCTAPGetResponse    = 0x11
-	p1SelectByName           = 0x04
-	p1SupportsGetResponse    = 0x80
+	claISO                = 0x00
+	claCTAP               = 0x80
+	insSelect             = 0xa4
+	insNFCCTAPMsg         = 0x10
+	insNFCCTAPGetResponse = 0x11
+	insNFCCTAPControl     = 0x12
+	p1SelectByName        = 0x04
+	p1SupportsGetResponse = 0x80
+	p1EndCTAPMsg          = 0x01
+	// CTAP 2.3 defines P1=0x11 on NFCCTAP_GETRESPONSE as cancellation.
+	// Older authenticators may reject it; cancelPolling then closes and
+	// invalidates the transport because the pending command cannot be drained
+	// safely.
 	p1Cancel                 = 0x11
 	statusResponse           = 0x91
 	statusResponseFinal      = 0x00
 	shortCommandFragmentSize = 240
 	maxMessageSize           = 0xffff
+	closeTimeout             = time.Second
 )
 
 var (
@@ -55,6 +63,12 @@ var (
 		INS:      insNFCCTAPGetResponse,
 		P1:       p1Cancel,
 		Le:       256,
+		Encoding: baseiso7816.EncodingShort,
+	}
+	endSessionCommand = baseiso7816.Command{
+		CLA:      claCTAP,
+		INS:      insNFCCTAPControl,
+		P1:       p1EndCTAPMsg,
 		Encoding: baseiso7816.EncodingShort,
 	}
 )
@@ -264,10 +278,30 @@ func (t *Transport) closeOnIOError(ctx context.Context, err error) error {
 	return &ctaptransport.DeviceInvalidatedError{Err: err}
 }
 
-// Close closes the underlying card.
+// Close disables the selected FIDO applet when no operation is in flight, then
+// closes the underlying card. If an operation holds the transport lock, Close
+// skips the control APDU so it can close the card immediately and interrupt the
+// blocked operation.
 func (t *Transport) Close() error {
 	t.closeOnce.Do(func() {
-		t.closeErr = t.card.Close()
+		if !t.mu.TryLock() {
+			t.closeErr = t.card.Close()
+			return
+		}
+		defer t.mu.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
+		defer cancel()
+
+		response, endErr := baseiso7816.Transmit(ctx, t.card, endSessionCommand)
+		if endErr == nil && response.Status != baseiso7816.StatusSuccess {
+			endErr = response.APDUError()
+		}
+		if endErr != nil {
+			endErr = fmt.Errorf("iso7816: end FIDO applet session: %w", endErr)
+		}
+
+		t.closeErr = errors.Join(endErr, t.card.Close())
 	})
 	return t.closeErr
 }
