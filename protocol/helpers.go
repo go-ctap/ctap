@@ -7,7 +7,6 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-ctap/ctap/attestation"
-	"github.com/go-ctap/ctap/cose"
 	"github.com/google/uuid"
 )
 
@@ -144,147 +143,13 @@ func (vv Versions) IsPreviewOnly() bool {
 }
 
 func (r *AuthenticatorMakeCredentialResponse) PackedAttestationStatementFormat() (attestation.PackedAttestationStatementFormat, bool) {
-	algRaw, ok := r.AttestationStatement["alg"]
-	if !ok {
-		return attestation.PackedAttestationStatementFormat{}, false
-	}
-	alg, ok := algRaw.(int64)
-	if !ok {
-		return attestation.PackedAttestationStatementFormat{}, false
-	}
-
-	sigRaw, ok := r.AttestationStatement["sig"]
-	if !ok {
-		return attestation.PackedAttestationStatementFormat{}, false
-	}
-	sig, ok := sigRaw.([]byte)
-	if !ok {
-		return attestation.PackedAttestationStatementFormat{}, false
-	}
-
-	var x5c [][]byte
-	if x5cRaw, present := r.AttestationStatement["x5c"]; present {
-		var ok bool
-		x5c, ok = attestationX509Chain(x5cRaw)
-		if !ok {
-			return attestation.PackedAttestationStatementFormat{}, false
-		}
-	}
-
-	return attestation.PackedAttestationStatementFormat{
-		Algorithm: cose.Algorithm(alg),
-		Signature: sig,
-		X509Chain: x5c,
-	}, true
+	return attestation.ParsePackedStatement(r.AttestationStatement)
 }
 
 func (r *AuthenticatorMakeCredentialResponse) FIDOU2FAttestationStatementFormat() (attestation.FIDOU2FAttestationStatementFormat, bool) {
-	x5cRaw, ok := r.AttestationStatement["x5c"]
-	if !ok {
-		return attestation.FIDOU2FAttestationStatementFormat{}, false
-	}
-	x5c, ok := attestationX509Chain(x5cRaw)
-	if !ok {
-		return attestation.FIDOU2FAttestationStatementFormat{}, false
-	}
-
-	sigRaw, ok := r.AttestationStatement["sig"]
-	if !ok {
-		return attestation.FIDOU2FAttestationStatementFormat{}, false
-	}
-	sig, ok := sigRaw.([]byte)
-	if !ok {
-		return attestation.FIDOU2FAttestationStatementFormat{}, false
-	}
-
-	return attestation.FIDOU2FAttestationStatementFormat{
-		Signature: sig,
-		X509Chain: x5c,
-	}, true
+	return attestation.ParseFIDOU2FStatement(r.AttestationStatement)
 }
 
 func (r *AuthenticatorMakeCredentialResponse) TPMAttestationStatementFormat() (attestation.TPMAttestationStatementFormat, bool) {
-	verRaw, ok := r.AttestationStatement["ver"]
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-	ver, ok := verRaw.(string)
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-
-	algRaw, ok := r.AttestationStatement["alg"]
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-	alg, ok := algRaw.(int64)
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-
-	x5cRaw, ok := r.AttestationStatement["x5c"]
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-	x5c, ok := attestationX509Chain(x5cRaw)
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-
-	sigRaw, ok := r.AttestationStatement["sig"]
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-	sig, ok := sigRaw.([]byte)
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-
-	certInfoRaw, ok := r.AttestationStatement["certInfo"]
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-	certInfo, ok := certInfoRaw.([]byte)
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-
-	pubAreaRaw, ok := r.AttestationStatement["pubArea"]
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-	pubArea, ok := pubAreaRaw.([]byte)
-	if !ok {
-		return attestation.TPMAttestationStatementFormat{}, false
-	}
-
-	return attestation.TPMAttestationStatementFormat{
-		Version:   ver,
-		Algorithm: cose.Algorithm(alg),
-		X509Chain: x5c,
-		Signature: sig,
-		CertInfo:  certInfo,
-		PubArea:   pubArea,
-	}, true
-}
-
-func attestationX509Chain(raw any) ([][]byte, bool) {
-	if chain, ok := raw.([][]byte); ok {
-		return chain, true
-	}
-
-	items, ok := raw.([]any)
-	if !ok {
-		return nil, false
-	}
-
-	chain := make([][]byte, 0, len(items))
-	for _, item := range items {
-		cert, ok := item.([]byte)
-		if !ok {
-			return nil, false
-		}
-		chain = append(chain, cert)
-	}
-	return chain, true
+	return attestation.ParseTPMStatement(r.AttestationStatement)
 }

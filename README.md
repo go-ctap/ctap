@@ -26,6 +26,7 @@ Main features include:
 - legacy and CTAP 2.3 large-blob storage;
 - `encIdentifier` and `encCredStoreState` decryption;
 - PIN/UV Auth Protocols One and Two;
+- format-level attestation-object parsing and packed/FIDO U2F signature verification;
 - the `credProtect`, `credBlob`, `largeBlobKey`, `largeBlob`, `minPinLength`, `pinComplexityPolicy`, `hmac-secret`,
   `hmac-secret-mc`, `thirdPartyPayment`, and WebAuthn `prf` extensions.
 
