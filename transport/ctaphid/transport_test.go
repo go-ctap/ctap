@@ -391,7 +391,7 @@ func TestTransportCBORDoesNotCancelForContextErrorFromActiveContext(t *testing.T
 	}
 }
 
-func TestTransportCloseInterruptsBlockedCBOR(t *testing.T) {
+func TestTransportCloseCancelsAndInterruptsBlockedCBOR(t *testing.T) {
 	dev := newBlockingDevice()
 	transport := NewTransport(dev, transportTestCID)
 	resultc := make(chan error, 1)
@@ -402,6 +402,8 @@ func TestTransportCloseInterruptsBlockedCBOR(t *testing.T) {
 
 	receive(t, dev.writes, "Selection request was not written")
 	require.NoError(t, transport.Close())
+	cancelRequest := receive(t, dev.writes, "CANCEL was not written before Close")
+	assert.Equal(t, byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5])
 	err := receive(t, resultc, "Close did not interrupt Selection")
 	require.ErrorIs(t, err, io.ErrClosedPipe)
 	var deviceErr *ctaptransport.IOError
@@ -494,9 +496,10 @@ func (d *orderedDevice) Write(ctx context.Context, p []byte) (int, error) {
 func (d *orderedDevice) Close() error { return nil }
 
 type blockingDevice struct {
-	writes chan []byte
-	closed chan struct{}
-	once   sync.Once
+	writes        chan []byte
+	closed        chan struct{}
+	cancelWritten bool
+	once          sync.Once
 }
 
 type cancelDrainErrorDevice struct {
@@ -656,10 +659,16 @@ func (d *blockingDevice) Read(ctx context.Context, _ []byte) (int, error) {
 
 func (d *blockingDevice) Write(_ context.Context, p []byte) (int, error) {
 	d.writes <- bytes.Clone(p)
+	if p[5] == byte(CTAPHID_CANCEL)|INIT_PACKET_BIT {
+		d.cancelWritten = true
+	}
 	return len(p), nil
 }
 
 func (d *blockingDevice) Close() error {
+	if !d.cancelWritten {
+		return errors.New("device closed before CTAPHID_CANCEL")
+	}
 	d.once.Do(func() { close(d.closed) })
 	return nil
 }

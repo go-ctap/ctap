@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-ctap/ctap/protocol"
@@ -18,10 +19,11 @@ import (
 // continuously drains the shared HID endpoint and retains this channel's
 // reports for contextual command reads.
 type Transport struct {
-	device  Device
-	cid     ChannelID
-	mu      sync.Mutex
-	writeMu sync.Mutex // serializes CTAPHID_CBOR and CTAPHID_CANCEL writes
+	device     Device
+	cid        ChannelID
+	mu         sync.Mutex
+	writeMu    sync.Mutex // serializes CTAPHID_CBOR and CTAPHID_CANCEL writes
+	activeCBOR atomic.Bool
 }
 
 // Device is the contextual I/O subset implemented by hid.Device and proxy
@@ -33,7 +35,10 @@ type Device interface {
 
 var _ ctaptransport.Device = (*Transport)(nil)
 
-const channelBusyRetryDelay = 100 * time.Millisecond
+const (
+	channelBusyRetryDelay = 100 * time.Millisecond
+	closeCancelTimeout    = 250 * time.Millisecond
+)
 
 func retryChannelBusy[T any](ctx context.Context, operation func() (T, error)) (T, error) {
 	for {
@@ -48,8 +53,10 @@ func retryChannelBusy[T any](ctx context.Context, operation func() (T, error)) (
 			if !timer.Stop() {
 				<-timer.C
 			}
+
 			var zero T
 			return zero, ctx.Err()
+
 		case <-timer.C:
 		}
 	}
@@ -59,6 +66,7 @@ func retryChannelBusyError(ctx context.Context, operation func() error) error {
 	_, err := retryChannelBusy(ctx, func() (struct{}, error) {
 		return struct{}{}, operation()
 	})
+
 	return err
 }
 
@@ -74,12 +82,12 @@ func isDeviceIOError(err error) bool {
 }
 
 func (t *Transport) closeOnIOError(err error) error {
-	if isDeviceIOError(err) {
-		_ = t.device.Close()
-		return &ctaptransport.DeviceInvalidatedError{Err: err}
+	if !isDeviceIOError(err) {
+		return err
 	}
 
-	return err
+	_ = t.device.Close()
+	return &ctaptransport.DeviceInvalidatedError{Err: err}
 }
 
 // Open allocates a CTAPHID channel on device. The caller retains ownership of
@@ -117,51 +125,83 @@ func NewTransport(device Device, cid ChannelID) *Transport {
 	}
 }
 
-// CBOR exchanges a CBOR command and cancels it when response waiting is canceled.
+// CBOR exchanges one CTAP command on this channel. Canceling ctx sends
+// CTAPHID_CANCEL and drains the command's terminal response before returning.
 func (t *Transport) CBOR(ctx context.Context, data []byte) (ctaptransport.CBORResponse, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return ctaptransport.CBORResponse{}, err
 	}
 
-	response, err := retryChannelBusy(ctx, func() (ctaptransport.CBORResponse, error) {
-		command, err := t.writeCBOR(ctx, data)
-		if err != nil {
-			return ctaptransport.CBORResponse{}, err
-		}
+	t.activeCBOR.Store(true)
+	defer t.activeCBOR.Store(false)
 
-		response, err := readCBORResponse(ctx, t.device, t.cid, command)
-		if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
-			cancelCtx := context.WithoutCancel(ctx)
-			cancelErr := t.closeOnIOError(t.cancel(cancelCtx))
-			if cancelErr == nil {
-				// The canceled request still completes with a terminal response.
-				_, drainErr := readCBORResponse(cancelCtx, t.device, t.cid, command)
-				if _, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](t.closeOnIOError(drainErr)); invalidated {
-					return response, &ctaptransport.DeviceInvalidatedError{Err: err}
-				}
-			} else if _, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](cancelErr); invalidated {
-				return response, &ctaptransport.DeviceInvalidatedError{Err: err}
-			}
-		}
-		return response, err
+	response, err := retryChannelBusy(ctx, func() (ctaptransport.CBORResponse, error) {
+		return t.exchangeCBOR(ctx, data)
 	})
+
 	return response, t.closeOnIOError(err)
+}
+
+func (t *Transport) exchangeCBOR(ctx context.Context, data []byte) (ctaptransport.CBORResponse, error) {
+	command, err := t.writeCBOR(ctx, data)
+	if err != nil {
+		return ctaptransport.CBORResponse{}, err
+	}
+
+	response, err := readCBORResponse(ctx, t.device, t.cid, command)
+	ctxErr := ctx.Err()
+	if ctxErr == nil || !errors.Is(err, ctxErr) {
+		return response, err
+	}
+
+	return t.cancelAndDrainCBOR(ctx, command, response, err)
+}
+
+func (t *Transport) cancelAndDrainCBOR(
+	ctx context.Context,
+	command protocol.Command,
+	response ctaptransport.CBORResponse,
+	originalErr error,
+) (ctaptransport.CBORResponse, error) {
+	cancelCtx := context.WithoutCancel(ctx)
+	cancelErr := t.Cancel(cancelCtx)
+	if _, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](cancelErr); invalidated {
+		return response, &ctaptransport.DeviceInvalidatedError{Err: originalErr}
+	}
+	if cancelErr != nil {
+		return response, originalErr
+	}
+
+	// CTAPHID_CANCEL has no response of its own. The canceled CBOR request still
+	// completes with CTAP2_ERR_KEEPALIVE_CANCEL, which must be drained before the
+	// channel can carry another request.
+	_, drainErr := readCBORResponse(cancelCtx, t.device, t.cid, command)
+	if _, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](t.closeOnIOError(drainErr)); invalidated {
+		return response, &ctaptransport.DeviceInvalidatedError{Err: originalErr}
+	}
+
+	return response, originalErr
 }
 
 func (t *Transport) writeCBOR(ctx context.Context, data []byte) (protocol.Command, error) {
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
+
 	return writeCBOR(ctx, t.device, t.cid, data)
 }
 
+// Ping checks channel liveness and returns the echoed payload.
 func (t *Transport) Ping(ctx context.Context, data []byte) ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -172,61 +212,78 @@ func (t *Transport) Ping(ctx context.Context, data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, t.closeOnIOError(err)
 	}
+
 	return response.Bytes, nil
 }
 
+// Wink asks the authenticator to signal its physical presence.
 func (t *Transport) Wink(ctx context.Context) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
 	err := retryChannelBusyError(ctx, func() error {
 		return Wink(ctx, t.device, t.cid)
 	})
+
 	return t.closeOnIOError(err)
 }
 
+// Lock controls the CTAPHID channel lock.
 func (t *Transport) Lock(ctx context.Context, seconds uint8) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
 	err := retryChannelBusyError(ctx, func() error {
 		return Lock(ctx, t.device, t.cid, seconds)
 	})
+
 	return t.closeOnIOError(err)
 }
 
+// Cancel aborts the active CBOR request on this channel.
 func (t *Transport) Cancel(ctx context.Context) error {
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
 	err := Cancel(ctx, t.device, t.cid)
 	return t.closeOnIOError(err)
 }
 
-func (t *Transport) cancel(ctx context.Context) error {
-	t.writeMu.Lock()
-	defer t.writeMu.Unlock()
-	return Cancel(ctx, t.device, t.cid)
-}
-
+// Vendor exchanges one vendor-specific CTAPHID command.
 func (t *Transport) Vendor(ctx context.Context, command Command, data []byte) (VendorResponse, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return VendorResponse{}, err
 	}
+
 	response, err := retryChannelBusy(ctx, func() (VendorResponse, error) {
 		return Vendor(ctx, t.device, t.cid, command, data)
 	})
+
 	return response, t.closeOnIOError(err)
 }
 
+// Close cancels an active CBOR exchange before releasing the HID connection.
 func (t *Transport) Close() error {
+	if t.activeCBOR.Load() {
+		ctx, cancel := context.WithTimeout(context.Background(), closeCancelTimeout)
+		_ = t.Cancel(ctx)
+		cancel()
+	}
+
 	return t.device.Close()
 }
