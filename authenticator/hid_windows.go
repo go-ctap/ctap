@@ -26,7 +26,10 @@ func Enumerate(ctx context.Context, opts ...options.Option) iter.Seq2[*ghid.Devi
 			return
 		}
 
-		for devInfo, err := range ghid.Enumerate() {
+		for devInfo, err := range ghid.Enumerate(
+			ghid.WithUsagePage(0xf1d0),
+			ghid.WithUsage(0x01),
+		) {
 			if err := ctx.Err(); err != nil {
 				yield(nil, err)
 				return
