@@ -9,7 +9,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/go-ctap/hid v0.10.1
 	github.com/go-ctap/iso7816 v0.1.0
-	github.com/go-ctap/windows-proxy v0.3.1
+	github.com/go-ctap/windows-proxy v0.4.0
 	github.com/google/uuid v1.6.0
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.11.1
