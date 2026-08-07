@@ -3,7 +3,7 @@ module github.com/go-ctap/ctap/examples/token2
 go 1.26.3
 
 require (
-	github.com/go-ctap/ctap v0.35.0
+	github.com/go-ctap/ctap v0.43.0
 	github.com/go-ctap/pcsc v0.8.0
 )
 

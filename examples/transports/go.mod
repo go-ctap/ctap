@@ -2,7 +2,7 @@ module github.com/go-ctap/ctap/examples/transports
 
 go 1.26.3
 
-require github.com/go-ctap/ctap v0.38.0
+require github.com/go-ctap/ctap v0.43.0
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect

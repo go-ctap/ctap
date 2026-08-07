@@ -2,7 +2,7 @@ module github.com/go-ctap/ctap/examples/iso7816
 
 go 1.26.3
 
-require github.com/go-ctap/ctap v0.38.0
+require github.com/go-ctap/ctap v0.43.0
 
 require (
 	github.com/ebitengine/purego v0.10.2 // indirect
