@@ -10,6 +10,7 @@ github.com/go-ctap/hid v0.10.1 h1:mwGe/c5H4e7mzsVeC14lIucVY7piVWIPG6RV3CJYPQk=
 github.com/go-ctap/hid v0.10.1/go.mod h1:JDxD3E+4ixQRyLWk6aG0sa+lr0CFs3tiSB9LGFHS50E=
 github.com/go-ctap/windows-proxy v0.3.1 h1:NJ94VRoG6FtGU3BI9T1FNXGKgiDRXG6P2wEu6B4wTFA=
 github.com/go-ctap/windows-proxy v0.3.1/go.mod h1:4U2jlX61XWpuwyVDZ/XFycVu3XXlfY1dy/p5ykcS16s=
+github.com/go-ctap/windows-proxy v0.4.0/go.mod h1:4U2jlX61XWpuwyVDZ/XFycVu3XXlfY1dy/p5ykcS16s=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=

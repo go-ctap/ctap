@@ -14,8 +14,8 @@ import (
 	proxyprotocol "github.com/go-ctap/windows-proxy/protocol"
 )
 
-// Enumerate returns HID authenticators reported by the proxy.
-func Enumerate(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
+// Devices returns HID authenticators reported by the proxy.
+func Devices(ctx context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 	return func(yield func(*ghid.DeviceInfo, error) bool) {
 		pipe, err := winio.DialPipeContext(ctx, proxyprotocol.NamedPipePath)
 		if err != nil {

@@ -10,7 +10,7 @@ import (
 	ghid "github.com/go-ctap/hid"
 )
 
-func Enumerate(context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
+func Devices(context.Context) iter.Seq2[*ghid.DeviceInfo, error] {
 	return func(yield func(*ghid.DeviceInfo, error) bool) {
 		yield(nil, ErrNotSupported)
 	}

@@ -10,8 +10,6 @@ type Options struct {
 	DiagnosticSink diagnostic.Sink
 	EncMode        cbor.EncMode
 	DecMode        cbor.DecMode
-	Paths          []string
-	UseNamedPipe   bool
 	Transport      ctaptransport.CBOR
 }
 
@@ -34,18 +32,6 @@ func WithEncMode(encMode cbor.EncMode) Option {
 func WithDecMode(decMode cbor.DecMode) Option {
 	return func(opts *Options) {
 		opts.DecMode = decMode
-	}
-}
-
-func WithPaths(paths ...string) Option {
-	return func(opts *Options) {
-		opts.Paths = paths
-	}
-}
-
-func WithUseNamedPipes() Option {
-	return func(opts *Options) {
-		opts.UseNamedPipe = true
 	}
 }
 

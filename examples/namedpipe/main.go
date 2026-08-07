@@ -8,14 +8,16 @@ import (
 	"os"
 
 	"github.com/go-ctap/ctap/authenticator"
-	"github.com/go-ctap/ctap/discover"
-	"github.com/go-ctap/ctap/options"
+	"github.com/go-ctap/ctap/backend/hidproxy"
 	"github.com/go-ctap/ctap/protocol"
 )
 
 func main() {
 	ctx := context.Background()
-	device, err := discover.SelectDevice(ctx, options.WithUseNamedPipes())
+	device, err := authenticator.Select(
+		ctx,
+		hidproxy.Enumerate,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,7 +37,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("path: %s\n", device.Path)
 	fmt.Printf("versions: %v\n", info.Versions)
 	fmt.Printf("AAGUID: %s\n", info.AAGUID)
 	fmt.Println("named-pipe CTAPHID ping: OK")

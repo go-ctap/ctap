@@ -8,10 +8,12 @@ github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh
 github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/go-ctap/hid v0.10.1 h1:mwGe/c5H4e7mzsVeC14lIucVY7piVWIPG6RV3CJYPQk=
 github.com/go-ctap/hid v0.10.1/go.mod h1:JDxD3E+4ixQRyLWk6aG0sa+lr0CFs3tiSB9LGFHS50E=
-github.com/go-ctap/pcsc v0.6.0 h1:6c7A7AoOCGvSBH7w0pEIMtWfwc5azdfUts5MYGO2CgE=
-github.com/go-ctap/pcsc v0.6.0/go.mod h1:Z1nd+GZfexftHREzBaQuMIO2iltFSLk3c2+KbLco2Gw=
-github.com/go-ctap/windows-proxy v0.3.1 h1:NJ94VRoG6FtGU3BI9T1FNXGKgiDRXG6P2wEu6B4wTFA=
-github.com/go-ctap/windows-proxy v0.3.1/go.mod h1:4U2jlX61XWpuwyVDZ/XFycVu3XXlfY1dy/p5ykcS16s=
+github.com/go-ctap/iso7816 v0.1.0 h1:6zDOCAaY/ABWuBfBiW2pBB9VE5LR+iwHiLKSns88bjI=
+github.com/go-ctap/iso7816 v0.1.0/go.mod h1:+oFhICdRfaUC7NU/0+pV1OKfF2hn3ulr0rdQ0rd8EKw=
+github.com/go-ctap/pcsc v0.8.0 h1:7y3gNomLmrWmLOANAFFYcaEppf9S7ccqVEzN2VIaqDc=
+github.com/go-ctap/pcsc v0.8.0/go.mod h1:Z1nd+GZfexftHREzBaQuMIO2iltFSLk3c2+KbLco2Gw=
+github.com/go-ctap/windows-proxy v0.4.0 h1:dkdMRA08zEue/mtoR+3XJXYM1D4R+IjZ8hIxDadOFis=
+github.com/go-ctap/windows-proxy v0.4.0/go.mod h1:4U2jlX61XWpuwyVDZ/XFycVu3XXlfY1dy/p5ykcS16s=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=

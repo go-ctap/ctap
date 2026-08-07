@@ -9,22 +9,16 @@ import (
 	"strings"
 
 	"github.com/go-ctap/ctap/authenticator"
+	"github.com/go-ctap/ctap/backend/token2"
 	"github.com/go-ctap/ctap/protocol"
-	"github.com/go-ctap/ctap/transport/token2"
 	"github.com/go-ctap/pcsc"
 )
 
 func main() {
 	ctx := context.Background()
 	readerName := findReader(os.Getenv("PCSC_READER"))
-	card, err := pcsc.Open(readerName)
+	transport, err := token2.Open(ctx, readerName)
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	transport, err := token2.New(ctx, card)
-	if err != nil {
-		_ = card.Close()
 		log.Fatal(err)
 	}
 

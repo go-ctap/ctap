@@ -7,13 +7,16 @@ import (
 	"os"
 
 	"github.com/go-ctap/ctap/authenticator"
-	"github.com/go-ctap/ctap/discover"
+	directhid "github.com/go-ctap/ctap/backend/hid"
 	"github.com/go-ctap/ctap/protocol"
 )
 
 func main() {
 	ctx := context.Background()
-	device, err := discover.SelectDevice(ctx)
+	device, err := authenticator.Select(
+		ctx,
+		directhid.Enumerate,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -27,7 +27,6 @@ import (
 
 // Device represents a physical or virtual hardware device supporting CTAP communication protocols.
 type Device struct {
-	Path       string
 	transport  ctaptransport.Device
 	info       protocol.AuthenticatorGetInfoResponse
 	infoValid  bool
@@ -160,25 +159,6 @@ func New(ctx context.Context, transport ctaptransport.Device, opts ...options.Op
 	d.info = info
 	d.infoValid = true
 
-	return d, nil
-}
-
-// OpenHID opens a HID authenticator, allocates a CTAPHID channel, and takes
-// ownership of the resulting connection.
-func OpenHID(ctx context.Context, path string, opts ...options.Option) (*Device, error) {
-	dev, err := OpenPath(ctx, path, opts...)
-	if err != nil {
-		return nil, err
-	}
-	transport, err := ctaphid.Open(ctx, dev)
-	if err != nil {
-		return nil, errors.Join(err, dev.Close())
-	}
-	d, err := New(ctx, transport, opts...)
-	if err != nil {
-		return nil, errors.Join(err, transport.Close())
-	}
-	d.Path = path
 	return d, nil
 }
 

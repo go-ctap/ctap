@@ -48,12 +48,12 @@ and automated tests. A feature listed above may still be unavailable on a specif
 
 ## Transports
 
-| Transport             | Setup                                                                                                                                     |
-|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
-| USB HID               | Uses the cgo-free [`go-ctap/hid`](https://github.com/go-ctap/hid) backend                                                                 |
-| Windows named pipe    | Connects to a running [`go-ctap/windows-proxy`](https://github.com/go-ctap/windows-proxy); see [`examples/namedpipe`](examples/namedpipe) |
+| Transport             | Setup                                                                                                                                        |
+|-----------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| USB HID               | Uses the cgo-free [`go-ctap/hid`](https://github.com/go-ctap/hid) backend                                                                    |
+| Windows named pipe    | Connects to a running [`go-ctap/windows-proxy`](https://github.com/go-ctap/windows-proxy); see [`examples/namedpipe`](examples/namedpipe)    |
 | ISO 7816 / NFC        | Wraps an exclusive raw APDU connection such as [`go-ctap/pcsc`](https://github.com/go-ctap/pcsc); see [`examples/iso7816`](examples/iso7816) |
-| Token2 CTAP over APDU | Requires a PC/SC implementation such as [`go-ctap/pcsc`](https://github.com/go-ctap/pcsc); see [`examples/token2`](examples/token2)       |
+| Token2 CTAP over APDU | Requires a PC/SC implementation such as [`go-ctap/pcsc`](https://github.com/go-ctap/pcsc); see [`examples/token2`](examples/token2)          |
 
 BLE, hybrid, and digital-credential transports are not supported. Token2 support is experimental because its protocol
 is not publicly documented by the vendor.
@@ -68,8 +68,10 @@ See [`go.mod`](go.mod) for the required Go version.
 
 ## Quick start
 
-`discover.SelectDevice` opens a compatible HID authenticator. If several devices are connected, it asks the user to
-touch one.
+Transport adapters enumerate initialized CTAP connections. The authenticator
+package builds transport-independent devices and selects one by user presence.
+Long-lived discovery and automatic selection belong in an application runtime
+such as `go-ctap/kit`.
 
 ```go
 package main
@@ -79,36 +81,41 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/go-ctap/ctap/discover"
+	"github.com/go-ctap/ctap/authenticator"
+	directhid "github.com/go-ctap/ctap/backend/hid"
 )
 
 func main() {
-	device, err := discover.SelectDevice(context.Background())
+	ctx := context.Background()
+	device, err := authenticator.Select(ctx, directhid.Enumerate)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer device.Close()
 
-	info, err := device.GetInfo(context.Background())
+	info, err := device.GetInfo(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("path: %s\nversions: %v\nAAGUID: %s\n", device.Path, info.Versions, info.AAGUID)
+	fmt.Printf("versions: %v\nAAGUID: %s\n", info.Versions, info.AAGUID)
 }
 ```
 
-If you know the HID path, use `authenticator.OpenHID(ctx, path)`.
+`authenticator.Select` accepts a `backend.Enumerator`, initializes every
+reported authenticator, and returns the one that confirms user presence. It
+closes every other enumerated device. Direct HID, Windows named pipe, standard
+PC/SC, and Token2 expose the same enumerator contract.
 
 ## API levels
 
-| Package | Use it for |
-|---|---|
-| `discover` | Finding and opening a device |
-| `authenticator` | Stateful workflows, capability checks, and PIN/UV handling |
-| `client` | Sending individual CTAP commands and managing state yourself |
-| `transport`, `transport/ctaphid`, `transport/token2`, `hidproxy` | Device I/O and framing |
-| `protocol`, `credential`, `attestation`, `extension`, `webauthn` | CTAP constants and data types |
-| `crypto` | Cryptographic helpers |
+| Package                                                                                             | Use it for                                                                          |
+|-----------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| `authenticator`                                                                                     | Stateful workflows, capability checks, PIN/UV handling, and user-presence selection |
+| `client`                                                                                            | Sending individual CTAP commands and managing state yourself                        |
+| `backend/hid`, `backend/hidproxy`, `backend/pcsc`, `backend/token2`                                | Finding and opening local authenticator endpoints                                   |
+| `transport`, `transport/ctaphid`, `transport/iso7816`, `transport/token2`                          | CTAP message boundaries and transport framing                                       |
+| `protocol`, `credential`, `attestation`, `extension`, `webauthn`                                    | CTAP constants and data types                                                       |
+| `crypto`                                                                                            | Cryptographic helpers                                                               |
 
 For a custom transport, implement `transport.Device` and pass it to `authenticator.New`.
 Yubico-specific device information and identity operations live in
@@ -178,8 +185,8 @@ Each example is a separate Go module.
 | [`examples/uv`](examples/uv) | List biometric enrollments and credentials with built-in UV | None |
 | [`examples/iso7816`](examples/iso7816) | Read authenticator information from a standard FIDO smart card | Optional `PCSC_READER` |
 | [`examples/token2`](examples/token2) | List credentials through Token2 and PC/SC | `FIDO2_PIN`, optional `PCSC_READER` |
-| [`examples/token2-selection`](examples/token2-selection) | Test device selection on Token2 | Optional `PCSC_READER` |
 | [`examples/namedpipe`](examples/namedpipe) | Ping and list credentials through the Windows proxy | `FIDO2_PIN`, running proxy |
+| [`examples/transports`](examples/transports) | Print `authenticatorGetInfo` for every transport | Optional Windows proxy and PC/SC service |
 
 Run an example from its directory:
 
