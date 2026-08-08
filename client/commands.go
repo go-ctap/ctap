@@ -335,6 +335,31 @@ func (cl *Client) GetKeyAgreement(
 	return resp.KeyAgreement, nil
 }
 
+func encryptNewPIN(
+	pinProtocol *crypto.PinUvAuthProtocol,
+	sharedSecret []byte,
+	pin string,
+) ([]byte, error) {
+	pinBytes := make([]byte, 64)
+	defer clear(pinBytes)
+	copy(pinBytes, pin)
+
+	return pinProtocol.Encrypt(sharedSecret, pinBytes)
+}
+
+func encryptPINHash(
+	pinProtocol *crypto.PinUvAuthProtocol,
+	sharedSecret []byte,
+	pin string,
+) ([]byte, error) {
+	pinBytes := []byte(pin)
+	defer clear(pinBytes)
+	pinHash := sha256.Sum256(pinBytes)
+	defer clear(pinHash[:])
+
+	return pinProtocol.Encrypt(sharedSecret, pinHash[:16])
+}
+
 func (cl *Client) SetPIN(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
@@ -355,25 +380,25 @@ func (cl *Client) SetPIN(
 	if err != nil {
 		return err
 	}
+	defer clear(sharedSecret)
 
-	pinBytes := make([]byte, 64)
-	copy(pinBytes, pin)
-
-	ciphertext, err := pinProtocol.Encrypt(sharedSecret, pinBytes)
+	newPinEnc, err := encryptNewPIN(pinProtocol, sharedSecret, pin)
 	if err != nil {
 		return err
 	}
+	pinUvAuthParam := crypto.Authenticate(
+		pinUvAuthProtocol,
+		sharedSecret,
+		newPinEnc,
+	)
+	clear(sharedSecret)
 
 	req := &protocol.AuthenticatorClientPINRequest{
 		PinUvAuthProtocol: pinProtocol.Number,
 		SubCommand:        protocol.ClientPINSubCommandSetPIN,
 		KeyAgreement:      platformCoseKey,
-		NewPinEnc:         ciphertext,
-		PinUvAuthParam: crypto.Authenticate(
-			pinUvAuthProtocol,
-			sharedSecret,
-			ciphertext,
-		),
+		NewPinEnc:         newPinEnc,
+		PinUvAuthParam:    pinUvAuthParam,
 	}
 
 	b, err := cl.encMode.Marshal(req)
@@ -413,24 +438,23 @@ func (cl *Client) ChangePIN(
 	if err != nil {
 		return err
 	}
+	defer clear(sharedSecret)
 
-	// Hash PIN and return the first 16 bytes of hash
-	hasher := sha256.New()
-	hasher.Write([]byte(currentPin))
-	pinHash := hasher.Sum(nil)[:16]
-
-	pinHashEnc, err := pinProtocol.Encrypt(sharedSecret, pinHash)
+	pinHashEnc, err := encryptPINHash(pinProtocol, sharedSecret, currentPin)
 	if err != nil {
 		return err
 	}
 
-	newPinBytes := make([]byte, 64)
-	copy(newPinBytes, newPin)
-
-	newPinEnc, err := pinProtocol.Encrypt(sharedSecret, newPinBytes)
+	newPinEnc, err := encryptNewPIN(pinProtocol, sharedSecret, newPin)
 	if err != nil {
 		return err
 	}
+	pinUvAuthParam := crypto.Authenticate(
+		pinUvAuthProtocol,
+		sharedSecret,
+		slices.Concat(newPinEnc, pinHashEnc),
+	)
+	clear(sharedSecret)
 
 	req := &protocol.AuthenticatorClientPINRequest{
 		PinUvAuthProtocol: pinProtocol.Number,
@@ -438,11 +462,7 @@ func (cl *Client) ChangePIN(
 		KeyAgreement:      platformCoseKey,
 		PinHashEnc:        pinHashEnc,
 		NewPinEnc:         newPinEnc,
-		PinUvAuthParam: crypto.Authenticate(
-			pinUvAuthProtocol,
-			sharedSecret,
-			slices.Concat(newPinEnc, pinHashEnc),
-		),
+		PinUvAuthParam:    pinUvAuthParam,
 	}
 
 	b, err := cl.encMode.Marshal(req)
@@ -479,12 +499,9 @@ func (cl *Client) GetPinToken(
 	if err != nil {
 		return nil, err
 	}
+	defer clear(sharedSecret)
 
-	hasher := sha256.New()
-	hasher.Write([]byte(pin))
-	pinHash := hasher.Sum(nil)[:16]
-
-	pinHashEnc, err := pinProtocol.Encrypt(sharedSecret, pinHash)
+	pinHashEnc, err := encryptPINHash(pinProtocol, sharedSecret, pin)
 	if err != nil {
 		return nil, err
 	}
@@ -542,12 +559,9 @@ func (cl *Client) GetPinUvAuthTokenUsingPinWithPermissions(
 	if err != nil {
 		return nil, err
 	}
+	defer clear(sharedSecret)
 
-	hasher := sha256.New()
-	hasher.Write([]byte(pin))
-	pinHash := hasher.Sum(nil)[:16]
-
-	pinHashEnc, err := pinProtocol.Encrypt(sharedSecret, pinHash)
+	pinHashEnc, err := encryptPINHash(pinProtocol, sharedSecret, pin)
 	if err != nil {
 		return nil, err
 	}
@@ -626,6 +640,7 @@ func (cl *Client) getPinUvAuthTokenUsingUv(
 	if err != nil {
 		return nil, err
 	}
+	defer clear(sharedSecret)
 
 	req := &protocol.AuthenticatorClientPINRequest{
 		PinUvAuthProtocol: pinProtocol.Number,

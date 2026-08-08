@@ -3,36 +3,36 @@ package protocoltwo
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
-
-	"golang.org/x/crypto/hkdf"
 )
 
 func KDF(z []byte) ([]byte, error) {
 	// Zero bytes for salt
 	salt := make([]byte, 32)
 
-	hmacKey := make([]byte, 32)
-	if _, err := io.ReadFull(
-		hkdf.New(sha256.New, z, salt, []byte("CTAP2 HMAC key")),
-		hmacKey,
-	); err != nil {
+	prk, err := hkdf.Extract(sha256.New, z, salt)
+	if err != nil {
+		return nil, fmt.Errorf("extracting CTAP2 HKDF key failed: %w", err)
+	}
+	defer clear(prk)
+
+	hmacKey, err := hkdf.Expand(sha256.New, prk, "CTAP2 HMAC key", 32)
+	if err != nil {
 		return nil, fmt.Errorf("calculating CTAP2 HMAC key using HKDF failed: %w", err)
 	}
+	defer clear(hmacKey)
 
-	aesKey := make([]byte, 32)
-	if _, err := io.ReadFull(
-		hkdf.New(sha256.New, z, salt, []byte("CTAP2 AES key")),
-		aesKey,
-	); err != nil {
+	aesKey, err := hkdf.Expand(sha256.New, prk, "CTAP2 AES key", 32)
+	if err != nil {
 		return nil, fmt.Errorf("calculating CTAP2 AES key using HKDF failed: %w", err)
 	}
+	defer clear(aesKey)
 
 	return slices.Concat(hmacKey, aesKey), nil
 }

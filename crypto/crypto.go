@@ -39,18 +39,20 @@ func NewPinUvAuthProtocol(number protocol.PinUvAuthProtocol) (*PinUvAuthProtocol
 	}, nil
 }
 
+// ECDH returns a caller-owned derived shared secret.
 func (p *PinUvAuthProtocol) ECDH(peerCoseKey cose.Key) ([]byte, error) {
 	peerPubkey, err := peerCoseKey.P256PublicKey()
 	if err != nil {
 		return nil, fmt.Errorf("cannot convert peer public key to Go *ecdh.PublicKey: %w", err)
 	}
 
-	sharedSecret, err := p.platformPrivateKey.ECDH(peerPubkey)
+	z, err := p.platformPrivateKey.ECDH(peerPubkey)
 	if err != nil {
 		return nil, fmt.Errorf("cannot derive shared secret: %w", err)
 	}
+	defer clear(z)
 
-	return p.KDF(sharedSecret)
+	return p.KDF(z)
 }
 
 func (p *PinUvAuthProtocol) KDF(z []byte) ([]byte, error) {
@@ -86,6 +88,7 @@ func (p *PinUvAuthProtocol) Decrypt(sharedSecret []byte, demCiphertext []byte) (
 	}
 }
 
+// Encapsulate returns the platform public key and a caller-owned derived shared secret.
 func (p *PinUvAuthProtocol) Encapsulate(peerCoseKey cose.Key) (cose.Key, []byte, error) {
 	sharedSecret, err := p.ECDH(peerCoseKey)
 	if err != nil {

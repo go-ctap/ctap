@@ -3,6 +3,8 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/ecdh"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -10,17 +12,27 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/telesma-app/ctap/attestation"
 	"github.com/telesma-app/ctap/cose"
 	"github.com/telesma-app/ctap/credential"
 	"github.com/telesma-app/ctap/crypto"
+	"github.com/telesma-app/ctap/crypto/protocolone"
 	"github.com/telesma-app/ctap/internal/testhid"
 	"github.com/telesma-app/ctap/options"
 	"github.com/telesma-app/ctap/protocol"
 	ctaptransport "github.com/telesma-app/ctap/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
+
+type clientPINTokenCBORFunc func(context.Context, []byte) (ctaptransport.CBORResponse, error)
+
+func (f clientPINTokenCBORFunc) CBOR(
+	ctx context.Context,
+	request []byte,
+) (ctaptransport.CBORResponse, error) {
+	return f(ctx, request)
+}
 
 func TestGetUVRetriesIncludesPinUvAuthProtocol(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
@@ -639,6 +651,120 @@ func TestClientPINRequestShapes(t *testing.T) {
 		)
 		require.Error(t, err)
 		assert.Empty(t, fake.Writes())
+	})
+
+	t.Run("returned PIN and UV tokens remain caller-owned", func(t *testing.T) {
+		for _, testCase := range []struct {
+			name        string
+			subCommand  protocol.ClientPINSubCommand
+			requestKeys []uint64
+			getToken    func(*Client, cose.Key) ([]byte, error)
+		}{
+			{
+				name:        "legacy PIN",
+				subCommand:  protocol.ClientPINSubCommandGetPinToken,
+				requestKeys: []uint64{1, 2, 3, 6},
+				getToken: func(client *Client, keyAgreement cose.Key) ([]byte, error) {
+					return client.GetPinToken(
+						context.Background(),
+						protocol.PinUvAuthProtocolOne,
+						keyAgreement,
+						"1234",
+					)
+				},
+			},
+			{
+				name:        "permissioned PIN",
+				subCommand:  protocol.ClientPINSubCommandGetPinUvAuthTokenUsingPinWithPermissions,
+				requestKeys: []uint64{1, 2, 3, 6, 9, 10},
+				getToken: func(client *Client, keyAgreement cose.Key) ([]byte, error) {
+					return client.GetPinUvAuthTokenUsingPinWithPermissions(
+						context.Background(),
+						protocol.PinUvAuthProtocolOne,
+						keyAgreement,
+						"1234",
+						protocol.PermissionGetAssertion,
+						"example.com",
+					)
+				},
+			},
+			{
+				name:        "preview UV",
+				subCommand:  protocol.ClientPINSubCommandGetPinUvAuthTokenUsingUvWithPermissions,
+				requestKeys: []uint64{1, 2, 3},
+				getToken: func(client *Client, keyAgreement cose.Key) ([]byte, error) {
+					return client.GetPinUvAuthTokenUsingUv(
+						context.Background(),
+						keyAgreement,
+					)
+				},
+			},
+			{
+				name:        "permissioned UV",
+				subCommand:  protocol.ClientPINSubCommandGetPinUvAuthTokenUsingUvWithPermissions,
+				requestKeys: []uint64{1, 2, 3, 9, 10},
+				getToken: func(client *Client, keyAgreement cose.Key) ([]byte, error) {
+					return client.GetPinUvAuthTokenUsingUvWithPermissions(
+						context.Background(),
+						protocol.PinUvAuthProtocolOne,
+						keyAgreement,
+						protocol.PermissionGetAssertion,
+						"example.com",
+					)
+				},
+			},
+		} {
+			t.Run(testCase.name, func(t *testing.T) {
+				authenticatorPrivateKey, err := ecdh.P256().GenerateKey(rand.Reader)
+				require.NoError(t, err)
+				keyAgreement, err := cose.KeyFromP256PublicKey(authenticatorPrivateKey.PublicKey())
+				require.NoError(t, err)
+				wantKeyAgreementX := slices.Clone(keyAgreement[cose.EC2KeyParameterX].([]byte))
+				wantKeyAgreementY := slices.Clone(keyAgreement[cose.EC2KeyParameterY].([]byte))
+				wantToken := bytes.Repeat([]byte{0x52}, 16)
+				var sentRequest []byte
+				transport := clientPINTokenCBORFunc(func(
+					_ context.Context,
+					request []byte,
+				) (ctaptransport.CBORResponse, error) {
+					sentRequest = slices.Clone(request)
+					require.NotEmpty(t, request)
+					require.Equal(t, protocol.AuthenticatorClientPIN, protocol.Command(request[0]))
+
+					var clientPIN protocol.AuthenticatorClientPINRequest
+					require.NoError(t, cbor.Unmarshal(request[1:], &clientPIN))
+					platformPublicKey, err := clientPIN.KeyAgreement.P256PublicKey()
+					require.NoError(t, err)
+					z, err := authenticatorPrivateKey.ECDH(platformPublicKey)
+					require.NoError(t, err)
+					defer clear(z)
+					sharedSecret := protocolone.KDF(z)
+					defer clear(sharedSecret)
+					encryptedToken, err := protocolone.Encrypt(sharedSecret, wantToken)
+					require.NoError(t, err)
+
+					return ctaptransport.CBORResponse{
+						StatusCode: ctaptransport.CTAP2_OK,
+						Data: encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
+							PinUvAuthToken: encryptedToken,
+						}),
+					}, nil
+				})
+				client, err := NewClient(options.WithTransport(transport))
+				require.NoError(t, err)
+
+				token, err := testCase.getToken(client, keyAgreement)
+				require.NoError(t, err)
+				assert.Equal(t, wantToken, token)
+				assert.Equal(t, wantKeyAgreementX, keyAgreement[cose.EC2KeyParameterX])
+				assert.Equal(t, wantKeyAgreementY, keyAgreement[cose.EC2KeyParameterY])
+
+				var requestFields map[uint64]any
+				require.NoError(t, cbor.Unmarshal(sentRequest[1:], &requestFields))
+				assertRequestKeys(t, requestFields, testCase.requestKeys...)
+				assert.Equal(t, uint64(testCase.subCommand), requestFields[uint64(2)])
+			})
+		}
 	})
 
 	t.Run("get preview UV token omits permissions and RP ID", func(t *testing.T) {

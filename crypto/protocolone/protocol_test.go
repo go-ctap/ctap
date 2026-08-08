@@ -24,9 +24,11 @@ func TestKDF(t *testing.T) {
 	r := rand.New(rand.NewSource(0))
 	_, err := r.Read(sharedSecret)
 	require.NoError(t, err)
+	wantSharedSecret := slices.Clone(sharedSecret)
 
 	// Create derived with a shared secret
 	key2 := KDF(sharedSecret)
+	assert.Equal(t, wantSharedSecret, sharedSecret)
 
 	// Ensure key1 and key2 are different
 	assert.NotEqual(t, key1, key2)

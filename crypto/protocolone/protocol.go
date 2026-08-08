@@ -9,9 +9,8 @@ import (
 )
 
 func KDF(z []byte) []byte {
-	hasher := sha256.New()
-	hasher.Write(z)
-	return hasher.Sum(nil)
+	sharedSecret := sha256.Sum256(z)
+	return sharedSecret[:]
 }
 
 func Encrypt(sharedSecret []byte, demPlaintext []byte) ([]byte, error) {
