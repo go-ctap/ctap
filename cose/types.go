@@ -17,6 +17,8 @@ const (
 	AlgorithmES512 Algorithm = -36
 	// AlgorithmESP512 is deterministic ECDSA with SHA-512 on the P-521 curve.
 	AlgorithmESP512 Algorithm = -52
+	// AlgorithmES256K is ECDSA with SHA-256 on the secp256k1 curve.
+	AlgorithmES256K Algorithm = -47
 	// AlgorithmEdDSA is EdDSA using a key-selected Edwards curve.
 	AlgorithmEdDSA Algorithm = -8
 	// AlgorithmEd25519 is EdDSA using Ed25519.
@@ -27,6 +29,8 @@ const (
 	AlgorithmRS384 Algorithm = -258
 	// AlgorithmRS512 is RSASSA-PKCS1-v1_5 with SHA-512.
 	AlgorithmRS512 Algorithm = -259
+	// AlgorithmRS1 is RSASSA-PKCS1-v1_5 with SHA-1.
+	AlgorithmRS1 Algorithm = -65535
 	// AlgorithmPS256 is RSASSA-PSS with SHA-256.
 	AlgorithmPS256 Algorithm = -37
 	// AlgorithmPS384 is RSASSA-PSS with SHA-384.
@@ -69,10 +73,12 @@ const (
 	RSAKeyParameterE = -2
 )
 
-// COSE elliptic curve identifiers used by CTAP key agreement.
+// COSE elliptic curve identifiers used by CTAP.
 const (
-	EllipticCurveP256    = 1
-	EllipticCurveP384    = 2
-	EllipticCurveP521    = 3
-	EllipticCurveEd25519 = 6
+	EllipticCurveP256      = 1
+	EllipticCurveP384      = 2
+	EllipticCurveP521      = 3
+	EllipticCurveEd25519   = 6
+	EllipticCurveEd448     = 7
+	EllipticCurveSecp256k1 = 8
 )

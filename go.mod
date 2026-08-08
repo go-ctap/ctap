@@ -6,6 +6,8 @@ tool golang.org/x/tools/cmd/stringer
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
+	github.com/cloudflare/circl v1.6.5
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/google/uuid v1.6.0
 	github.com/samber/lo v1.53.0

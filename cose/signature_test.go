@@ -11,6 +11,10 @@ import (
 	"math"
 	"math/big"
 	"testing"
+
+	"github.com/cloudflare/circl/sign/ed448"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	secp256k1ecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
 
 func TestCredentialKeyAndSignatureAlgorithms(t *testing.T) {
@@ -25,6 +29,14 @@ func TestCredentialKeyAndSignatureAlgorithms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate Ed25519 key: %v", err)
 	}
+	_, ed448Key, err := ed448.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate Ed448 key: %v", err)
+	}
+	secp256k1Key, err := secp256k1.GeneratePrivateKey()
+	if err != nil {
+		t.Fatalf("generate secp256k1 key: %v", err)
+	}
 
 	tests := []struct {
 		name      string
@@ -38,10 +50,13 @@ func TestCredentialKeyAndSignatureAlgorithms(t *testing.T) {
 		{name: "ES512", algorithm: AlgorithmES512, key: p521},
 		{name: "ESP512", algorithm: AlgorithmESP512, key: p521},
 		{name: "EdDSA", algorithm: AlgorithmEdDSA, key: ed25519Key},
+		{name: "EdDSA Ed448", algorithm: AlgorithmEdDSA, key: ed448Key},
 		{name: "Ed25519", algorithm: AlgorithmEd25519, key: ed25519Key},
+		{name: "ES256K", algorithm: AlgorithmES256K, key: secp256k1Key},
 		{name: "RS256", algorithm: AlgorithmRS256, key: rsaKey},
 		{name: "RS384", algorithm: AlgorithmRS384, key: rsaKey},
 		{name: "RS512", algorithm: AlgorithmRS512, key: rsaKey},
+		{name: "RS1", algorithm: AlgorithmRS1, key: rsaKey},
 		{name: "PS256", algorithm: AlgorithmPS256, key: rsaKey},
 		{name: "PS384", algorithm: AlgorithmPS384, key: rsaKey},
 		{name: "PS512", algorithm: AlgorithmPS512, key: rsaKey},
@@ -207,6 +222,22 @@ func credentialKey(key any, algorithm Algorithm) Key {
 			OKPKeyParameterCrv: EllipticCurveEd25519,
 			OKPKeyParameterX:   []byte(key.Public().(ed25519.PublicKey)),
 		}
+	case ed448.PrivateKey:
+		return Key{
+			KeyParameterKty:    KeyTypeOKP,
+			KeyParameterAlg:    algorithm,
+			OKPKeyParameterCrv: EllipticCurveEd448,
+			OKPKeyParameterX:   []byte(key.Public().(ed448.PublicKey)),
+		}
+	case *secp256k1.PrivateKey:
+		encoded := key.PubKey().SerializeUncompressed()
+		return Key{
+			KeyParameterKty:    KeyTypeEC2,
+			KeyParameterAlg:    algorithm,
+			EC2KeyParameterCrv: EllipticCurveSecp256k1,
+			EC2KeyParameterX:   append([]byte(nil), encoded[1:33]...),
+			EC2KeyParameterY:   append([]byte(nil), encoded[33:]...),
+		}
 	case *rsa.PrivateKey:
 		return Key{
 			KeyParameterKty:  KeyTypeRSA,
@@ -224,14 +255,23 @@ func signTestMessage(t *testing.T, key any, algorithm Algorithm, message []byte)
 
 	var hash crypto.Hash
 	switch algorithm {
-	case AlgorithmES256, AlgorithmESP256, AlgorithmRS256, AlgorithmPS256:
+	case AlgorithmES256, AlgorithmESP256, AlgorithmES256K, AlgorithmRS256, AlgorithmPS256:
 		hash = crypto.SHA256
 	case AlgorithmES384, AlgorithmESP384, AlgorithmRS384, AlgorithmPS384:
 		hash = crypto.SHA384
 	case AlgorithmES512, AlgorithmESP512, AlgorithmRS512, AlgorithmPS512:
 		hash = crypto.SHA512
+	case AlgorithmRS1:
+		hash = crypto.SHA1
 	case AlgorithmEdDSA, AlgorithmEd25519:
-		return ed25519.Sign(key.(ed25519.PrivateKey), message)
+		switch key := key.(type) {
+		case ed25519.PrivateKey:
+			return ed25519.Sign(key, message)
+		case ed448.PrivateKey:
+			return ed448.Sign(key, message, "")
+		default:
+			t.Fatalf("unsupported EdDSA test signing key %T", key)
+		}
 	default:
 		t.Fatalf("unsupported test algorithm %d", algorithm)
 	}
@@ -247,6 +287,8 @@ func signTestMessage(t *testing.T, key any, algorithm Algorithm, message []byte)
 		}
 
 		return signature
+	case *secp256k1.PrivateKey:
+		return secp256k1ecdsa.Sign(key, digest).Serialize()
 	case *rsa.PrivateKey:
 		if algorithm == AlgorithmPS256 || algorithm == AlgorithmPS384 || algorithm == AlgorithmPS512 {
 			signature, err := rsa.SignPSS(rand.Reader, key, hash, digest, &rsa.PSSOptions{

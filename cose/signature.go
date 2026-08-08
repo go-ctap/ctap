@@ -6,12 +6,18 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
+
+	"github.com/cloudflare/circl/ecc/goldilocks"
+	"github.com/cloudflare/circl/sign/ed448"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	secp256k1ecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
 
 var (
@@ -35,7 +41,7 @@ func (k Key) Algorithm() (Algorithm, error) {
 	return algorithm, nil
 }
 
-// PublicKey validates a credential COSE key and converts it to a standard-library public key.
+// PublicKey validates a credential COSE key and converts it to a supported public key type.
 // Additional COSE key parameters are ignored.
 func (k Key) PublicKey() (crypto.PublicKey, error) {
 	if k == nil {
@@ -71,7 +77,7 @@ func (k Key) PublicKey() (crypto.PublicKey, error) {
 	return publicKey, nil
 }
 
-// VerifySignature verifies one COSE signature using a standard-library public key.
+// VerifySignature verifies one COSE signature using a supported public key type.
 func VerifySignature(publicKey crypto.PublicKey, algorithm Algorithm, message, signature []byte) error {
 	spec, found := signatureAlgorithms[algorithm]
 	if !found {
@@ -86,12 +92,23 @@ func VerifySignature(publicKey crypto.PublicKey, algorithm Algorithm, message, s
 
 	switch spec.kind {
 	case signatureEdDSA:
-		key, ok := publicKey.(ed25519.PublicKey)
-		if !ok || len(key) != ed25519.PublicKeySize {
+		switch key := publicKey.(type) {
+		case ed25519.PublicKey:
+			if spec.curve != 0 && spec.curve != EllipticCurveEd25519 {
+				return ErrKeyAlgorithmMismatch
+			}
+			if !ed25519.Verify(key, message, signature) {
+				return ErrInvalidSignature
+			}
+		case ed448.PublicKey:
+			if spec.curve != 0 && spec.curve != EllipticCurveEd448 {
+				return ErrKeyAlgorithmMismatch
+			}
+			if !ed448.Verify(key, message, signature, "") {
+				return ErrInvalidSignature
+			}
+		default:
 			return ErrKeyAlgorithmMismatch
-		}
-		if !ed25519.Verify(key, message, signature) {
-			return ErrInvalidSignature
 		}
 
 		return nil
@@ -102,6 +119,18 @@ func VerifySignature(publicKey crypto.PublicKey, algorithm Algorithm, message, s
 		}
 		digest := signatureDigest(spec.hash, message)
 		if !ecdsa.VerifyASN1(key, digest, signature) {
+			return ErrInvalidSignature
+		}
+
+		return nil
+	case signatureECDSASecp256k1:
+		key, ok := publicKey.(*secp256k1.PublicKey)
+		if !ok {
+			return ErrKeyAlgorithmMismatch
+		}
+		digest := signatureDigest(spec.hash, message)
+		parsed, err := secp256k1ecdsa.ParseDERSignature(signature)
+		if err != nil || !parsed.Verify(digest, key) {
 			return ErrInvalidSignature
 		}
 
@@ -144,13 +173,25 @@ func validatePublicKeyAlgorithm(publicKey crypto.PublicKey, algorithm Algorithm)
 
 	switch spec.kind {
 	case signatureEdDSA:
-		key, ok := publicKey.(ed25519.PublicKey)
-		if !ok || len(key) != ed25519.PublicKeySize {
+		switch key := publicKey.(type) {
+		case ed25519.PublicKey:
+			if len(key) != ed25519.PublicKeySize || spec.curve != 0 && spec.curve != EllipticCurveEd25519 {
+				return ErrKeyAlgorithmMismatch
+			}
+		case ed448.PublicKey:
+			if len(key) != ed448.PublicKeySize || spec.curve != 0 && spec.curve != EllipticCurveEd448 {
+				return ErrKeyAlgorithmMismatch
+			}
+		default:
 			return ErrKeyAlgorithmMismatch
 		}
 	case signatureECDSA:
 		key, ok := publicKey.(*ecdsa.PublicKey)
 		if !ok || curveID(key.Curve) != spec.curve {
+			return ErrKeyAlgorithmMismatch
+		}
+	case signatureECDSASecp256k1:
+		if _, ok := publicKey.(*secp256k1.PublicKey); !ok {
 			return ErrKeyAlgorithmMismatch
 		}
 	case signatureRSA, signatureRSAPSS:
@@ -169,6 +210,7 @@ type signatureKind uint8
 const (
 	signatureEdDSA signatureKind = iota + 1
 	signatureECDSA
+	signatureECDSASecp256k1
 	signatureRSA
 	signatureRSAPSS
 )
@@ -187,10 +229,12 @@ var signatureAlgorithms = map[Algorithm]signatureAlgorithm{
 	AlgorithmES512:   {kind: signatureECDSA, hash: crypto.SHA512, curve: EllipticCurveP521},
 	AlgorithmESP512:  {kind: signatureECDSA, hash: crypto.SHA512, curve: EllipticCurveP521},
 	AlgorithmEdDSA:   {kind: signatureEdDSA},
-	AlgorithmEd25519: {kind: signatureEdDSA},
+	AlgorithmEd25519: {kind: signatureEdDSA, curve: EllipticCurveEd25519},
+	AlgorithmES256K:  {kind: signatureECDSASecp256k1, hash: crypto.SHA256, curve: EllipticCurveSecp256k1},
 	AlgorithmRS256:   {kind: signatureRSA, hash: crypto.SHA256},
 	AlgorithmRS384:   {kind: signatureRSA, hash: crypto.SHA384},
 	AlgorithmRS512:   {kind: signatureRSA, hash: crypto.SHA512},
+	AlgorithmRS1:     {kind: signatureRSA, hash: crypto.SHA1},
 	AlgorithmPS256:   {kind: signatureRSAPSS, hash: crypto.SHA256},
 	AlgorithmPS384:   {kind: signatureRSAPSS, hash: crypto.SHA384},
 	AlgorithmPS512:   {kind: signatureRSAPSS, hash: crypto.SHA512},
@@ -201,19 +245,31 @@ func (k Key) okpPublicKey() (crypto.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	if curve != EllipticCurveEd25519 {
-		return nil, fmt.Errorf("%w: OKP curve %d", ErrUnsupportedKey, curve)
-	}
 
 	x, err := keyBytes(k, OKPKeyParameterX, "x")
 	if err != nil {
 		return nil, err
 	}
-	if len(x) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("cose: invalid Ed25519 public key length %d", len(x))
-	}
+	switch curve {
+	case EllipticCurveEd25519:
+		if len(x) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("cose: invalid Ed25519 public key length %d", len(x))
+		}
 
-	return ed25519.PublicKey(append([]byte(nil), x...)), nil
+		return ed25519.PublicKey(append([]byte(nil), x...)), nil
+	case EllipticCurveEd448:
+		if len(x) != ed448.PublicKeySize {
+			return nil, fmt.Errorf("cose: invalid Ed448 public key length %d", len(x))
+		}
+		point, err := goldilocks.FromBytes(x)
+		if err != nil || point.IsIdentity() {
+			return nil, errors.New("cose: invalid Ed448 public key")
+		}
+
+		return ed448.PublicKey(append([]byte(nil), x...)), nil
+	default:
+		return nil, fmt.Errorf("%w: OKP curve %d", ErrUnsupportedKey, curve)
+	}
 }
 
 func (k Key) ec2PublicKey() (crypto.PublicKey, error) {
@@ -223,6 +279,7 @@ func (k Key) ec2PublicKey() (crypto.PublicKey, error) {
 	}
 
 	var curve elliptic.Curve
+	var size int
 	switch curveValue {
 	case EllipticCurveP256:
 		curve = elliptic.P256()
@@ -230,6 +287,8 @@ func (k Key) ec2PublicKey() (crypto.PublicKey, error) {
 		curve = elliptic.P384()
 	case EllipticCurveP521:
 		curve = elliptic.P521()
+	case EllipticCurveSecp256k1:
+		size = 32
 	default:
 		return nil, fmt.Errorf("%w: EC2 curve %d", ErrUnsupportedKey, curveValue)
 	}
@@ -242,7 +301,9 @@ func (k Key) ec2PublicKey() (crypto.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	size := (curve.Params().BitSize + 7) / 8
+	if size == 0 {
+		size = (curve.Params().BitSize + 7) / 8
+	}
 	if len(xBytes) != size || len(yBytes) != size {
 		return nil, fmt.Errorf(
 			"cose: invalid EC2 coordinate lengths x=%d y=%d, want %d",
@@ -256,6 +317,14 @@ func (k Key) ec2PublicKey() (crypto.PublicKey, error) {
 	encoded[0] = 4
 	copy(encoded[1:1+size], xBytes)
 	copy(encoded[1+size:], yBytes)
+	if curveValue == EllipticCurveSecp256k1 {
+		publicKey, err := secp256k1.ParsePubKey(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("cose: invalid secp256k1 public key: %w", err)
+		}
+
+		return publicKey, nil
+	}
 	publicKey, err := ecdsa.ParseUncompressedPublicKey(curve, encoded)
 	if err != nil {
 		return nil, fmt.Errorf("cose: invalid EC2 public key: %w", err)
@@ -363,6 +432,9 @@ func curveID(curve elliptic.Curve) int64 {
 
 func signatureDigest(hash crypto.Hash, message []byte) []byte {
 	switch hash {
+	case crypto.SHA1:
+		digest := sha1.Sum(message)
+		return digest[:]
 	case crypto.SHA256:
 		digest := sha256.Sum256(message)
 		return digest[:]

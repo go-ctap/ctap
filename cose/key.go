@@ -10,7 +10,7 @@ import (
 //
 // CTAP can return credential public keys of different key types, so the wire
 // representation remains a map. Cryptographic operations should convert a Key
-// to a concrete standard-library key and validate it first.
+// to a concrete supported key type and validate it first.
 type Key map[int]any
 
 // KeyFromP256PublicKey converts a P-256 public key to the COSE key agreement
