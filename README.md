@@ -1,9 +1,9 @@
-# go-ctap/ctap
+# telesma-app/ctap
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/telesma-app/ctap.svg)](https://pkg.go.dev/github.com/telesma-app/ctap)
 [![Go](https://github.com/telesma-app/ctap/actions/workflows/go.yml/badge.svg)](https://github.com/telesma-app/ctap/actions/workflows/go.yml)
 
-`go-ctap/ctap` is a Go library for direct communication with FIDO2 authenticators. It provides both CTAP commands and a
+`telesma-app/ctap` is a Go library for direct communication with FIDO2 authenticators. It provides both CTAP commands and a
 stateful API for common authenticator workflows.
 
 > [!WARNING]
@@ -50,10 +50,10 @@ and automated tests. A feature listed above may still be unavailable on a specif
 
 | Transport             | Setup                                                                                                                                        |
 |-----------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
-| USB HID               | Uses the cgo-free [`go-ctap/hid`](https://github.com/telesma-app/hid) backend                                                                    |
-| Windows named pipe    | Connects to a running [`go-ctap/windows-proxy`](https://github.com/telesma-app/windows-proxy); see [`examples/namedpipe`](examples/namedpipe)    |
-| ISO 7816 / NFC        | Wraps an exclusive raw APDU connection such as [`go-ctap/pcsc`](https://github.com/telesma-app/pcsc); see [`examples/iso7816`](examples/iso7816) |
-| Token2 CTAP over APDU | Requires a PC/SC implementation such as [`go-ctap/pcsc`](https://github.com/telesma-app/pcsc); see [`examples/token2`](examples/token2)          |
+| USB HID               | Uses the cgo-free [`telesma-app/hid`](https://github.com/telesma-app/hid) backend                                                                    |
+| Windows named pipe    | Connects to a running [`telesma-app/windows-proxy`](https://github.com/telesma-app/windows-proxy); see [`examples/namedpipe`](examples/namedpipe)    |
+| ISO 7816 / NFC        | Wraps an exclusive raw APDU connection such as [`telesma-app/pcsc`](https://github.com/telesma-app/pcsc); see [`examples/iso7816`](examples/iso7816) |
+| Token2 CTAP over APDU | Requires a PC/SC implementation such as [`telesma-app/pcsc`](https://github.com/telesma-app/pcsc); see [`examples/token2`](examples/token2)          |
 
 BLE, hybrid, and digital-credential transports are not supported. Token2 support is experimental because its protocol
 is not publicly documented by the vendor.
@@ -71,7 +71,7 @@ See [`go.mod`](go.mod) for the required Go version.
 Transport adapters enumerate initialized CTAP connections. The authenticator
 package builds transport-independent devices and selects one by user presence.
 Long-lived discovery and automatic selection belong in an application runtime
-such as `go-ctap/kit`.
+such as `telesma-app/kit`.
 
 ```go
 package main
@@ -119,7 +119,7 @@ PC/SC, and Token2 expose the same enumerator contract.
 
 For a custom transport, implement `transport.Device` and pass it to `authenticator.New`.
 Yubico-specific device information and identity operations live in
-[`go-ctap/yubico`](https://github.com/telesma-app/yubico).
+[`telesma-app/yubico`](https://github.com/telesma-app/yubico).
 
 ## PIN and user verification
 
@@ -148,7 +148,7 @@ operations may work without a token on an authenticator that has no PIN or UV pr
   cached for capability checks; known state changes invalidate it, and the next check refreshes it lazily.
 - Finish assertion and credential-management iterators before sending another command.
 - Match CTAP errors as `*transport.CTAPError`, standard status-word errors as `*iso7816.APDUError` from
-  [`go-ctap/iso7816`](https://github.com/telesma-app/iso7816), and Token2 status-word errors as
+  [`telesma-app/iso7816`](https://github.com/telesma-app/iso7816), and Token2 status-word errors as
   `*token2.APDUError`.
 - Device I/O accepts `context.Context`. Cancellation depends on transport support.
 
