@@ -1,6 +1,6 @@
 package webauthn
 
-import "github.com/go-ctap/ctap/extension"
+import "github.com/telesma-app/ctap/extension"
 
 type AuthenticationExtensionsLargeBlobInputs struct {
 	Support extension.LargeBlobSupport `cbor:"support,omitzero" json:"support,omitzero"`

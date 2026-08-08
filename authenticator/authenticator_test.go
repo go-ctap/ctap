@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-ctap/ctap/internal/testhid"
-	"github.com/go-ctap/ctap/protocol"
-	ctaptransport "github.com/go-ctap/ctap/transport"
-	"github.com/go-ctap/ctap/transport/ctaphid"
+	"github.com/telesma-app/ctap/internal/testhid"
+	"github.com/telesma-app/ctap/protocol"
+	ctaptransport "github.com/telesma-app/ctap/transport"
+	"github.com/telesma-app/ctap/transport/ctaphid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

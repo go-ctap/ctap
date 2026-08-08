@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/go-ctap/ctap/cose"
-	"github.com/go-ctap/ctap/crypto/protocolone"
-	"github.com/go-ctap/ctap/crypto/protocoltwo"
-	"github.com/go-ctap/ctap/protocol"
+	"github.com/telesma-app/ctap/cose"
+	"github.com/telesma-app/ctap/crypto/protocolone"
+	"github.com/telesma-app/ctap/crypto/protocoltwo"
+	"github.com/telesma-app/ctap/protocol"
 )
 
 type PinUvAuthProtocol struct {

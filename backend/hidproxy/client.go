@@ -6,8 +6,8 @@ import (
 	"context"
 	"iter"
 
-	"github.com/go-ctap/ctap/transport/ctaphid"
-	ghid "github.com/go-ctap/hid"
+	"github.com/telesma-app/ctap/transport/ctaphid"
+	ghid "github.com/telesma-app/hid"
 )
 
 func Devices(context.Context) iter.Seq2[*ghid.DeviceInfo, error] {

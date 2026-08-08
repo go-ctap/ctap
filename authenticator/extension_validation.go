@@ -5,9 +5,9 @@ import (
 	"slices"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-ctap/ctap/extension"
-	"github.com/go-ctap/ctap/protocol"
-	"github.com/go-ctap/ctap/webauthn"
+	"github.com/telesma-app/ctap/extension"
+	"github.com/telesma-app/ctap/protocol"
+	"github.com/telesma-app/ctap/webauthn"
 )
 
 func credentialProtectionValue(policy extension.CredentialProtectionPolicy) (int, error) {

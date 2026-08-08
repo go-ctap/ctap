@@ -7,9 +7,9 @@ import (
 	"errors"
 	"iter"
 
-	ctaptransport "github.com/go-ctap/ctap/transport"
-	"github.com/go-ctap/ctap/transport/iso7816"
-	nativepcsc "github.com/go-ctap/pcsc"
+	ctaptransport "github.com/telesma-app/ctap/transport"
+	"github.com/telesma-app/ctap/transport/iso7816"
+	nativepcsc "github.com/telesma-app/pcsc"
 )
 
 // Devices returns PC/SC readers that currently contain a card.

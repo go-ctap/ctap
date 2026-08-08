@@ -5,10 +5,10 @@ import (
 	"maps"
 	"testing"
 
-	"github.com/go-ctap/ctap/extension"
-	"github.com/go-ctap/ctap/internal/testhid"
-	"github.com/go-ctap/ctap/protocol"
-	"github.com/go-ctap/ctap/webauthn"
+	"github.com/telesma-app/ctap/extension"
+	"github.com/telesma-app/ctap/internal/testhid"
+	"github.com/telesma-app/ctap/protocol"
+	"github.com/telesma-app/ctap/webauthn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

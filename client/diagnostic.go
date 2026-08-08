@@ -10,7 +10,7 @@ import (
 	"unicode"
 
 	"github.com/fxamacker/cbor/v2"
-	ctapdiag "github.com/go-ctap/ctap/diagnostic"
+	ctapdiag "github.com/telesma-app/ctap/diagnostic"
 )
 
 const (

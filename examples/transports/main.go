@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/go-ctap/ctap/authenticator"
-	"github.com/go-ctap/ctap/backend"
-	directhid "github.com/go-ctap/ctap/backend/hid"
-	"github.com/go-ctap/ctap/backend/hidproxy"
-	ctappcsc "github.com/go-ctap/ctap/backend/pcsc"
-	"github.com/go-ctap/ctap/backend/token2"
-	"github.com/go-ctap/ctap/diagnostic"
-	"github.com/go-ctap/ctap/options"
-	"github.com/go-ctap/ctap/protocol"
+	"github.com/telesma-app/ctap/authenticator"
+	"github.com/telesma-app/ctap/backend"
+	directhid "github.com/telesma-app/ctap/backend/hid"
+	"github.com/telesma-app/ctap/backend/hidproxy"
+	ctappcsc "github.com/telesma-app/ctap/backend/pcsc"
+	"github.com/telesma-app/ctap/backend/token2"
+	"github.com/telesma-app/ctap/diagnostic"
+	"github.com/telesma-app/ctap/options"
+	"github.com/telesma-app/ctap/protocol"
 )
 
 type source struct {

@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"github.com/go-ctap/ctap/cose"
+	"github.com/telesma-app/ctap/cose"
 	"github.com/google/uuid"
 )
 

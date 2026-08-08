@@ -1,6 +1,6 @@
 package credential
 
-import "github.com/go-ctap/ctap/cose"
+import "github.com/telesma-app/ctap/cose"
 
 type (
 	// PublicKeyCredentialType defines the valid credential types.

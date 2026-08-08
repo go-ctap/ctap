@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	token2transport "github.com/go-ctap/ctap/transport/token2"
+	token2transport "github.com/telesma-app/ctap/transport/token2"
 	"github.com/stretchr/testify/assert"
 )
 

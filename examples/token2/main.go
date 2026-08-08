@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/go-ctap/ctap/authenticator"
-	"github.com/go-ctap/ctap/backend/token2"
-	"github.com/go-ctap/ctap/protocol"
-	"github.com/go-ctap/pcsc"
+	"github.com/telesma-app/ctap/authenticator"
+	"github.com/telesma-app/ctap/backend/token2"
+	"github.com/telesma-app/ctap/protocol"
+	"github.com/telesma-app/pcsc"
 )
 
 func main() {

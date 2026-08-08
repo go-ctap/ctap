@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-ctap/ctap/attestation"
+	"github.com/telesma-app/ctap/attestation"
 	"github.com/google/uuid"
 )
 

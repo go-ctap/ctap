@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/go-ctap/ctap/cose"
+	"github.com/telesma-app/ctap/cose"
 )
 
 var (

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/go-ctap/ctap/internal/pin"
-	"github.com/go-ctap/ctap/protocol"
+	"github.com/telesma-app/ctap/internal/pin"
+	"github.com/telesma-app/ctap/protocol"
 )
 
 func validateUserVerificationRequest(

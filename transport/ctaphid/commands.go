@@ -5,9 +5,9 @@ import (
 	"crypto/subtle"
 	"slices"
 
-	"github.com/go-ctap/ctap/protocol"
-	"github.com/go-ctap/ctap/transport"
-	ghid "github.com/go-ctap/hid"
+	"github.com/telesma-app/ctap/protocol"
+	"github.com/telesma-app/ctap/transport"
+	ghid "github.com/telesma-app/hid"
 )
 
 func ensureDataLen(data []byte, min int) error {

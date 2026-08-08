@@ -8,9 +8,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/go-ctap/ctap/crypto/protocolone"
-	"github.com/go-ctap/ctap/crypto/protocoltwo"
-	"github.com/go-ctap/ctap/webauthn"
+	"github.com/telesma-app/ctap/crypto/protocolone"
+	"github.com/telesma-app/ctap/crypto/protocoltwo"
+	"github.com/telesma-app/ctap/webauthn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

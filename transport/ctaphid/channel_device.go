@@ -6,8 +6,8 @@ import (
 	"io"
 	"sync"
 
-	ctaptransport "github.com/go-ctap/ctap/transport"
-	ghid "github.com/go-ctap/hid"
+	ctaptransport "github.com/telesma-app/ctap/transport"
+	ghid "github.com/telesma-app/hid"
 )
 
 // channelDevice continuously drains input reports from a shared HID endpoint

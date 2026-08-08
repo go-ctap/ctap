@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-ctap/ctap/protocol"
-	ctaptransport "github.com/go-ctap/ctap/transport"
-	baseiso7816 "github.com/go-ctap/iso7816"
+	"github.com/telesma-app/ctap/protocol"
+	ctaptransport "github.com/telesma-app/ctap/transport"
+	baseiso7816 "github.com/telesma-app/iso7816"
 )
 
 var (

@@ -1,4 +1,4 @@
-module github.com/go-ctap/ctap
+module github.com/telesma-app/ctap
 
 go 1.26.3
 
@@ -7,13 +7,13 @@ tool golang.org/x/tools/cmd/stringer
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/fxamacker/cbor/v2 v2.9.2
-	github.com/go-ctap/hid v0.10.1
-	github.com/go-ctap/iso7816 v0.1.0
-	github.com/go-ctap/pcsc v0.8.0
-	github.com/go-ctap/windows-proxy v0.4.0
 	github.com/google/uuid v1.6.0
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.11.1
+	github.com/telesma-app/hid v0.12.0
+	github.com/telesma-app/iso7816 v0.2.0
+	github.com/telesma-app/pcsc v0.9.0
+	github.com/telesma-app/windows-proxy v0.5.0
 	golang.org/x/crypto v0.54.0
 	golang.org/x/text v0.40.0
 )

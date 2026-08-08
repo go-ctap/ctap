@@ -6,10 +6,10 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/go-ctap/ctap/diagnostic"
-	"github.com/go-ctap/ctap/extension"
-	"github.com/go-ctap/ctap/protocol"
-	ctaptransport "github.com/go-ctap/ctap/transport"
+	"github.com/telesma-app/ctap/diagnostic"
+	"github.com/telesma-app/ctap/extension"
+	"github.com/telesma-app/ctap/protocol"
+	ctaptransport "github.com/telesma-app/ctap/transport"
 )
 
 func (cl *Client) exchange(ctx context.Context, data []byte) (ctaptransport.CBORResponse, error) {

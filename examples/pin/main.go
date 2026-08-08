@@ -6,9 +6,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/go-ctap/ctap/authenticator"
-	directhid "github.com/go-ctap/ctap/backend/hid"
-	"github.com/go-ctap/ctap/protocol"
+	"github.com/telesma-app/ctap/authenticator"
+	directhid "github.com/telesma-app/ctap/backend/hid"
+	"github.com/telesma-app/ctap/protocol"
 )
 
 func main() {

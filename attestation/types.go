@@ -1,6 +1,6 @@
 package attestation
 
-import "github.com/go-ctap/ctap/cose"
+import "github.com/telesma-app/ctap/cose"
 
 // AttestationStatementFormatIdentifier is an enum consisting of IANA registered Attestation Statement Format Identifiers.
 // https://www.iana.org/assignments/webauthn/webauthn.xhtml

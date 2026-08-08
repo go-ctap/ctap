@@ -4,11 +4,11 @@ import (
 	"context"
 	"slices"
 
-	"github.com/go-ctap/ctap/credential"
-	"github.com/go-ctap/ctap/crypto"
-	"github.com/go-ctap/ctap/extension"
-	"github.com/go-ctap/ctap/protocol"
-	"github.com/go-ctap/ctap/webauthn"
+	"github.com/telesma-app/ctap/credential"
+	"github.com/telesma-app/ctap/crypto"
+	"github.com/telesma-app/ctap/extension"
+	"github.com/telesma-app/ctap/protocol"
+	"github.com/telesma-app/ctap/webauthn"
 )
 
 type largeBlobBackend uint8

@@ -6,9 +6,9 @@ import (
 	"errors"
 	"iter"
 
-	ctaptransport "github.com/go-ctap/ctap/transport"
-	"github.com/go-ctap/ctap/transport/ctaphid"
-	ghid "github.com/go-ctap/hid"
+	ctaptransport "github.com/telesma-app/ctap/transport"
+	"github.com/telesma-app/ctap/transport/ctaphid"
+	ghid "github.com/telesma-app/hid"
 )
 
 // Devices returns the platform's FIDO HID endpoints.

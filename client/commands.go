@@ -10,15 +10,15 @@ import (
 	"slices"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-ctap/ctap/attestation"
-	"github.com/go-ctap/ctap/cose"
-	"github.com/go-ctap/ctap/credential"
-	"github.com/go-ctap/ctap/crypto"
-	"github.com/go-ctap/ctap/diagnostic"
-	pinvalidation "github.com/go-ctap/ctap/internal/pin"
-	"github.com/go-ctap/ctap/options"
-	"github.com/go-ctap/ctap/protocol"
-	ctaptransport "github.com/go-ctap/ctap/transport"
+	"github.com/telesma-app/ctap/attestation"
+	"github.com/telesma-app/ctap/cose"
+	"github.com/telesma-app/ctap/credential"
+	"github.com/telesma-app/ctap/crypto"
+	"github.com/telesma-app/ctap/diagnostic"
+	pinvalidation "github.com/telesma-app/ctap/internal/pin"
+	"github.com/telesma-app/ctap/options"
+	"github.com/telesma-app/ctap/protocol"
+	ctaptransport "github.com/telesma-app/ctap/transport"
 )
 
 type Client struct {

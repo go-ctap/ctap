@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/go-ctap/ctap/attestation"
-	"github.com/go-ctap/ctap/credential"
-	"github.com/go-ctap/ctap/internal/testhid"
-	"github.com/go-ctap/ctap/protocol"
+	"github.com/telesma-app/ctap/attestation"
+	"github.com/telesma-app/ctap/credential"
+	"github.com/telesma-app/ctap/internal/testhid"
+	"github.com/telesma-app/ctap/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

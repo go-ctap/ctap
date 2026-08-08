@@ -1,8 +1,8 @@
 package protocol
 
 import (
-	"github.com/go-ctap/ctap/cose"
-	"github.com/go-ctap/ctap/credential"
+	"github.com/telesma-app/ctap/cose"
+	"github.com/telesma-app/ctap/credential"
 )
 
 type AuthenticatorCredentialManagementRequest struct {

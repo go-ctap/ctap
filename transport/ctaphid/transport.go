@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-ctap/ctap/protocol"
-	ctaptransport "github.com/go-ctap/ctap/transport"
-	ghid "github.com/go-ctap/hid"
+	"github.com/telesma-app/ctap/protocol"
+	ctaptransport "github.com/telesma-app/ctap/transport"
+	ghid "github.com/telesma-app/hid"
 )
 
 // Transport adapts a CTAPHID channel to the transport-independent CBOR API.

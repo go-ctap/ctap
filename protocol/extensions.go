@@ -2,8 +2,8 @@ package protocol
 
 import (
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-ctap/ctap/cose"
-	"github.com/go-ctap/ctap/extension"
+	"github.com/telesma-app/ctap/cose"
+	"github.com/telesma-app/ctap/extension"
 )
 
 type CreateCredProtectInput struct {

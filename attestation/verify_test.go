@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-ctap/ctap/cose"
+	"github.com/telesma-app/ctap/cose"
 )
 
 func TestVerifyPacked(t *testing.T) {

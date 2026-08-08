@@ -1,6 +1,6 @@
 package protocol
 
-import "github.com/go-ctap/ctap/cose"
+import "github.com/telesma-app/ctap/cose"
 
 type AuthenticatorClientPINRequest struct {
 	PinUvAuthProtocol PinUvAuthProtocol   `cbor:"1,keyasint,omitzero"`

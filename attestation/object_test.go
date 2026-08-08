@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-ctap/ctap/cose"
+	"github.com/telesma-app/ctap/cose"
 )
 
 func TestParseObjectAndExtractCertificateChain(t *testing.T) {

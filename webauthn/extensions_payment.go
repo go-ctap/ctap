@@ -1,6 +1,6 @@
 package webauthn
 
-import "github.com/go-ctap/ctap/credential"
+import "github.com/telesma-app/ctap/credential"
 
 type PaymentEntityLogo struct {
 	URL   string `cbor:"url" json:"url"`

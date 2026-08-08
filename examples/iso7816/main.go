@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/go-ctap/ctap/authenticator"
-	ctappcsc "github.com/go-ctap/ctap/backend/pcsc"
+	"github.com/telesma-app/ctap/authenticator"
+	ctappcsc "github.com/telesma-app/ctap/backend/pcsc"
 )
 
 func main() {

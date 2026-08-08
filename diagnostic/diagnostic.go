@@ -5,8 +5,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-ctap/ctap/protocol"
-	"github.com/go-ctap/ctap/transport"
+	"github.com/telesma-app/ctap/protocol"
+	"github.com/telesma-app/ctap/transport"
 )
 
 // Message is normalized, pretty-printed extended CBOR diagnostic notation for one side of an exchange.

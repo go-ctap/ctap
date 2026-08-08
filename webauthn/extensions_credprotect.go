@@ -1,6 +1,6 @@
 package webauthn
 
-import "github.com/go-ctap/ctap/extension"
+import "github.com/telesma-app/ctap/extension"
 
 type CreateCredentialProtectionInputs struct {
 	CredentialProtectionPolicy        extension.CredentialProtectionPolicy `cbor:"credentialProtectionPolicy" json:"credentialProtectionPolicy,omitzero"`

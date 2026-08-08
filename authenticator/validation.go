@@ -6,11 +6,11 @@ import (
 	"slices"
 	"unicode/utf8"
 
-	"github.com/go-ctap/ctap/extension"
-	"github.com/go-ctap/ctap/internal/pin"
-	"github.com/go-ctap/ctap/protocol"
-	ctaptransport "github.com/go-ctap/ctap/transport"
-	"github.com/go-ctap/ctap/webauthn"
+	"github.com/telesma-app/ctap/extension"
+	"github.com/telesma-app/ctap/internal/pin"
+	"github.com/telesma-app/ctap/protocol"
+	ctaptransport "github.com/telesma-app/ctap/transport"
+	"github.com/telesma-app/ctap/webauthn"
 )
 
 func validateHMACGetSecretSalts(input webauthn.HMACGetSecretInput) error {

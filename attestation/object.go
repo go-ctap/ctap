@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-ctap/ctap/cose"
+	"github.com/telesma-app/ctap/cose"
 )
 
 // Object is the WebAuthn attestation object returned by a create ceremony.

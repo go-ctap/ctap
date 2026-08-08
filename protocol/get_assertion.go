@@ -4,9 +4,9 @@ import (
 	"bytes"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-ctap/ctap/credential"
-	"github.com/go-ctap/ctap/extension"
-	"github.com/go-ctap/ctap/webauthn"
+	"github.com/telesma-app/ctap/credential"
+	"github.com/telesma-app/ctap/extension"
+	"github.com/telesma-app/ctap/webauthn"
 )
 
 type AuthenticatorGetAssertionRequest struct {

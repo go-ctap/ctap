@@ -7,10 +7,10 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	ctapdiag "github.com/go-ctap/ctap/diagnostic"
-	"github.com/go-ctap/ctap/options"
-	"github.com/go-ctap/ctap/protocol"
-	ctaptransport "github.com/go-ctap/ctap/transport"
+	ctapdiag "github.com/telesma-app/ctap/diagnostic"
+	"github.com/telesma-app/ctap/options"
+	"github.com/telesma-app/ctap/protocol"
+	ctaptransport "github.com/telesma-app/ctap/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

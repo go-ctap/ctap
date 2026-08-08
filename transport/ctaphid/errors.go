@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	ctaptransport "github.com/go-ctap/ctap/transport"
+	ctaptransport "github.com/telesma-app/ctap/transport"
 )
 
 var (

@@ -2,8 +2,8 @@ package options
 
 import (
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-ctap/ctap/diagnostic"
-	ctaptransport "github.com/go-ctap/ctap/transport"
+	"github.com/telesma-app/ctap/diagnostic"
+	ctaptransport "github.com/telesma-app/ctap/transport"
 )
 
 type Options struct {

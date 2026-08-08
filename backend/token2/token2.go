@@ -6,10 +6,10 @@ import (
 	"errors"
 	"iter"
 
-	backendpcsc "github.com/go-ctap/ctap/backend/pcsc"
-	ctaptransport "github.com/go-ctap/ctap/transport"
-	token2transport "github.com/go-ctap/ctap/transport/token2"
-	nativepcsc "github.com/go-ctap/pcsc"
+	backendpcsc "github.com/telesma-app/ctap/backend/pcsc"
+	ctaptransport "github.com/telesma-app/ctap/transport"
+	token2transport "github.com/telesma-app/ctap/transport/token2"
+	nativepcsc "github.com/telesma-app/pcsc"
 )
 
 // Devices returns PC/SC readers whose card accepts the Token2 CTAP applet.

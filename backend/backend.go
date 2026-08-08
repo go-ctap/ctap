@@ -5,7 +5,7 @@ import (
 	"context"
 	"iter"
 
-	"github.com/go-ctap/ctap/transport"
+	"github.com/telesma-app/ctap/transport"
 )
 
 // Enumerator opens CTAP transports and transfers their ownership to its

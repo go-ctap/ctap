@@ -1,5 +1,5 @@
 // Package iso7816 implements the FIDO CTAP binding over
-// github.com/go-ctap/iso7816 for smart cards and NFC authenticators.
+// github.com/telesma-app/iso7816 for smart cards and NFC authenticators.
 //
 // Transport works with a raw APDU connection such as pcsc.Card. It selects the
 // standard FIDO applet, uses short APDU command chaining, reassembles chained

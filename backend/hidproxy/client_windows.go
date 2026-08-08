@@ -9,9 +9,9 @@ import (
 
 	"github.com/Microsoft/go-winio"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-ctap/ctap/transport/ctaphid"
-	ghid "github.com/go-ctap/hid"
-	proxyprotocol "github.com/go-ctap/windows-proxy/protocol"
+	"github.com/telesma-app/ctap/transport/ctaphid"
+	ghid "github.com/telesma-app/hid"
+	proxyprotocol "github.com/telesma-app/windows-proxy/protocol"
 )
 
 // Devices returns HID authenticators reported by the proxy.

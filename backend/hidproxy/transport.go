@@ -5,8 +5,8 @@ import (
 	"errors"
 	"iter"
 
-	ctaptransport "github.com/go-ctap/ctap/transport"
-	"github.com/go-ctap/ctap/transport/ctaphid"
+	ctaptransport "github.com/telesma-app/ctap/transport"
+	"github.com/telesma-app/ctap/transport/ctaphid"
 )
 
 var ErrNotSupported = errors.New("hidproxy: not supported on this platform")

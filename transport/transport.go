@@ -6,7 +6,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/go-ctap/ctap/protocol"
+	"github.com/telesma-app/ctap/protocol"
 )
 
 // CBORResponse is a transport-independent CTAP response.

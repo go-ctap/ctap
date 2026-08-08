@@ -4,10 +4,10 @@ import (
 	"bytes"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/go-ctap/ctap/attestation"
-	"github.com/go-ctap/ctap/credential"
-	"github.com/go-ctap/ctap/extension"
-	"github.com/go-ctap/ctap/webauthn"
+	"github.com/telesma-app/ctap/attestation"
+	"github.com/telesma-app/ctap/credential"
+	"github.com/telesma-app/ctap/extension"
+	"github.com/telesma-app/ctap/webauthn"
 )
 
 type AuthenticatorMakeCredentialRequest struct {

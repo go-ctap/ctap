@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/go-ctap/ctap/backend"
-	"github.com/go-ctap/ctap/options"
+	"github.com/telesma-app/ctap/backend"
+	"github.com/telesma-app/ctap/options"
 )
 
 // Select returns the only authenticator or asks for user presence concurrently
