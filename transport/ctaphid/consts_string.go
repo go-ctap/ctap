@@ -68,20 +68,26 @@ func _() {
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
 	_ = x[CAPABILITY_WINK-1]
+	_ = x[CAPABILITY_LOCK-2]
 	_ = x[CAPABILITY_CBOR-4]
 	_ = x[CAPABILITY_NMSG-8]
 }
 
 const (
-	_CapabilityFlag_name_0 = "CAPABILITY_WINK"
+	_CapabilityFlag_name_0 = "CAPABILITY_WINKCAPABILITY_LOCK"
 	_CapabilityFlag_name_1 = "CAPABILITY_CBOR"
 	_CapabilityFlag_name_2 = "CAPABILITY_NMSG"
 )
 
+var (
+	_CapabilityFlag_index_0 = [...]uint8{0, 15, 30}
+)
+
 func (i CapabilityFlag) String() string {
 	switch {
-	case i == 1:
-		return _CapabilityFlag_name_0
+	case 1 <= i && i <= 2:
+		i -= 1
+		return _CapabilityFlag_name_0[_CapabilityFlag_index_0[i]:_CapabilityFlag_index_0[i+1]]
 	case i == 4:
 		return _CapabilityFlag_name_1
 	case i == 8:

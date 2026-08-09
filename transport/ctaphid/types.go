@@ -44,6 +44,10 @@ func (r *InitResponse) ImplementsWink() bool {
 	return r.CapabilityFlags&byte(CAPABILITY_WINK) != 0
 }
 
+func (r *InitResponse) ImplementsLock() bool {
+	return r.CapabilityFlags&byte(CAPABILITY_LOCK) != 0
+}
+
 func (r *InitResponse) ImplementsCBOR() bool {
 	return r.CapabilityFlags&byte(CAPABILITY_CBOR) != 0
 }

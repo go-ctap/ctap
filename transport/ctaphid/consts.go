@@ -23,6 +23,7 @@ type CapabilityFlag byte
 
 const (
 	CAPABILITY_WINK CapabilityFlag = 0x01
+	CAPABILITY_LOCK CapabilityFlag = 0x02
 	CAPABILITY_CBOR CapabilityFlag = 0x04
 	CAPABILITY_NMSG CapabilityFlag = 0x08
 )
