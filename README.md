@@ -48,9 +48,10 @@ and automated tests. A feature listed above may still be unavailable on a specif
 
 ## Transports
 
-| Transport             | Setup                                                                                                                                        |
-|-----------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| Transport             | Setup                                                                                                                                                |
+|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
 | USB HID               | Uses the cgo-free [`telesma-app/hid`](https://github.com/telesma-app/hid) backend                                                                    |
+| TCP CTAPHID stream    | Connects emulators and proxies that expose a stream of complete 64-byte CTAPHID reports; this is not a FIDO transport                                |
 | Windows named pipe    | Connects to a running [`telesma-app/windows-proxy`](https://github.com/telesma-app/windows-proxy); see [`examples/namedpipe`](examples/namedpipe)    |
 | ISO 7816 / NFC        | Wraps an exclusive raw APDU connection such as [`telesma-app/pcsc`](https://github.com/telesma-app/pcsc); see [`examples/iso7816`](examples/iso7816) |
 | Token2 CTAP over APDU | Requires a PC/SC implementation such as [`telesma-app/pcsc`](https://github.com/telesma-app/pcsc); see [`examples/token2`](examples/token2)          |
@@ -108,14 +109,14 @@ PC/SC, and Token2 expose the same enumerator contract.
 
 ## API levels
 
-| Package                                                                                             | Use it for                                                                          |
-|-----------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
-| `authenticator`                                                                                     | Stateful workflows, capability checks, PIN/UV handling, and user-presence selection |
-| `client`                                                                                            | Sending individual CTAP commands and managing state yourself                        |
-| `backend/hid`, `backend/hidproxy`, `backend/pcsc`, `backend/token2`                                | Finding and opening local authenticator endpoints                                   |
-| `transport`, `transport/ctaphid`, `transport/iso7816`, `transport/token2`                          | CTAP message boundaries and transport framing                                       |
-| `protocol`, `credential`, `attestation`, `extension`, `webauthn`                                    | CTAP constants and data types                                                       |
-| `crypto`                                                                                            | Cryptographic helpers                                                               |
+| Package                                                                            | Use it for                                                                          |
+|------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| `authenticator`                                                                    | Stateful workflows, capability checks, PIN/UV handling, and user-presence selection |
+| `client`                                                                           | Sending individual CTAP commands and managing state yourself                        |
+| `backend/hid`, `backend/hidproxy`, `backend/pcsc`, `backend/tcp`, `backend/token2` | Finding and opening local authenticator endpoints                                   |
+| `transport`, `transport/ctaphid`, `transport/iso7816`, `transport/token2`          | CTAP message boundaries and transport framing                                       |
+| `protocol`, `credential`, `attestation`, `extension`, `webauthn`                   | CTAP constants and data types                                                       |
+| `crypto`                                                                           | Cryptographic helpers                                                               |
 
 For a custom transport, implement `transport.Device` and pass it to `authenticator.New`.
 Yubico-specific device information and identity operations live in
