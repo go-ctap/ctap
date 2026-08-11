@@ -55,8 +55,9 @@ and automated tests. A feature listed above may still be unavailable on a specif
 | Windows named pipe    | Connects to a running [`telesma-app/windows-proxy`](https://github.com/telesma-app/windows-proxy); see [`examples/namedpipe`](examples/namedpipe)    |
 | ISO 7816 / NFC        | Wraps an exclusive raw APDU connection such as [`telesma-app/pcsc`](https://github.com/telesma-app/pcsc); see [`examples/iso7816`](examples/iso7816) |
 | Token2 CTAP over APDU | Requires a PC/SC implementation such as [`telesma-app/pcsc`](https://github.com/telesma-app/pcsc); see [`examples/token2`](examples/token2)          |
+| Bluetooth LE          | Experimental cgo-free CoreBluetooth backend for FIDO authenticators on macOS amd64/arm64; see [`examples/ble`](examples/ble)                       |
 
-BLE, hybrid, and digital-credential transports are not supported. Token2 support is experimental because its protocol
+Hybrid and digital-credential transports are not supported. BLE and Token2 support are experimental; the Token2 protocol
 is not publicly documented by the vendor.
 
 ## Installation
@@ -113,8 +114,8 @@ PC/SC, and Token2 expose the same enumerator contract.
 |------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
 | `authenticator`                                                                    | Stateful workflows, capability checks, PIN/UV handling, and user-presence selection |
 | `client`                                                                           | Sending individual CTAP commands and managing state yourself                        |
-| `backend/hid`, `backend/hidproxy`, `backend/pcsc`, `backend/tcp`, `backend/token2` | Finding and opening local authenticator endpoints                                   |
-| `transport`, `transport/ctaphid`, `transport/iso7816`, `transport/token2`          | CTAP message boundaries and transport framing                                       |
+| `backend/ble`, `backend/hid`, `backend/hidproxy`, `backend/pcsc`, `backend/tcp`, `backend/token2` | Finding and opening local authenticator endpoints                                   |
+| `transport`, `transport/ctapble`, `transport/ctaphid`, `transport/iso7816`, `transport/token2`    | CTAP message boundaries and transport framing                                       |
 | `protocol`, `credential`, `attestation`, `extension`, `webauthn`                   | CTAP constants and data types                                                       |
 | `crypto`                                                                           | Cryptographic helpers                                                               |
 
@@ -188,6 +189,7 @@ Each example is a separate Go module.
 | [`examples/token2`](examples/token2) | List credentials through Token2 and PC/SC | `FIDO2_PIN`, optional `PCSC_READER` |
 | [`examples/namedpipe`](examples/namedpipe) | Ping and list credentials through the Windows proxy | `FIDO2_PIN`, running proxy |
 | [`examples/transports`](examples/transports) | Print `authenticatorGetInfo` for every transport | Optional Windows proxy and PC/SC service |
+| [`examples/ble`](examples/ble) | Scan BLE authenticators and print `authenticatorGetInfo` | Optional `-scan` and `-id` flags |
 
 Run an example from its directory:
 
@@ -197,6 +199,27 @@ FIDO2_PIN=123456 go run .
 ```
 
 In PowerShell, set the variable first: `$env:FIDO2_PIN = "123456"`.
+
+### BLE prototype
+
+The BLE demo scans for FIDO advertisements during an explicit window, prints
+each opaque CoreBluetooth identifier, name, and RSSI, then performs
+`authenticatorGetInfo`:
+
+```sh
+cd examples/ble
+go run . -scan 8s
+go run . -scan 8s -id 01234567-89AB-CDEF-0123-456789ABCDEF
+```
+
+Use `-id` when multiple candidates are found. A conforming authenticator
+protects its FIDO GATT characteristics. The transport relies on macOS to pair
+when necessary and establish the encrypted link when those characteristics are
+accessed, and waits for the protected GATT operations used during
+initialization. Pairing and bond management APIs remain outside this
+prototype. macOS may display its pairing prompt on the first run. The terminal
+application needs Bluetooth permission; packaged host applications also need
+`NSBluetoothAlwaysUsageDescription`.
 
 ## References
 

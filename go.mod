@@ -12,6 +12,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.11.1
+	github.com/telesma-app/ble v0.1.0
 	github.com/telesma-app/hid v0.12.0
 	github.com/telesma-app/iso7816 v0.2.0
 	github.com/telesma-app/pcsc v0.9.0

@@ -1,6 +1,6 @@
 module github.com/telesma-app/ctap/examples/iso7816
 
-go 1.26.3
+go 1.26.5
 
 require github.com/telesma-app/ctap v0.44.0
 

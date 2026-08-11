@@ -1,10 +1,15 @@
-module github.com/telesma-app/ctap/examples/uv
+module github.com/telesma-app/ctap/examples/ble
 
 go 1.26.5
 
-require github.com/telesma-app/ctap v0.44.0
+require (
+	github.com/telesma-app/ble v0.1.0
+	github.com/telesma-app/ctap v0.44.0
+)
 
 require (
+	github.com/cloudflare/circl v1.6.5 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect

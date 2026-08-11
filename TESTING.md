@@ -62,3 +62,25 @@ go test ./...
 
 For changes to transport concurrency, also run the race/stress command
 documented in the relevant change plan.
+
+## Opt-in BLE hardware test
+
+The BLE hardware test is excluded from normal runs. On macOS, grant Bluetooth
+permission to the terminal and make the FIDO authenticator available for
+pairing, then run:
+
+```sh
+CTAP_BLE_TEST=1 go test ./backend/ble -run TestHardwareGetInfo -v
+```
+
+The transport relies on macOS to establish an encrypted link when it accesses
+the protected FIDO GATT characteristics. The first run may therefore display a
+system pairing prompt; an existing bond is reused without another prompt.
+
+If more than one FIDO BLE authenticator is advertising, select one by its
+opaque CoreBluetooth identifier:
+
+```sh
+CTAP_BLE_TEST=1 CTAP_BLE_DEVICE_ID=01234567-89AB-CDEF-0123-456789ABCDEF \
+  go test ./backend/ble -run TestHardwareGetInfo -v
+```
