@@ -5,6 +5,7 @@ go 1.26.5
 tool golang.org/x/tools/cmd/stringer
 
 require (
+	filippo.io/nistec v0.0.4
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/cloudflare/circl v1.6.5
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1

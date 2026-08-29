@@ -46,7 +46,7 @@ func validateCreatePRF(
 	// WebAuthn's UserVerificationRequirement override. Since creation-time PRF
 	// evaluation is optional, omit hmac-secret-mc unless the CTAP request will
 	// perform UV.
-	if !prfUserVerificationWillBePerformed(info, pinUvAuthToken, options) {
+	if !userVerificationWillBePerformed(info, pinUvAuthToken, options) {
 		return nil, nil
 	}
 
@@ -83,14 +83,14 @@ func validateGetPRF(
 	// Unlike creation-time evaluation, an authentication PRF evaluation was
 	// explicitly requested. Require a CTAP UV mechanism instead of silently
 	// changing the caller's options.
-	if !prfUserVerificationWillBePerformed(info, pinUvAuthToken, options) {
+	if !userVerificationWillBePerformed(info, pinUvAuthToken, options) {
 		return nil, prfUserVerificationRequiredError(info)
 	}
 
 	return evaluation, nil
 }
 
-func prfUserVerificationWillBePerformed(
+func userVerificationWillBePerformed(
 	info protocol.AuthenticatorGetInfoResponse,
 	pinUvAuthToken []byte,
 	options map[protocol.Option]bool,

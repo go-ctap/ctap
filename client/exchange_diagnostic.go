@@ -71,6 +71,11 @@ var unsignedExtensionOutputLargeBlobKey = diagnosticMapValueKey{
 	key:  string(extension.ExtensionIdentifierLargeBlob),
 }
 
+var unsignedExtensionOutputPreviewSignKey = diagnosticMapValueKey{
+	path: "UnsignedExtensionOutputs",
+	key:  string(extension.ExtensionIdentifierPreviewSign),
+}
+
 var getAssertionDiagnosticMapValueTypes = map[diagnosticMapValueKey]reflect.Type{
 	unsignedExtensionOutputLargeBlobKey: reflect.TypeFor[protocol.GetLargeBlobOutput](),
 }
@@ -80,7 +85,8 @@ var diagnosticExchangeSchemas = map[protocol.Command]diagnosticExchangeSchema{
 		requestType:  reflect.TypeFor[protocol.AuthenticatorMakeCredentialRequest](),
 		responseType: reflect.TypeFor[protocol.AuthenticatorMakeCredentialResponse](),
 		responseMapValueTypes: map[diagnosticMapValueKey]reflect.Type{
-			unsignedExtensionOutputLargeBlobKey: reflect.TypeFor[protocol.CreateLargeBlobOutput](),
+			unsignedExtensionOutputLargeBlobKey:   reflect.TypeFor[protocol.CreateLargeBlobOutput](),
+			unsignedExtensionOutputPreviewSignKey: reflect.TypeFor[protocol.PreviewSignUnsignedOutput](),
 		},
 	},
 	protocol.AuthenticatorGetAssertion: {

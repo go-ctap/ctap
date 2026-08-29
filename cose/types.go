@@ -39,6 +39,10 @@ const (
 	AlgorithmPS512 Algorithm = -39
 	// AlgorithmECDHESHKDF256 is ECDH ES with HKDF-SHA-256.
 	AlgorithmECDHESHKDF256 Algorithm = -25
+	// AlgorithmESP256SplitARKGPlaceholder is ESP256-split using a private key derived by ARKG-P256.
+	AlgorithmESP256SplitARKGPlaceholder Algorithm = -65539
+	// AlgorithmARKGP256Placeholder identifies the ARKG-P256 instance.
+	AlgorithmARKGP256Placeholder Algorithm = -65700
 )
 
 // COSE common key parameter labels.
@@ -52,6 +56,8 @@ const (
 	KeyTypeOKP = 1
 	KeyTypeEC2 = 2
 	KeyTypeRSA = 3
+	// KeyTypeARKGPublicSeedPlaceholder identifies an ARKG public seed.
+	KeyTypeARKGPublicSeedPlaceholder = -65537
 )
 
 // COSE OKP key parameter labels.

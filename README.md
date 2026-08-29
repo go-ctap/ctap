@@ -28,7 +28,7 @@ Main features include:
 - PIN/UV Auth Protocols One and Two;
 - format-level attestation-object parsing and packed/FIDO U2F signature verification;
 - the `credProtect`, `credBlob`, `largeBlobKey`, `largeBlob`, `minPinLength`, `pinComplexityPolicy`, `hmac-secret`,
-  `hmac-secret-mc`, `thirdPartyPayment`, and WebAuthn `prf` extensions.
+  `hmac-secret-mc`, `thirdPartyPayment`, WebAuthn `prf`, and draft `previewSign` extensions.
 
 See the [Go API reference](https://pkg.go.dev/github.com/telesma-app/ctap) for command and type details.
 
@@ -41,10 +41,11 @@ Automated tests cover the implemented protocol, validation, and state changes. P
 | Authenticator | Firmware | Tested connection and protocol |
 |---|---:|---|
 | YubiKey 5 Series, FIPS and non-FIPS | 5.7.4 | USB HID and the advertised CTAP 2.1 features |
+| YubiKey 5 Series RC | 5.8 RC | USB HID and a `previewSign` create/sign round trip |
 | Token2 PIN+ Dual | R3.3 | USB HID, CTAP over APDU, and the advertised CTAP 2.1 features |
 
-No CTAP 2.3 authenticator has been tested with the library yet. CTAP 2.2 and 2.3 features are based on the specification
-and automated tests. A feature listed above may still be unavailable on a specific device.
+CTAP 2.2 and 2.3 features not named in the table are based on the specification and automated tests. A feature listed
+above may still be unavailable on a specific device.
 
 ## Transports
 
@@ -190,6 +191,7 @@ Each example is a separate Go module.
 | [`examples/namedpipe`](examples/namedpipe) | Ping and list credentials through the Windows proxy | `FIDO2_PIN`, running proxy |
 | [`examples/transports`](examples/transports) | Print `authenticatorGetInfo` for every transport | Optional Windows proxy and PC/SC service |
 | [`examples/ble`](examples/ble) | Scan BLE authenticators and print `authenticatorGetInfo` | Optional `-scan` and `-id` flags |
+| [`examples/previewsign`](examples/previewsign) | Create a previewSign key, sign a message, and verify the signature | Optional `FIDO2_PIN`, previewSign authenticator |
 
 Run an example from its directory:
 
@@ -229,5 +231,9 @@ application needs Bluetooth permission; packaged host applications also need
 - [Client to Authenticator Protocol 2.3, Proposed Standard](https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html)
 - [FIDO Registry of Predefined Values 2.3, Proposed Standard](https://fidoalliance.org/specs/common-specs/fido-registry-v2.3-ps-20260105.html)
 - [Web Authentication: An API for accessing Public Key Credentials — Level 3](https://www.w3.org/TR/webauthn-3/)
+- [Yubico Signing Extension Preview for YubiKey firmware 5.8+](https://developers.yubico.com/Passkeys/Passkey_concepts/Security_key_capabilities/Signing_Extension_Preview.html)
+- [WebAuthn Signing Extension, Draft Version 4](https://yubicolabs.github.io/webauthn-sign-extension/4/)
+- [The Asynchronous Remote Key Generation (ARKG) Algorithm, Internet-Draft 11](https://datatracker.ietf.org/doc/html/draft-bradleylundberg-cfrg-arkg-11)
+- [COSE Algorithms for Two-Party Signing, Internet-Draft 05](https://datatracker.ietf.org/doc/html/draft-lundberg-cose-two-party-signing-algs-05)
 - [IANA WebAuthn Registries](https://www.iana.org/assignments/webauthn/webauthn.xhtml)
 - [IANA CBOR Object Signing and Encryption (COSE) Registries](https://www.iana.org/assignments/cose/cose.xhtml)

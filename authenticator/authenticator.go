@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/samber/lo"
 	"github.com/telesma-app/ctap/attestation"
 	"github.com/telesma-app/ctap/client"
 	"github.com/telesma-app/ctap/cose"
@@ -22,7 +23,6 @@ import (
 	ctaptransport "github.com/telesma-app/ctap/transport"
 	"github.com/telesma-app/ctap/transport/ctaphid"
 	"github.com/telesma-app/ctap/webauthn"
-	"github.com/samber/lo"
 )
 
 // Device represents a physical or virtual hardware device supporting CTAP communication protocols.
@@ -269,22 +269,31 @@ func (d *Device) MakeCredential(
 	}
 
 	extensions := new(protocol.CreateExtensionInputs)
-	backend, largeBlobSupport, largeBlobKeyRequested, err := validateCreateLargeBlob(
-		d.info,
-		extInputs.LargeBlobInputs,
-		options,
+
+	// largeBlob
+	var (
+		backend               largeBlobBackend
+		largeBlobSupport      extension.LargeBlobSupport
+		largeBlobKeyRequested bool
 	)
-	if err != nil {
-		return protocol.AuthenticatorMakeCredentialResponse{}, err
-	}
-	switch backend {
-	case largeBlobBackendDirect:
-		extensions.CreateLargeBlobInput = protocol.CreateLargeBlobInput{
-			LargeBlob: protocol.CreateLargeBlobParams{Support: largeBlobSupport},
+	if extInputs.LargeBlobInputs != nil {
+		backend, largeBlobSupport, largeBlobKeyRequested, err = validateCreateLargeBlob(
+			d.info,
+			extInputs.LargeBlobInputs,
+			options,
+		)
+		if err != nil {
+			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
-	case largeBlobBackendLegacy:
-		if largeBlobKeyRequested {
-			extensions.CreateLargeBlobKeyInput = protocol.CreateLargeBlobKeyInput{LargeBlobKey: true}
+		switch backend {
+		case largeBlobBackendDirect:
+			extensions.CreateLargeBlobInput = protocol.CreateLargeBlobInput{
+				LargeBlob: protocol.CreateLargeBlobParams{Support: largeBlobSupport},
+			}
+		case largeBlobBackendLegacy:
+			if largeBlobKeyRequested {
+				extensions.CreateLargeBlobKeyInput = protocol.CreateLargeBlobKeyInput{LargeBlobKey: true}
+			}
 		}
 	}
 
@@ -463,6 +472,24 @@ func (d *Device) MakeCredential(
 		}
 	}
 
+	// previewSign
+	var createPreviewSignInput *protocol.PreviewSignGenerateKeyInput
+	if extInputs.PreviewSignInputs != nil {
+		createPreviewSignInput, err = validateCreatePreviewSign(
+			d.info,
+			pinUvAuthToken,
+			extInputs.PreviewSignInputs,
+			options,
+		)
+		if err != nil {
+			return protocol.AuthenticatorMakeCredentialResponse{}, err
+		}
+
+		extensions.CreatePreviewSignInput = protocol.CreatePreviewSignInput{
+			PreviewSign: *createPreviewSignInput,
+		}
+	}
+
 	clientDataHash := sha256.Sum256(clientData)
 	resp, err := d.ctapClient.MakeCredential(
 		ctx,
@@ -487,6 +514,8 @@ func (d *Device) MakeCredential(
 
 	extOutputs := new(webauthn.CreateAuthenticationExtensionsClientOutputs)
 	resp.ExtensionOutputs = extOutputs
+
+	// largeBlob
 	largeBlobOutput, err := createLargeBlobOutput(
 		backend,
 		largeBlobSupport,
@@ -516,6 +545,13 @@ func (d *Device) MakeCredential(
 	if err := validateMakeCredentialExtensionOutputs(extensions, extInputs, authenticatorExtensions); err != nil {
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
+
+	// previewSign
+	previewSignOutput, err := createPreviewSignOutput(createPreviewSignInput, resp)
+	if err != nil {
+		return protocol.AuthenticatorMakeCredentialResponse{}, err
+	}
+	extOutputs.PreviewSignOutputs = previewSignOutput
 	if authenticatorExtensions == nil {
 		return resp, nil
 	}
@@ -643,31 +679,40 @@ func (d *Device) GetAssertion(
 		}
 
 		extensions := new(protocol.GetExtensionInputs)
-		backend, largeBlobRead, largeBlobWrite, err := validateGetLargeBlob(
-			d.info,
-			extInputs.LargeBlobInputs,
-			allowList,
+
+		// largeBlob
+		var (
+			backend        largeBlobBackend
+			largeBlobRead  bool
+			largeBlobWrite []byte
 		)
-		if err != nil {
-			yield(protocol.AuthenticatorGetAssertionResponse{}, err)
-			return
-		}
-		switch backend {
-		case largeBlobBackendDirect:
-			params := protocol.GetLargeBlobParams{Read: largeBlobRead}
-			if largeBlobWrite != nil {
-				compressed, err := crypto.CompressLargeBlobData(largeBlobWrite)
-				if err != nil {
-					yield(protocol.AuthenticatorGetAssertionResponse{}, err)
-					return
-				}
-				originalSize := uint(len(largeBlobWrite))
-				params.Write = compressed
-				params.OriginalSize = &originalSize
+		if extInputs.LargeBlobInputs != nil {
+			backend, largeBlobRead, largeBlobWrite, err = validateGetLargeBlob(
+				d.info,
+				extInputs.LargeBlobInputs,
+				allowList,
+			)
+			if err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+				return
 			}
-			extensions.GetLargeBlobInput = protocol.GetLargeBlobInput{LargeBlob: params}
-		case largeBlobBackendLegacy:
-			extensions.GetLargeBlobKeyInput = protocol.GetLargeBlobKeyInput{LargeBlobKey: true}
+			switch backend {
+			case largeBlobBackendDirect:
+				params := protocol.GetLargeBlobParams{Read: largeBlobRead}
+				if largeBlobWrite != nil {
+					compressed, err := crypto.CompressLargeBlobData(largeBlobWrite)
+					if err != nil {
+						yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+						return
+					}
+					originalSize := uint(len(largeBlobWrite))
+					params.Write = compressed
+					params.OriginalSize = &originalSize
+				}
+				extensions.GetLargeBlobInput = protocol.GetLargeBlobInput{LargeBlob: params}
+			case largeBlobBackendLegacy:
+				extensions.GetLargeBlobKeyInput = protocol.GetLargeBlobKeyInput{LargeBlobKey: true}
+			}
 		}
 
 		// hmac-secret
@@ -797,6 +842,21 @@ func (d *Device) GetAssertion(
 			}
 		}
 
+		// previewSign
+		var getPreviewSignInput *protocol.PreviewSignSignInput
+		if extInputs.PreviewSignInputs != nil {
+			getPreviewSignInput, err = validateGetPreviewSign(d.info, allowList, extInputs.PreviewSignInputs)
+			if err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+				return
+			}
+
+			extensions.GetPreviewSignInput = protocol.GetPreviewSignInput{
+				PreviewSign: *getPreviewSignInput,
+			}
+		}
+
+		// largeBlob (legacy)
 		var legacyAssertions []protocol.AuthenticatorGetAssertionResponse
 		emitAssertion := func(assertion protocol.AuthenticatorGetAssertionResponse) bool {
 			if backend == largeBlobBackendLegacy {
@@ -826,6 +886,8 @@ func (d *Device) GetAssertion(
 			if extInputs.PRFInputs != nil {
 				assertion.ExtensionOutputs.GetPRFOutputs = &webauthn.GetPRFOutputs{}
 			}
+
+			// largeBlob
 			largeBlobOutput, err := getLargeBlobOutput(
 				backend,
 				largeBlobRead,
@@ -846,6 +908,14 @@ func (d *Device) GetAssertion(
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 				return
 			}
+
+			// previewSign
+			previewSignOutput, err := getPreviewSignOutput(getPreviewSignInput, assertion)
+			if err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+				return
+			}
+			assertion.ExtensionOutputs.PreviewSignOutputs = previewSignOutput
 
 			// Yield assertions without extension data
 			if authenticatorExtensions == nil {
@@ -932,6 +1002,7 @@ func (d *Device) GetAssertion(
 			}
 		}
 
+		// largeBlobKey (technically legacy)
 		if backend == largeBlobBackendLegacy {
 			largeBlobOutputs, err := d.resolveLegacyLargeBlobOutputs(
 				ctx,

@@ -125,6 +125,43 @@ type GetThirdPartyPaymentOutput struct {
 	ThirdPartyPayment bool `cbor:"thirdPartyPayment"`
 }
 
+type PreviewSignGenerateKeyInput struct {
+	Algorithms []cose.Algorithm `cbor:"3,keyasint" ctapdiag:"alg"`
+	Flags      *AuthDataFlag    `cbor:"4,keyasint,omitempty"`
+}
+
+type CreatePreviewSignInput struct {
+	PreviewSign PreviewSignGenerateKeyInput `cbor:"previewSign,omitzero"`
+}
+
+type PreviewSignSignInput struct {
+	KeyHandle           []byte `cbor:"2,keyasint" ctapdiag:"kh"`
+	ToBeSigned          []byte `cbor:"6,keyasint" ctapdiag:"tbs,redact"`
+	AdditionalArguments []byte `cbor:"7,keyasint,omitzero" ctapdiag:"args"`
+}
+
+type GetPreviewSignInput struct {
+	PreviewSign PreviewSignSignInput `cbor:"previewSign,omitzero"`
+}
+
+type PreviewSignOutput struct {
+	Algorithm *cose.Algorithm `cbor:"3,keyasint,omitempty" ctapdiag:"alg"`
+	Flags     *AuthDataFlag   `cbor:"4,keyasint,omitempty"`
+	Signature []byte          `cbor:"6,keyasint,omitzero" ctapdiag:"sig"`
+}
+
+type CreatePreviewSignOutput struct {
+	PreviewSign *PreviewSignOutput `cbor:"previewSign,omitempty"`
+}
+
+type GetPreviewSignOutput struct {
+	PreviewSign *PreviewSignOutput `cbor:"previewSign,omitempty"`
+}
+
+type PreviewSignUnsignedOutput struct {
+	AttestationObject []byte `cbor:"7,keyasint" ctapdiag:"attestationObject"`
+}
+
 // CreateExtensionInputs aggregates MakeCredential extension inputs in CTAP
 // 2.3 PS § 12 order.
 type CreateExtensionInputs struct {
@@ -137,6 +174,7 @@ type CreateExtensionInputs struct {
 	CreateHMACSecretInput
 	CreateHMACSecretMCInput
 	CreateThirdPartyPaymentInput
+	CreatePreviewSignInput
 }
 
 type CreateExtensionOutputs struct {
@@ -146,6 +184,7 @@ type CreateExtensionOutputs struct {
 	*CreatePinComplexityPolicyOutput
 	*CreateHMACSecretOutput
 	CreateHMACSecretMCOutput
+	CreatePreviewSignOutput
 }
 
 type GetExtensionInputs struct {
@@ -154,12 +193,14 @@ type GetExtensionInputs struct {
 	GetLargeBlobInput
 	GetHMACSecretInput
 	GetThirdPartyPaymentInput
+	GetPreviewSignInput
 }
 
 type GetExtensionOutputs struct {
 	GetCredBlobOutput
 	GetHMACSecretOutput
 	*GetThirdPartyPaymentOutput
+	GetPreviewSignOutput
 }
 
 func decodeUnsignedExtensionOutput[T any](

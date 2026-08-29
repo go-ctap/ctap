@@ -42,6 +42,13 @@ func (r *AuthenticatorMakeCredentialResponse) LargeBlobUnsignedExtensionOutput()
 	)
 }
 
+func (r *AuthenticatorMakeCredentialResponse) PreviewSignUnsignedExtensionOutput() (*PreviewSignUnsignedOutput, error) {
+	return decodeUnsignedExtensionOutput[PreviewSignUnsignedOutput](
+		r.UnsignedExtensionOutputs,
+		extension.ExtensionIdentifierPreviewSign,
+	)
+}
+
 type MakeCredentialAuthData struct {
 	RPIDHash               []byte
 	Flags                  AuthDataFlag

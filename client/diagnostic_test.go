@@ -7,12 +7,12 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	ctapdiag "github.com/telesma-app/ctap/diagnostic"
 	"github.com/telesma-app/ctap/options"
 	"github.com/telesma-app/ctap/protocol"
 	ctaptransport "github.com/telesma-app/ctap/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRenderDiagnosticRedactsTaggedFieldsAndShowsOtherFields(t *testing.T) {
@@ -189,6 +189,33 @@ func TestRenderDiagnosticUsesExplicitAndDerivedFieldNames(t *testing.T) {
 	assert.Contains(t, diagnostic.Notation, "/epAtt/ 4:")
 	assert.NotContains(t, diagnostic.Notation, "auth-data-canary")
 	assert.Equal(t, []string{"AuthDataRaw"}, diagnostic.RedactedFields)
+}
+
+func TestRenderDiagnosticRedactsPreviewSignDataToBeSigned(t *testing.T) {
+	toBeSigned := []byte("preview-sign-tbs-canary")
+	request := protocol.AuthenticatorGetAssertionRequest{
+		RPID:           "example.com",
+		ClientDataHash: make([]byte, 32),
+		Extensions: protocol.GetExtensionInputs{
+			GetPreviewSignInput: protocol.GetPreviewSignInput{
+				PreviewSign: protocol.PreviewSignSignInput{
+					KeyHandle:  []byte("key-handle-canary"),
+					ToBeSigned: toBeSigned,
+				},
+			},
+		},
+	}
+	configured := options.NewOptions()
+	raw, err := configured.EncMode.Marshal(request)
+	require.NoError(t, err)
+	requestSchema, _ := exchangeSchemas(protocol.AuthenticatorGetAssertion)
+
+	diagnostic, _ := renderDiagnostic(configured.DecMode, configured.EncMode, raw, requestSchema)
+
+	require.Empty(t, diagnostic.Error)
+	assert.Contains(t, diagnostic.Notation, "key-handle-canary")
+	assert.NotContains(t, diagnostic.Notation, hex.EncodeToString(toBeSigned))
+	assert.Equal(t, []string{"Extensions.PreviewSign.ToBeSigned"}, diagnostic.RedactedFields)
 }
 
 func TestRenderDiagnosticUsesProtocolSpellingOverrides(t *testing.T) {

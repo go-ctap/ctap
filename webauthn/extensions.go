@@ -11,6 +11,7 @@ type CreateAuthenticationExtensionsClientInputs struct {
 	*CreatePinComplexityPolicyInputs
 	*PaymentInputs
 	*PRFInputs
+	*PreviewSignInputs
 }
 
 type CreateAuthenticationExtensionsClientOutputs struct {
@@ -20,6 +21,7 @@ type CreateAuthenticationExtensionsClientOutputs struct {
 	*CreateHMACSecretMCOutputs
 	*LargeBlobOutputs
 	*CreatePRFOutputs
+	*PreviewSignOutputs
 }
 
 type GetAuthenticationExtensionsClientInputs struct {
@@ -28,6 +30,7 @@ type GetAuthenticationExtensionsClientInputs struct {
 	*LargeBlobInputs
 	*PaymentInputs
 	*PRFInputs
+	*PreviewSignInputs
 }
 
 type GetAuthenticationExtensionsClientOutputs struct {
@@ -35,4 +38,5 @@ type GetAuthenticationExtensionsClientOutputs struct {
 	*GetHMACSecretOutputs
 	*LargeBlobOutputs
 	*GetPRFOutputs
+	*PreviewSignOutputs
 }
