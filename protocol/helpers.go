@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"uuid"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/telesma-app/ctap/attestation"
-	"github.com/google/uuid"
 )
 
 func (f AuthDataFlag) UserPresent() bool {

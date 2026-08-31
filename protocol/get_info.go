@@ -3,11 +3,11 @@ package protocol
 import (
 	"fmt"
 	"strings"
+	"uuid"
 
 	"github.com/telesma-app/ctap/attestation"
 	"github.com/telesma-app/ctap/credential"
 	"github.com/telesma-app/ctap/extension"
-	"github.com/google/uuid"
 )
 
 type (

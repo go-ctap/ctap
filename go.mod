@@ -1,6 +1,6 @@
 module github.com/telesma-app/ctap
 
-go 1.26.5
+go 1.27.0
 
 tool golang.org/x/tools/cmd/stringer
 
@@ -10,7 +10,6 @@ require (
 	github.com/cloudflare/circl v1.6.5
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/fxamacker/cbor/v2 v2.9.2
-	github.com/google/uuid v1.6.0
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.11.1
 	github.com/telesma-app/ble v0.1.0

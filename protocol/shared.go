@@ -1,8 +1,9 @@
 package protocol
 
 import (
+	"uuid"
+
 	"github.com/telesma-app/ctap/cose"
-	"github.com/google/uuid"
 )
 
 type AuthDataFlag byte

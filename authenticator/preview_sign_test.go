@@ -4,9 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"testing"
+	"uuid"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/telesma-app/ctap/attestation"

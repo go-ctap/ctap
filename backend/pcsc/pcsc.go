@@ -47,7 +47,7 @@ func Open(ctx context.Context, reader string) (*iso7816.Transport, error) {
 
 	card, err := nativepcsc.Open(
 		reader,
-		nativepcsc.WithShareMode(nativepcsc.ShareModeExclusive),
+		nativepcsc.WithShareMode(nativepcsc.ShareModeShared),
 		nativepcsc.WithDisconnectDisposition(nativepcsc.DispositionResetCard),
 	)
 	if err != nil {
