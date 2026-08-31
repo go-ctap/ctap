@@ -4,13 +4,10 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/sha256"
-	"io"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/hkdf"
 )
 
 func encryptGetInfoMember(
@@ -22,17 +19,21 @@ func encryptGetInfoMember(
 ) []byte {
 	t.Helper()
 
-	key := make([]byte, aes.BlockSize)
-	_, err := io.ReadFull(hkdf.New(
+	key, err := hkdf.Key(
 		sha256.New,
 		persistentPinUvAuthToken,
 		make([]byte, sha256.Size),
-		[]byte(info),
-	), key)
-	require.NoError(t, err)
+		info,
+		aes.BlockSize,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	block, err := aes.NewCipher(key)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	ciphertext := make([]byte, aes.BlockSize)
 	cipher.NewCBCEncrypter(block, iv).CryptBlocks(ciphertext, plaintext)
 	return append(bytes.Clone(iv), ciphertext...)
@@ -62,19 +63,40 @@ func TestDecryptDeviceIdentifierAndCredentialStoreState(t *testing.T) {
 		persistentPinUvAuthToken,
 		encIdentifier,
 	)
-	require.NoError(t, err)
-	assert.Equal(t, deviceIdentifier, gotDeviceIdentifier[:])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := deviceIdentifier, gotDeviceIdentifier[:]
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	gotCredentialStoreState, err := DecryptCredentialStoreState(
 		persistentPinUvAuthToken,
 		encCredStoreState,
 	)
-	require.NoError(t, err)
-	assert.Equal(t, credentialStoreState, gotCredentialStoreState[:])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := credentialStoreState, gotCredentialStoreState[:]
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	wrongLabel, err := DecryptCredentialStoreState(persistentPinUvAuthToken, encIdentifier)
-	require.NoError(t, err)
-	assert.NotEqual(t, deviceIdentifier, wrongLabel[:])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := deviceIdentifier, wrongLabel[:]
+		if (got == nil) == (want == nil) && bytes.Equal(got, want) {
+			t.Errorf("got %#v, want a value different from %#v", got, want)
+		}
+	}
 }
 
 func TestDecryptCredentialStoreStateAcceptsRegeneratedIV(t *testing.T) {
@@ -91,7 +113,9 @@ func TestDecryptCredentialStoreStateAcceptsRegeneratedIV(t *testing.T) {
 			"encCredStoreState",
 		),
 	)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	second, err := DecryptCredentialStoreState(
 		persistentPinUvAuthToken,
 		encryptGetInfoMember(
@@ -102,21 +126,49 @@ func TestDecryptCredentialStoreStateAcceptsRegeneratedIV(t *testing.T) {
 			"encCredStoreState",
 		),
 	)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	assert.Equal(t, first, second)
+	{
+		want, got := first, second
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestDecryptGetInfoMembersValidateInput(t *testing.T) {
 	_, err := DecryptDeviceIdentifier(nil, make([]byte, 32))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "persistentPinUvAuthToken must not be empty")
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	{
+		container, element := err.Error(), "persistentPinUvAuthToken must not be empty"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 
 	_, err = DecryptDeviceIdentifier(make([]byte, 32), make([]byte, 31))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "encIdentifier must be exactly 32 bytes")
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	{
+		container, element := err.Error(), "encIdentifier must be exactly 32 bytes"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 
 	_, err = DecryptCredentialStoreState(make([]byte, 32), make([]byte, 31))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "encCredStoreState must be exactly 32 bytes")
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	{
+		container, element := err.Error(), "encCredStoreState must be exactly 32 bytes"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 }

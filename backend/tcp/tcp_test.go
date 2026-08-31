@@ -9,9 +9,6 @@ import (
 	"net"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDeviceReadAssemblesFragmentedReport(t *testing.T) {
@@ -31,9 +28,21 @@ func TestDeviceReadAssemblesFragmentedReport(t *testing.T) {
 
 	got := make([]byte, inputReportSize)
 	n, err := device.Read(context.Background(), got)
-	require.NoError(t, err)
-	assert.Equal(t, inputReportSize, n)
-	assert.Equal(t, want, got)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := inputReportSize, n
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := want, got
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestDeviceWriteStripsReportID(t *testing.T) {
@@ -54,9 +63,21 @@ func TestDeviceWriteStripsReportID(t *testing.T) {
 	}()
 
 	n, err := device.Write(context.Background(), report)
-	require.NoError(t, err)
-	assert.Equal(t, outputReportSize, n)
-	assert.Equal(t, report[1:], <-got)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := outputReportSize, n
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := report[1:], <-got
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestDeviceRejectsInvalidReportShapes(t *testing.T) {
@@ -67,20 +88,32 @@ func TestDeviceRejectsInvalidReportShapes(t *testing.T) {
 
 	for _, size := range []int{0, inputReportSize - 1, inputReportSize + 1} {
 		n, err := device.Read(context.Background(), make([]byte, size))
-		assert.Zero(t, n)
-		assert.Error(t, err)
+		if got := n; !(got == 0) {
+			t.Errorf("got %#v, want zero value", got)
+		}
+		if err == nil {
+			t.Errorf("expected an error")
+		}
 	}
 	for _, size := range []int{0, outputReportSize - 1, outputReportSize + 1} {
 		n, err := device.Write(context.Background(), make([]byte, size))
-		assert.Zero(t, n)
-		assert.Error(t, err)
+		if got := n; !(got == 0) {
+			t.Errorf("got %#v, want zero value", got)
+		}
+		if err == nil {
+			t.Errorf("expected an error")
+		}
 	}
 
 	report := make([]byte, outputReportSize)
 	report[0] = 1
 	n, err := device.Write(context.Background(), report)
-	assert.Zero(t, n)
-	assert.Error(t, err)
+	if got := n; !(got == 0) {
+		t.Errorf("got %#v, want zero value", got)
+	}
+	if err == nil {
+		t.Errorf("expected an error")
+	}
 }
 
 func TestDeviceReadReportsShortInput(t *testing.T) {
@@ -94,8 +127,18 @@ func TestDeviceReadReportsShortInput(t *testing.T) {
 	}()
 
 	n, err := device.Read(context.Background(), make([]byte, inputReportSize))
-	assert.Equal(t, inputReportSize-1, n)
-	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	{
+		want, got := inputReportSize-1, n
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		err, target := err, io.ErrUnexpectedEOF
+		if !errors.Is(err, target) {
+			t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 }
 
 func TestDeviceReadCancellationLeavesConnectionReusable(t *testing.T) {
@@ -107,16 +150,35 @@ func TestDeviceReadCancellationLeavesConnectionReusable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	n, err := device.Read(ctx, make([]byte, inputReportSize))
-	assert.Zero(t, n)
-	assert.ErrorIs(t, err, context.Canceled)
+	if got := n; !(got == 0) {
+		t.Errorf("got %#v, want zero value", got)
+	}
+	{
+		err, target := err, context.Canceled
+		if !errors.Is(err, target) {
+			t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 
 	want := bytes.Repeat([]byte{0x5a}, inputReportSize)
 	go func() { _, _ = peer.Write(want) }()
 	got := make([]byte, inputReportSize)
 	n, err = device.Read(context.Background(), got)
-	require.NoError(t, err)
-	assert.Equal(t, inputReportSize, n)
-	assert.Equal(t, want, got)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := inputReportSize, n
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := want, got
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestDeviceReadCancellationInterruptsBlockedRead(t *testing.T) {
@@ -128,8 +190,15 @@ func TestDeviceReadCancellationInterruptsBlockedRead(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	n, err := device.Read(ctx, make([]byte, inputReportSize))
-	assert.Zero(t, n)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	if got := n; !(got == 0) {
+		t.Errorf("got %#v, want zero value", got)
+	}
+	{
+		err, target := err, context.DeadlineExceeded
+		if !errors.Is(err, target) {
+			t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 }
 
 func TestDeviceWriteCancellationLeavesConnectionReusable(t *testing.T) {
@@ -142,7 +211,12 @@ func TestDeviceWriteCancellationLeavesConnectionReusable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	_, err := device.Write(ctx, report)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	{
+		err, target := err, context.DeadlineExceeded
+		if !errors.Is(err, target) {
+			t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 
 	readDone := make(chan error, 1)
 	go func() {
@@ -151,19 +225,32 @@ func TestDeviceWriteCancellationLeavesConnectionReusable(t *testing.T) {
 		readDone <- err
 	}()
 	n, err := device.Write(context.Background(), report)
-	require.NoError(t, err)
-	assert.Equal(t, outputReportSize, n)
-	require.NoError(t, <-readDone)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := outputReportSize, n
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if err := <-readDone; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestDeviceWriteReportsConnectionFailure(t *testing.T) {
 	conn, peer := net.Pipe()
 	device := &Device{conn: conn}
 	t.Cleanup(func() { _ = device.Close() })
-	require.NoError(t, peer.Close())
+	if err := peer.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	_, err := device.Write(context.Background(), make([]byte, outputReportSize))
-	assert.Error(t, err)
+	if err == nil {
+		t.Errorf("expected an error")
+	}
 }
 
 func TestDeviceCloseInterruptsBlockedRead(t *testing.T) {
@@ -177,13 +264,19 @@ func TestDeviceCloseInterruptsBlockedRead(t *testing.T) {
 		done <- err
 	}()
 
-	require.NoError(t, device.Close())
-	assert.Error(t, <-done)
+	if err := device.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := <-done; err == nil {
+		t.Errorf("expected an error")
+	}
 }
 
 func TestOpenAllocatesCTAPHIDChannel(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	t.Cleanup(func() { _ = listener.Close() })
 
 	serverErr := make(chan error, 1)
@@ -221,7 +314,13 @@ func TestOpenAllocatesCTAPHIDChannel(t *testing.T) {
 	}()
 
 	transport, err := Open(context.Background(), listener.Addr().String())
-	require.NoError(t, err)
-	require.NoError(t, transport.Close())
-	require.NoError(t, <-serverErr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := transport.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }

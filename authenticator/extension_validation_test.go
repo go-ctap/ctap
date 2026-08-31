@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -14,8 +15,6 @@ import (
 	"github.com/telesma-app/ctap/internal/testhid"
 	"github.com/telesma-app/ctap/protocol"
 	"github.com/telesma-app/ctap/webauthn"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func makeCredentialWithExtensions(
@@ -94,11 +93,20 @@ func TestMakeCredentialVerifiesEnforcedCredentialProtectionOutput(t *testing.T) 
 				},
 			})
 			if tt.wantErr != nil {
-				require.ErrorIs(t, err, tt.wantErr)
+				{
+					err, target := err, tt.wantErr
+					if !errors.Is(err, target) {
+						t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+					}
+				}
 			} else {
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
-			assert.NotEmpty(t, fake.Writes())
+			if got := fake.Writes(); len(got) == 0 {
+				t.Errorf("got empty value %#v, want non-empty", got)
+			}
 		})
 	}
 }
@@ -125,14 +133,24 @@ func TestMakeCredentialIgnoresOversizedCredentialBlob(t *testing.T) {
 			CredBlob: bytes.Repeat([]byte{0xaa}, 33),
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	command, requestCBOR := fake.FirstCTAPPayload(t)
-	require.Equal(t, protocol.AuthenticatorMakeCredential, command)
+	{
+		want, got := protocol.AuthenticatorMakeCredential, command
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 	var request protocol.AuthenticatorMakeCredentialRequest
-	require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-	require.NotNil(t, request.Extensions)
-	assert.Zero(t, request.Extensions.CreateCredBlobInput)
+	if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := request.Extensions.CreateCredBlobInput; got.CredBlob != nil {
+		t.Errorf("got %#v, want zero value", got)
+	}
 }
 
 func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
@@ -156,16 +174,27 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 				Payment: webauthn.AuthenticationExtensionsPaymentInputs{IsPayment: false},
 			},
 		})
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		_, requestCBOR := fake.FirstCTAPPayload(t)
 		var request protocol.AuthenticatorMakeCredentialRequest
-		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-		require.NotNil(t, request.Extensions)
-		assert.Zero(t, request.Extensions.CreateHMACSecretInput)
-		assert.Zero(t, request.Extensions.CreateMinPinLengthInput)
-		assert.Zero(t, request.Extensions.CreatePinComplexityPolicyInput)
-		assert.Zero(t, request.Extensions.CreateThirdPartyPaymentInput)
+		if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := request.Extensions.CreateHMACSecretInput; got.HMACSecret {
+			t.Errorf("got %#v, want zero value", got)
+		}
+		if got := request.Extensions.CreateMinPinLengthInput; got.MinPinLength {
+			t.Errorf("got %#v, want zero value", got)
+		}
+		if got := request.Extensions.CreatePinComplexityPolicyInput; got.PinComplexityPolicy {
+			t.Errorf("got %#v, want zero value", got)
+		}
+		if got := request.Extensions.CreateThirdPartyPaymentInput; got.ThirdPartyPayment {
+			t.Errorf("got %#v, want zero value", got)
+		}
 	})
 
 	t.Run("GetAssertion", func(t *testing.T) {
@@ -192,16 +221,28 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 			nil,
 		) {
 			count++
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 		}
-		require.Equal(t, 1, count)
+		{
+			want, got := 1, count
+			if got != want {
+				t.Fatalf("got %#v, want %#v", got, want)
+			}
+		}
 
 		_, requestCBOR := fake.FirstCTAPPayload(t)
 		var request protocol.AuthenticatorGetAssertionRequest
-		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-		require.NotNil(t, request.Extensions)
-		assert.Zero(t, request.Extensions.GetCredBlobInput)
-		assert.Zero(t, request.Extensions.GetThirdPartyPaymentInput)
+		if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := request.Extensions.GetCredBlobInput; got.CredBlob {
+			t.Errorf("got %#v, want zero value", got)
+		}
+		if got := request.Extensions.GetThirdPartyPaymentInput; got.ThirdPartyPayment {
+			t.Errorf("got %#v, want zero value", got)
+		}
 	})
 }
 
@@ -224,13 +265,24 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 				Payment: webauthn.AuthenticationExtensionsPaymentInputs{IsPayment: true},
 			},
 		})
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		command, requestCBOR := fake.FirstCTAPPayload(t)
-		assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
+		{
+			want, got := protocol.AuthenticatorMakeCredential, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 		var request protocol.AuthenticatorMakeCredentialRequest
-		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-		assert.True(t, request.Extensions.CreateThirdPartyPaymentInput.ThirdPartyPayment)
+		if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := request.Extensions.CreateThirdPartyPaymentInput.ThirdPartyPayment; !got {
+			t.Errorf("got false, want true")
+		}
 	})
 
 	t.Run("GetAssertion preserves false output", func(t *testing.T) {
@@ -259,18 +311,35 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 			},
 			nil,
 		) {
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			assertions = append(assertions, assertion)
 		}
-		require.Len(t, assertions, 1)
-		require.NotNil(t, assertions[0].AuthData.Extensions.GetThirdPartyPaymentOutput)
-		assert.False(t, assertions[0].AuthData.Extensions.GetThirdPartyPaymentOutput.ThirdPartyPayment)
+		if got, want := len(assertions), 1; got != want {
+			t.Fatalf("got length %d, want %d", got, want)
+		}
+		if got := assertions[0].AuthData.Extensions.GetThirdPartyPaymentOutput; got == nil {
+			t.Fatalf("got nil, want a non-nil value")
+		}
+		if got := assertions[0].AuthData.Extensions.GetThirdPartyPaymentOutput.ThirdPartyPayment; got {
+			t.Errorf("got true, want false")
+		}
 
 		command, requestCBOR := fake.FirstCTAPPayload(t)
-		assert.Equal(t, protocol.AuthenticatorGetAssertion, command)
+		{
+			want, got := protocol.AuthenticatorGetAssertion, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 		var request protocol.AuthenticatorGetAssertionRequest
-		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-		assert.True(t, request.Extensions.GetThirdPartyPaymentInput.ThirdPartyPayment)
+		if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := request.Extensions.GetThirdPartyPaymentInput.ThirdPartyPayment; !got {
+			t.Errorf("got false, want true")
+		}
 	})
 
 	t.Run("requires advertised support", func(t *testing.T) {
@@ -286,7 +355,12 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 				Payment: webauthn.AuthenticationExtensionsPaymentInputs{IsPayment: true},
 			},
 		})
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 }
@@ -342,7 +416,12 @@ func TestCompositeExtensionCapabilitiesAreValidatedBeforeCommand(t *testing.T) {
 			d := newTestDevice(t, fake, tt.info)
 
 			_, err := makeCredentialWithExtensions(d, tt.extInputs)
-			require.ErrorIs(t, err, ErrSpecViolation)
+			{
+				err, target := err, ErrSpecViolation
+				if !errors.Is(err, target) {
+					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+				}
+			}
 			assertNoAuthenticatorIO(t, fake)
 		})
 	}
@@ -371,7 +450,12 @@ func TestGetAssertionRejectsHMACSecretWhenUserPresenceIsDisabledBeforeCommand(t 
 		gotErr = err
 	}
 
-	require.ErrorIs(t, gotErr, ErrNotSupported)
+	{
+		err, target := gotErr, ErrNotSupported
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -391,7 +475,12 @@ func TestUnsolicitedExtensionOutputsAreRejectedWithoutPanic(t *testing.T) {
 		})
 
 		_, err := makeCredentialWithExtensions(d, nil)
-		require.ErrorIs(t, err, ErrSpecViolation)
+		{
+			err, target := err, ErrSpecViolation
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 
 	t.Run("GetAssertion hmac-secret", func(t *testing.T) {
@@ -416,7 +505,12 @@ func TestUnsolicitedExtensionOutputsAreRejectedWithoutPanic(t *testing.T) {
 		) {
 			gotErr = err
 		}
-		require.ErrorIs(t, gotErr, ErrSpecViolation)
+		{
+			err, target := gotErr, ErrSpecViolation
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 }
 
@@ -438,7 +532,12 @@ func TestSetLargeBlobsValidatesAndCanonicalizesArray(t *testing.T) {
 			d := newTestDevice(t, fake, info)
 
 			err := d.SetLargeBlobs(testContext, nil, []protocol.LargeBlob{blob})
-			require.ErrorIs(t, err, SyntaxError)
+			{
+				err, target := err, SyntaxError
+				if !errors.Is(err, target) {
+					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+				}
+			}
 			assertNoAuthenticatorIO(t, fake)
 		}
 	})
@@ -447,15 +546,31 @@ func TestSetLargeBlobsValidatesAndCanonicalizesArray(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil)
 		d := newTestDevice(t, fake, info)
 
-		require.NoError(t, d.SetLargeBlobs(testContext, nil, nil))
+		if err := d.SetLargeBlobs(testContext, nil, nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		_, requestCBOR := fake.FirstCTAPPayload(t)
 		var request protocol.AuthenticatorLargeBlobsRequest
-		require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-		require.Len(t, request.Set, 17)
-		assert.Equal(t, byte(0x80), request.Set[0])
+		if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got, want := len(request.Set), 17; got != want {
+			t.Fatalf("got length %d, want %d", got, want)
+		}
+		{
+			want, got := byte(0x80), request.Set[0]
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 		hash := sha256.Sum256(request.Set[:1])
-		assert.Equal(t, hash[:16], request.Set[1:])
+		{
+			want, got := hash[:16], request.Set[1:]
+			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 }
 
@@ -467,7 +582,12 @@ func TestValidateMakeCredentialExtensionOutputsRejectsUnsolicitedValues(t *testi
 			CreateCredBlobOutput: &protocol.CreateCredBlobOutput{CredBlob: true},
 		},
 	)
-	require.ErrorIs(t, err, ErrSpecViolation)
+	{
+		err, target := err, ErrSpecViolation
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 }
 
 func TestGetAssertionValidatesHMACSecretSalts(t *testing.T) {
@@ -491,12 +611,23 @@ func TestGetAssertionValidatesHMACSecretSalts(t *testing.T) {
 		nil,
 	) {
 		count++
-		assert.Equal(t, protocol.AuthenticatorGetAssertionResponse{}, assertion)
-		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidSaltSize))
+		if !assertionResponseIsZero(assertion) {
+			t.Errorf("got %#v, want zero response", assertion)
+		}
+		if err == nil {
+			t.Fatalf("expected an error")
+		}
+		if got := errors.Is(err, ErrInvalidSaltSize); !got {
+			t.Errorf("got false, want true")
+		}
 	}
 
-	assert.Equal(t, 1, count)
+	{
+		want, got := 1, count
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -532,8 +663,12 @@ func TestMakeCredentialValidatesHMACSecretMCSalts(t *testing.T) {
 		0,
 		nil,
 	)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrInvalidSaltSize))
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	if got := errors.Is(err, ErrInvalidSaltSize); !got {
+		t.Errorf("got false, want true")
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -566,8 +701,12 @@ func TestMakeCredentialAllowsFIDO20BuiltInUV(t *testing.T) {
 		0,
 		nil,
 	)
-	require.NoError(t, err)
-	assert.NotEmpty(t, fake.Writes())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := fake.Writes(); len(got) == 0 {
+		t.Errorf("got empty value %#v, want non-empty", got)
+	}
 }
 
 func TestMakeCredentialCredPropsOutputDependsOnCredPropsInput(t *testing.T) {
@@ -601,10 +740,18 @@ func TestMakeCredentialCredPropsOutputDependsOnCredPropsInput(t *testing.T) {
 		0,
 		nil,
 	)
-	require.NoError(t, err)
-	require.NotNil(t, resp.ExtensionOutputs.CreateCredentialPropertiesOutputs)
-	require.NotNil(t, resp.ExtensionOutputs.CreateCredentialPropertiesOutputs.CredentialProperties.ResidentKey)
-	assert.True(t, *resp.ExtensionOutputs.CreateCredentialPropertiesOutputs.CredentialProperties.ResidentKey)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := resp.ExtensionOutputs.CreateCredentialPropertiesOutputs; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := resp.ExtensionOutputs.CreateCredentialPropertiesOutputs.CredentialProperties.ResidentKey; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := *resp.ExtensionOutputs.CreateCredentialPropertiesOutputs.CredentialProperties.ResidentKey; !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 func TestMakeCredentialRequiresMaxCredBlobLengthWhenCredBlobExtensionReported(t *testing.T) {
@@ -637,8 +784,15 @@ func TestMakeCredentialRequiresMaxCredBlobLengthWhenCredBlobExtensionReported(t 
 		0,
 		nil,
 	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "maxCredBlobLength")
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	{
+		container, element := err.Error(), "maxCredBlobLength"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -656,14 +810,30 @@ func TestHMACSecretPinUvAuthProtocolWirePresence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			input := newHMACSecretInput(cose.Key{1: 2}, []byte{3}, []byte{4}, tt.protocol)
 			raw, err := cbor.Marshal(input)
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			var fields map[uint64]cbor.RawMessage
-			require.NoError(t, cbor.Unmarshal(raw, &fields))
+			if err := cbor.Unmarshal(raw, &fields); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if tt.wantMember {
-				require.Contains(t, fields, uint64(4))
+				{
+					container, element := fields, uint64(4)
+					_, ok := container[element]
+					if !ok {
+						t.Fatalf("value does not contain %#v", element)
+					}
+				}
 			} else {
-				require.NotContains(t, fields, uint64(4))
+				{
+					container, element := fields, uint64(4)
+					_, ok := container[element]
+					if ok {
+						t.Fatalf("value unexpectedly contains %#v", element)
+					}
+				}
 			}
 		})
 	}

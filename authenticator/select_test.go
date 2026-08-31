@@ -11,18 +11,27 @@ import (
 	"github.com/telesma-app/ctap/backend"
 	"github.com/telesma-app/ctap/protocol"
 	ctaptransport "github.com/telesma-app/ctap/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSelectReturnsOnlyDeviceWithoutSelection(t *testing.T) {
 	transport := newSelectionTransport(t, nil, nil)
 
 	selected, err := Select(t.Context(), transportEnumerator(transport))
-	require.NoError(t, err)
-	assert.Same(t, transport, selected.transport)
-	assert.False(t, transport.selectionCalled.Load())
-	assert.False(t, transport.closed.Load())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := transport, selected.transport
+		if got != want {
+			t.Errorf("got pointer %p, want %p", got, want)
+		}
+	}
+	if got := transport.selectionCalled.Load(); got {
+		t.Errorf("got true, want false")
+	}
+	if got := transport.closed.Load(); got {
+		t.Errorf("got true, want false")
+	}
 }
 
 func TestSelectReturnsConfirmedDeviceAndClosesOthers(t *testing.T) {
@@ -44,10 +53,21 @@ func TestSelectReturnsConfirmedDeviceAndClosesOthers(t *testing.T) {
 	close(confirmed)
 
 	selected := <-result
-	require.NoError(t, selected.err)
-	assert.Same(t, second, selected.device.transport)
-	assert.True(t, first.closed.Load())
-	assert.False(t, second.closed.Load())
+	if err := selected.err; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := second, selected.device.transport
+		if got != want {
+			t.Errorf("got pointer %p, want %p", got, want)
+		}
+	}
+	if got := first.closed.Load(); !got {
+		t.Errorf("got false, want true")
+	}
+	if got := second.closed.Load(); got {
+		t.Errorf("got true, want false")
+	}
 }
 
 func TestSelectContinuesAfterCandidateError(t *testing.T) {
@@ -62,8 +82,15 @@ func TestSelectContinuesAfterCandidateError(t *testing.T) {
 	}
 
 	selected, err := Select(t.Context(), enumerate)
-	require.NoError(t, err)
-	assert.Same(t, transport, selected.transport)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := transport, selected.transport
+		if got != want {
+			t.Errorf("got pointer %p, want %p", got, want)
+		}
+	}
 }
 
 func TestSelectClosesTransportRejectedByAuthenticator(t *testing.T) {
@@ -73,9 +100,18 @@ func TestSelectClosesTransportRejectedByAuthenticator(t *testing.T) {
 	accepted := newSelectionTransport(t, nil, nil)
 
 	selected, err := Select(t.Context(), transportEnumerator(rejected, accepted))
-	require.NoError(t, err)
-	assert.Same(t, accepted, selected.transport)
-	assert.True(t, rejected.closed.Load())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := accepted, selected.transport
+		if got != want {
+			t.Errorf("got pointer %p, want %p", got, want)
+		}
+	}
+	if got := rejected.closed.Load(); !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 func transportEnumerator(transports ...ctaptransport.Device) backend.Enumerator {

@@ -1,14 +1,17 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/telesma-app/ctap/attestation"
 	"github.com/telesma-app/ctap/credential"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAuthenticatorGetInfoResponseUsesZeroSentinelsForEquivalentOrInvalidValues(t *testing.T) {
@@ -17,27 +20,47 @@ func TestAuthenticatorGetInfoResponseUsesZeroSentinelsForEquivalentOrInvalidValu
 		5:  uint64(0),
 		12: false,
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var resp AuthenticatorGetInfoResponse
-	require.NoError(t, cbor.Unmarshal(raw, &resp))
+	if err := cbor.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	require.Zero(t, resp.MaxMsgSize)
-	require.False(t, resp.ForcePINChange)
+	if got := resp.MaxMsgSize; !(got == 0) {
+		t.Fatalf("got %#v, want zero value", got)
+	}
+	if got := resp.ForcePINChange; got {
+		t.Fatalf("got true, want false")
+	}
 
 	clientPIN, ok := resp.Options[OptionClientPIN]
-	require.True(t, ok)
-	require.False(t, clientPIN)
+	if got := ok; !got {
+		t.Fatalf("got false, want true")
+	}
+	if got := clientPIN; got {
+		t.Fatalf("got true, want false")
+	}
 
 	_, ok = resp.Options[OptionUserVerification]
-	require.False(t, ok)
-	require.Zero(t, resp.MinPINLength)
-	require.Nil(t, resp.LongTouchForReset)
+	if got := ok; got {
+		t.Fatalf("got true, want false")
+	}
+	if got := resp.MinPINLength; !(got == 0) {
+		t.Fatalf("got %#v, want zero value", got)
+	}
+	if got := resp.LongTouchForReset; got != nil {
+		t.Fatalf("got %#v, want nil", got)
+	}
 }
 
 func TestAuthenticatorGetInfoResponseOmitsAbsentOptionalScalarsJSON(t *testing.T) {
 	raw, err := json.Marshal(AuthenticatorGetInfoResponse{})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	text := string(raw)
 	for _, absentField := range []string{
@@ -52,7 +75,12 @@ func TestAuthenticatorGetInfoResponseOmitsAbsentOptionalScalarsJSON(t *testing.T
 		"maxPINLength",
 		"encCredStoreState",
 	} {
-		require.NotContains(t, text, absentField)
+		{
+			container, element := text, absentField
+			if strings.Contains(container, element) {
+				t.Fatalf("value unexpectedly contains %#v", element)
+			}
+		}
 	}
 
 	zero := uint(0)
@@ -63,7 +91,9 @@ func TestAuthenticatorGetInfoResponseOmitsAbsentOptionalScalarsJSON(t *testing.T
 		LongTouchForReset:        &disabled,
 		PinComplexityPolicy:      &disabled,
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	text = string(raw)
 	for _, presentValue := range []string{
@@ -72,23 +102,58 @@ func TestAuthenticatorGetInfoResponseOmitsAbsentOptionalScalarsJSON(t *testing.T
 		`"longTouchForReset":false`,
 		`"pinComplexityPolicy":false`,
 	} {
-		require.Contains(t, text, presentValue)
+		{
+			container, element := text, presentValue
+			if !strings.Contains(container, element) {
+				t.Fatalf("value does not contain %#v", element)
+			}
+		}
 	}
 }
 
 func TestAuthenticatorGetInfoResponseEffectiveDefaults(t *testing.T) {
 	var resp AuthenticatorGetInfoResponse
-	require.Equal(t, DefaultMaxMsgSize, resp.EffectiveMaxMsgSize())
-	require.Equal(t, DefaultMinPINCodePoints, resp.EffectiveMinPINLength())
-	require.Equal(t, DefaultMaxPINCodePoints, resp.EffectiveMaxPINLength())
+	{
+		want, got := DefaultMaxMsgSize, resp.EffectiveMaxMsgSize()
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := DefaultMinPINCodePoints, resp.EffectiveMinPINLength()
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := DefaultMaxPINCodePoints, resp.EffectiveMaxPINLength()
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 
 	resp.MaxMsgSize = 2048
 	resp.MinPINLength = 8
 	resp.MaxPINLength = 48
 
-	require.Equal(t, uint(2048), resp.EffectiveMaxMsgSize())
-	require.Equal(t, uint(8), resp.EffectiveMinPINLength())
-	require.Equal(t, uint(48), resp.EffectiveMaxPINLength())
+	{
+		want, got := uint(2048), resp.EffectiveMaxMsgSize()
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := uint(8), resp.EffectiveMinPINLength()
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := uint(48), resp.EffectiveMaxPINLength()
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestAuthenticatorGetInfoResponseCTAP23TypedFields(t *testing.T) {
@@ -102,22 +167,61 @@ func TestAuthenticatorGetInfoResponseCTAP23TypedFields(t *testing.T) {
 		28: policyURL,
 		31: []uint64{uint64(ConfigSubCommandSetMinPINLength)},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var resp AuthenticatorGetInfoResponse
-	require.NoError(t, cbor.Unmarshal(raw, &resp))
-	require.Equal(t, []credential.AuthenticatorTransport{
-		credential.AuthenticatorTransportUSB,
-		credential.AuthenticatorTransport("future-transport"),
-	}, resp.Transports)
-	require.Equal(t, []credential.AuthenticatorTransport{credential.AuthenticatorTransportNFC}, resp.TransportsForReset)
-	require.Equal(t, []VendorCommandID{VendorCommandID(math.MaxUint64)}, resp.VendorPrototypeConfigCommands)
-	require.Equal(t, []attestation.AttestationStatementFormatIdentifier{
-		attestation.AttestationStatementFormatIdentifierPacked,
-	}, resp.AttestationFormats)
-	require.Equal(t, []ConfigSubCommand{ConfigSubCommandSetMinPINLength}, resp.AuthenticatorConfigCommands)
-	require.Equal(t, policyURL, resp.PinComplexityPolicyURL)
-	require.Equal(t, string(policyURL), resp.PinComplexityPolicyURLString())
+	if err := cbor.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := []credential.AuthenticatorTransport{
+			credential.AuthenticatorTransportUSB,
+			credential.AuthenticatorTransport("future-transport"),
+		}, resp.Transports
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := []credential.AuthenticatorTransport{credential.AuthenticatorTransportNFC}, resp.TransportsForReset
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := []VendorCommandID{VendorCommandID(math.MaxUint64)}, resp.VendorPrototypeConfigCommands
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := []attestation.AttestationStatementFormatIdentifier{
+			attestation.AttestationStatementFormatIdentifierPacked,
+		}, resp.AttestationFormats
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := []ConfigSubCommand{ConfigSubCommandSetMinPINLength}, resp.AuthenticatorConfigCommands
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := policyURL, resp.PinComplexityPolicyURL
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := string(policyURL), resp.PinComplexityPolicyURLString()
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestAuthenticatorGetInfoResponseEncodesConfigCommandsAsArray(t *testing.T) {
@@ -129,23 +233,65 @@ func TestAuthenticatorGetInfoResponseEncodesConfigCommandsAsArray(t *testing.T) 
 	}
 
 	raw, err := cbor.Marshal(resp)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var fields map[uint64]cbor.RawMessage
-	require.NoError(t, cbor.Unmarshal(raw, &fields))
-	require.NotEmpty(t, fields[31])
-	require.Equal(t, byte(0x80), fields[31][0]&0xe0, "authenticatorConfigCommands must be a CBOR array")
+	if err := cbor.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := fields[31]; len(got) == 0 {
+		t.Fatalf("got empty value %#v, want non-empty", got)
+	}
+	{
+		want, got := byte(0x80), fields[31][0]&0xe0
+		if got != want {
+			t.Fatalf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("authenticatorConfigCommands must be a CBOR array"))
+		}
+	}
 
 	var commands []uint64
-	require.NoError(t, cbor.Unmarshal(fields[31], &commands))
-	require.Equal(t, []uint64{2, 3}, commands)
+	if err := cbor.Unmarshal(fields[31], &commands); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := []uint64{2, 3}, commands
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 
 	raw, err = json.Marshal(resp)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var jsonFields map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(raw, &jsonFields))
-	require.JSONEq(t, `[2, 3]`, string(jsonFields["authenticatorConfigCommands"]))
+	if err := json.Unmarshal(raw, &jsonFields); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		var want, got any
+		if err := json.Unmarshal([]byte(`[2, 3]`), &want); err != nil {
+			t.Fatalf("decode expected JSON: %v", err)
+		}
+		if err := json.Unmarshal([]byte(string(jsonFields["authenticatorConfigCommands"])), &got); err != nil {
+			t.Fatalf("decode actual JSON: %v", err)
+		} else if !bytes.Equal(canonicalJSONValue(t, got), canonicalJSONValue(t, want)) {
+			t.Fatalf("got JSON %#v, want %#v", got, want)
+		}
+	}
+}
+
+func canonicalJSONValue(t testing.TB, value any) []byte {
+	t.Helper()
+
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("encode JSON value: %v", err)
+	}
+	return encoded
 }
 
 func TestAuthenticatorGetInfoResponseDecodesFIDO20WithoutNewFields(t *testing.T) {
@@ -153,15 +299,35 @@ func TestAuthenticatorGetInfoResponseDecodesFIDO20WithoutNewFields(t *testing.T)
 		1: []string{"FIDO_2_0"},
 		4: map[string]bool{string(OptionResidentKeys): false},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var resp AuthenticatorGetInfoResponse
-	require.NoError(t, cbor.Unmarshal(raw, &resp))
-	require.Equal(t, Versions{FIDO_2_0}, resp.Versions)
-	require.Zero(t, resp.MaxPINLength)
-	require.Nil(t, resp.AuthenticatorConfigCommands)
-	require.Empty(t, resp.PinComplexityPolicyURLString())
-	require.Equal(t, DefaultMaxPINCodePoints, resp.EffectiveMaxPINLength())
+	if err := cbor.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := Versions{FIDO_2_0}, resp.Versions
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := resp.MaxPINLength; !(got == 0) {
+		t.Fatalf("got %#v, want zero value", got)
+	}
+	if got := resp.AuthenticatorConfigCommands; got != nil {
+		t.Fatalf("got %#v, want nil", got)
+	}
+	if got := resp.PinComplexityPolicyURLString(); len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		want, got := DefaultMaxPINCodePoints, resp.EffectiveMaxPINLength()
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestCredentialManagementOptionalScalarsPreservePresence(t *testing.T) {
@@ -173,37 +339,79 @@ func TestCredentialManagementOptionalScalarsPreservePresence(t *testing.T) {
 		10: uint64(0),
 		12: false,
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var resp AuthenticatorCredentialManagementResponse
-	require.NoError(t, cbor.Unmarshal(raw, &resp))
-	require.Equal(t, uint(0), *resp.ExistingResidentCredentialsCount)
-	require.Equal(t, uint(0), *resp.MaxPossibleRemainingResidentCredentialsCount)
-	require.Zero(t, resp.TotalRPs)
-	require.Zero(t, resp.TotalCredentials)
-	require.Zero(t, resp.CredProtect)
-	require.False(t, *resp.ThirdPartyPayment)
+	if err := cbor.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := uint(0), *resp.ExistingResidentCredentialsCount
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := uint(0), *resp.MaxPossibleRemainingResidentCredentialsCount
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := resp.TotalRPs; !(got == 0) {
+		t.Fatalf("got %#v, want zero value", got)
+	}
+	if got := resp.TotalCredentials; !(got == 0) {
+		t.Fatalf("got %#v, want zero value", got)
+	}
+	if got := resp.CredProtect; !(got == 0) {
+		t.Fatalf("got %#v, want zero value", got)
+	}
+	if got := *resp.ThirdPartyPayment; got {
+		t.Fatalf("got true, want false")
+	}
 
 	raw, err = cbor.Marshal(AuthenticatorCredentialManagementResponse{})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	var fields map[uint64]any
-	require.NoError(t, cbor.Unmarshal(raw, &fields))
+	if err := cbor.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	for _, key := range []uint64{1, 2, 5, 9, 10, 12} {
-		require.NotContains(t, fields, key)
+		{
+			container, element := fields, key
+			_, ok := container[element]
+			if ok {
+				t.Fatalf("value unexpectedly contains %#v", element)
+			}
+		}
 	}
 }
 
 func TestMakeCredentialEnterpriseAttestationTreatsFalseAsAbsent(t *testing.T) {
 	raw, err := cbor.Marshal(map[uint64]any{4: false})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var resp AuthenticatorMakeCredentialResponse
-	require.NoError(t, cbor.Unmarshal(raw, &resp))
-	require.False(t, resp.EnterpriseAttestation)
+	if err := cbor.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := resp.EnterpriseAttestation; got {
+		t.Fatalf("got true, want false")
+	}
 
 	var absent AuthenticatorMakeCredentialResponse
-	require.NoError(t, cbor.Unmarshal([]byte{0xa0}, &absent))
-	require.False(t, absent.EnterpriseAttestation)
+	if err := cbor.Unmarshal([]byte{0xa0}, &absent); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := absent.EnterpriseAttestation; got {
+		t.Fatalf("got true, want false")
+	}
 }
 
 func TestAttestationStatementAccessorsAcceptNormativeWireShapes(t *testing.T) {
@@ -214,8 +422,12 @@ func TestAttestationStatementAccessorsAcceptNormativeWireShapes(t *testing.T) {
 		}}
 
 		statement, ok := resp.PackedAttestationStatementFormat()
-		require.True(t, ok)
-		require.Nil(t, statement.X509Chain)
+		if got := ok; !got {
+			t.Fatalf("got false, want true")
+		}
+		if got := statement.X509Chain; got != nil {
+			t.Fatalf("got %#v, want nil", got)
+		}
 	})
 
 	t.Run("FIDO U2F accepts generic decoded x5c array", func(t *testing.T) {
@@ -226,8 +438,17 @@ func TestAttestationStatementAccessorsAcceptNormativeWireShapes(t *testing.T) {
 		}}
 
 		statement, ok := resp.FIDOU2FAttestationStatementFormat()
-		require.True(t, ok)
-		require.Equal(t, [][]byte{certificate}, statement.X509Chain)
+		if got := ok; !got {
+			t.Fatalf("got false, want true")
+		}
+		{
+			want, got := [][]byte{certificate}, statement.X509Chain
+			if (got == nil) != (want == nil) || !slices.EqualFunc(got, want, func(got, want []byte) bool {
+				return (got == nil) == (want == nil) && bytes.Equal(got, want)
+			}) {
+				t.Fatalf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("TPM does not require non-standard aikCert", func(t *testing.T) {
@@ -242,21 +463,44 @@ func TestAttestationStatementAccessorsAcceptNormativeWireShapes(t *testing.T) {
 		}}
 
 		statement, ok := resp.TPMAttestationStatementFormat()
-		require.True(t, ok)
-		require.Equal(t, [][]byte{certificate}, statement.X509Chain)
+		if got := ok; !got {
+			t.Fatalf("got false, want true")
+		}
+		{
+			want, got := [][]byte{certificate}, statement.X509Chain
+			if (got == nil) != (want == nil) || !slices.EqualFunc(got, want, func(got, want []byte) bool {
+				return (got == nil) == (want == nil) && bytes.Equal(got, want)
+			}) {
+				t.Fatalf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 }
 
 func TestAuthenticatorGetInfoResponseMaxCredBlobLengthPresence(t *testing.T) {
 	var resp AuthenticatorGetInfoResponse
 	value, ok := resp.MaxCredBlobLengthValue()
-	require.False(t, ok)
-	require.Equal(t, uint(0), value)
+	if got := ok; got {
+		t.Fatalf("got true, want false")
+	}
+	{
+		want, got := uint(0), value
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 
 	resp.MaxCredBlobLength = 32
 	value, ok = resp.MaxCredBlobLengthValue()
-	require.True(t, ok)
-	require.Equal(t, uint(32), value)
+	if got := ok; !got {
+		t.Fatalf("got false, want true")
+	}
+	{
+		want, got := uint(32), value
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestParseGetAssertionAuthDataRejectsShortData(t *testing.T) {
@@ -265,7 +509,9 @@ func TestParseGetAssertionAuthDataRejectsShortData(t *testing.T) {
 		make([]byte, 36),
 	} {
 		_, err := ParseGetAssertionAuthData(data)
-		require.Error(t, err)
+		if err == nil {
+			t.Fatalf("expected an error")
+		}
 	}
 }
 
@@ -274,15 +520,21 @@ func TestParseMakeCredentialAuthDataRejectsTruncatedAttestedCredentialData(t *te
 	data[32] = byte(AuthDataFlagAttestedCredentialDataIncluded)
 
 	_, err := ParseMakeCredentialAuthData(data)
-	require.Error(t, err)
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
 
 	data = append(data, make([]byte, 16)...)
 	_, err = ParseMakeCredentialAuthData(data)
-	require.Error(t, err)
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
 
 	data = append(data, 0, 2, 0x01)
 	_, err = ParseMakeCredentialAuthData(data)
-	require.Error(t, err)
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
 }
 
 func TestParseAuthDataRejectsMissingOrNonMapExtensionData(t *testing.T) {
@@ -296,10 +548,14 @@ func TestParseAuthDataRejectsMissingOrNonMapExtensionData(t *testing.T) {
 		data = append(data, suffix...)
 
 		_, err := ParseMakeCredentialAuthData(data)
-		require.Error(t, err)
+		if err == nil {
+			t.Fatalf("expected an error")
+		}
 
 		_, err = ParseGetAssertionAuthData(data)
-		require.Error(t, err)
+		if err == nil {
+			t.Fatalf("expected an error")
+		}
 	}
 }
 
@@ -326,10 +582,14 @@ func TestParseAuthDataRejectsTrailingBytes(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := ParseMakeCredentialAuthData(test.data)
-			require.Error(t, err)
+			if err == nil {
+				t.Fatalf("expected an error")
+			}
 
 			_, err = ParseGetAssertionAuthData(test.data)
-			require.Error(t, err)
+			if err == nil {
+				t.Fatalf("expected an error")
+			}
 		})
 	}
 }
@@ -340,6 +600,8 @@ func TestParseAuthDataRejectsReservedFlags(t *testing.T) {
 		data[32] = flag
 
 		_, err := ParseGetAssertionAuthData(data)
-		require.Error(t, err, "reserved flag 0x%02x", flag)
+		if err == nil {
+			t.Fatalf("expected an error; context: %s", fmt.Sprintf("reserved flag 0x%02x", flag))
+		}
 	}
 }

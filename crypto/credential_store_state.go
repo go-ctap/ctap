@@ -3,11 +3,9 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/sha256"
 	"fmt"
-	"io"
-
-	"golang.org/x/crypto/hkdf"
 )
 
 const getInfoEncryptedMemberPlaintextSize = aes.BlockSize
@@ -47,14 +45,14 @@ func decryptGetInfoMember(
 		)
 	}
 
-	key := make([]byte, getInfoEncryptedMemberPlaintextSize)
-	kdf := hkdf.New(
+	key, err := hkdf.Key(
 		sha256.New,
 		persistentPinUvAuthToken,
 		make([]byte, sha256.Size),
-		[]byte(info),
+		info,
+		getInfoEncryptedMemberPlaintextSize,
 	)
-	if _, err := io.ReadFull(kdf, key); err != nil {
+	if err != nil {
 		return plaintext, err
 	}
 

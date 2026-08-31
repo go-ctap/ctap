@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/telesma-app/ctap/protocol"
 	ctaptransport "github.com/telesma-app/ctap/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCBORSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
@@ -23,9 +22,21 @@ func TestCBORSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(reads.Bytes())}
 
 	resp, err := CBOR(context.Background(), dev, cid, request)
-	require.NoError(t, err)
-	assert.Equal(t, ctaptransport.CTAP2_OK, resp.StatusCode)
-	assert.Equal(t, response[1:], resp.Data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := ctaptransport.CTAP2_OK, resp.StatusCode
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := response[1:], resp.Data
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CBOR, request)
 }
 
@@ -41,8 +52,15 @@ func TestCBORSkipsResponseForAnotherChannel(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(reads.Bytes())}
 
 	resp, err := CBOR(context.Background(), dev, cid, request)
-	require.NoError(t, err)
-	assert.Equal(t, response[1:], resp.Data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := response[1:], resp.Data
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestCBORReturnsTypedCTAPError(t *testing.T) {
@@ -54,13 +72,32 @@ func TestCBORReturnsTypedCTAPError(t *testing.T) {
 	}
 
 	_, err := CBOR(context.Background(), dev, cid, request)
-	require.Error(t, err)
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
 
 	var ctapErr *ctaptransport.CTAPError
-	require.True(t, errors.As(err, &ctapErr))
-	assert.Equal(t, protocol.AuthenticatorGetInfo, ctapErr.Command)
-	assert.Equal(t, ctaptransport.CTAP2_ERR_INVALID_CBOR, ctapErr.StatusCode)
-	assert.Contains(t, err.Error(), "AuthenticatorGetInfo failed")
+	if got := errors.As(err, &ctapErr); !got {
+		t.Fatalf("got false, want true")
+	}
+	{
+		want, got := protocol.AuthenticatorGetInfo, ctapErr.Command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := ctaptransport.CTAP2_ERR_INVALID_CBOR, ctapErr.StatusCode
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		container, element := err.Error(), "AuthenticatorGetInfo failed"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CBOR, request)
 }
 
@@ -157,9 +194,15 @@ func TestCBORRejectsMissingCommandByte(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
 
 	_, err := CBOR(context.Background(), dev, ChannelID{1, 2, 3, 4}, nil)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrInvalidRequestMessage))
-	assert.Empty(t, dev.writes.Bytes())
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	if got := errors.Is(err, ErrInvalidRequestMessage); !got {
+		t.Errorf("got false, want true")
+	}
+	if got := dev.writes.Bytes(); len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 }
 
 func TestInitAcceptsExtendedSuccessResponse(t *testing.T) {
@@ -177,16 +220,54 @@ func TestInitAcceptsExtendedSuccessResponse(t *testing.T) {
 	}
 
 	resp, err := Init(context.Background(), dev, BROADCAST_CID, nonce)
-	require.NoError(t, err)
-	assert.Equal(t, nonce, resp.Nonce)
-	assert.Equal(t, allocatedCID, resp.CID)
-	assert.Equal(t, byte(2), resp.CTAPHIDProtocolVersionIdentifier)
-	assert.Equal(t, byte(3), resp.MajorDeviceVersion)
-	assert.Equal(t, byte(4), resp.MinorDeviceVersion)
-	assert.Equal(t, byte(5), resp.BuildDeviceVersion)
-	assert.True(t, resp.ImplementsWink())
-	assert.True(t, resp.ImplementsCBOR())
-	assert.False(t, resp.NotImplementsMSG())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := nonce, resp.Nonce
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := allocatedCID, resp.CID
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := byte(2), resp.CTAPHIDProtocolVersionIdentifier
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := byte(3), resp.MajorDeviceVersion
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := byte(4), resp.MinorDeviceVersion
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := byte(5), resp.BuildDeviceVersion
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := resp.ImplementsWink(); !got {
+		t.Errorf("got false, want true")
+	}
+	if got := resp.ImplementsCBOR(); !got {
+		t.Errorf("got false, want true")
+	}
+	if got := resp.NotImplementsMSG(); got {
+		t.Errorf("got true, want false")
+	}
 
 	assertSingleReportRequest(t, dev.writes.Bytes(), BROADCAST_CID, CTAPHID_INIT, nonce)
 }
@@ -195,9 +276,15 @@ func TestInitRejectsInvalidNonceLength(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
 
 	_, err := Init(context.Background(), dev, BROADCAST_CID, []byte{1, 2, 3, 4, 5, 6, 7})
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrInvalidRequestMessage))
-	assert.Empty(t, dev.writes.Bytes())
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	if got := errors.Is(err, ErrInvalidRequestMessage); !got {
+		t.Errorf("got false, want true")
+	}
+	if got := dev.writes.Bytes(); len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 }
 
 func TestInitSkipsAnotherClientResponse(t *testing.T) {
@@ -213,8 +300,15 @@ func TestInitSkipsAnotherClientResponse(t *testing.T) {
 	}
 
 	got, err := Init(context.Background(), dev, BROADCAST_CID, nonce)
-	require.NoError(t, err)
-	assert.Equal(t, ChannelID{9, 8, 7, 6}, got.CID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := ChannelID{9, 8, 7, 6}, got.CID
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestPingSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
@@ -227,8 +321,15 @@ func TestPingSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(reads.Bytes())}
 
 	resp, err := Ping(context.Background(), dev, cid, data)
-	require.NoError(t, err)
-	assert.Equal(t, data, resp.Bytes)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := data, resp.Bytes
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_PING, data)
 }
 
@@ -237,7 +338,9 @@ func TestCancelWritesRequestAndDoesNotReadResponse(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
 
 	err := Cancel(context.Background(), dev, cid)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CANCEL, nil)
 }
 
@@ -248,7 +351,9 @@ func TestWinkWritesRequestAndAcceptsEmptySuccessResponse(t *testing.T) {
 	}
 
 	err := Wink(context.Background(), dev, cid)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_WINK, nil)
 }
 
@@ -257,9 +362,15 @@ func TestLockRejectsInvalidDuration(t *testing.T) {
 	dev := &scriptedDevice{reads: bytes.NewReader(nil)}
 
 	err := Lock(context.Background(), dev, cid, 11)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrInvalidRequestMessage))
-	assert.Empty(t, dev.writes.Bytes())
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	if got := errors.Is(err, ErrInvalidRequestMessage); !got {
+		t.Errorf("got false, want true")
+	}
+	if got := dev.writes.Bytes(); len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 }
 
 func TestLockWritesDurationAndAcceptsEmptySuccessResponse(t *testing.T) {
@@ -269,6 +380,8 @@ func TestLockWritesDurationAndAcceptsEmptySuccessResponse(t *testing.T) {
 	}
 
 	err := Lock(context.Background(), dev, cid, 10)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_LOCK, []byte{10})
 }

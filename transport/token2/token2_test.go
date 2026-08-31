@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"testing"
 
 	"github.com/telesma-app/ctap/protocol"
 	ctaptransport "github.com/telesma-app/ctap/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type exchange struct {
@@ -34,10 +33,17 @@ func (c *fakeCard) Transmit(ctx context.Context, apdu []byte) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	require.NotEmpty(c.t, c.exchanges, "unexpected APDU: %x", apdu)
+	if got := c.exchanges; len(got) == 0 {
+		c.t.Fatalf("got empty value %#v, want non-empty; context: %s", got, fmt.Sprintf("unexpected APDU: %x", apdu))
+	}
 	next := c.exchanges[0]
 	c.exchanges = c.exchanges[1:]
-	assert.Equal(c.t, next.request, apdu)
+	{
+		want, got := next.request, apdu
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			c.t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	response := bytes.Clone(next.response)
 	if next.after != nil {
 		next.after()
@@ -59,7 +65,9 @@ func newFakeTransport(t *testing.T, exchanges ...exchange) (*Transport, *fakeCar
 	}, exchanges...)}
 
 	transport, err := New(context.Background(), card)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	return transport, card
 }
 
@@ -70,12 +78,21 @@ func TestCBORShortAPDU(t *testing.T) {
 	})
 
 	response, err := transport.CBOR(context.Background(), []byte{0x04})
-	require.NoError(t, err)
-	assert.Equal(t, ctaptransport.CBORResponse{
-		StatusCode: ctaptransport.CTAP2_OK,
-		Data:       []byte{0xa1, 0x01, 0x02},
-	}, response)
-	require.Empty(t, card.exchanges)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := ctaptransport.CBORResponse{
+			StatusCode: ctaptransport.CTAP2_OK,
+			Data:       []byte{0xa1, 0x01, 0x02},
+		}, response
+		if got.StatusCode != want.StatusCode || ((got.Data == nil) != (want.Data == nil) || !bytes.Equal(got.Data, want.Data)) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := card.exchanges; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
 }
 
 func TestCBORExtendedAPDUAndGetResponse(t *testing.T) {
@@ -87,12 +104,21 @@ func TestCBORExtendedAPDUAndGetResponse(t *testing.T) {
 	)
 
 	response, err := transport.CBOR(context.Background(), command)
-	require.NoError(t, err)
-	assert.Equal(t, ctaptransport.CBORResponse{
-		StatusCode: ctaptransport.CTAP2_OK,
-		Data:       []byte{0xa1, 0x01, 0x02},
-	}, response)
-	require.Empty(t, card.exchanges)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := ctaptransport.CBORResponse{
+			StatusCode: ctaptransport.CTAP2_OK,
+			Data:       []byte{0xa1, 0x01, 0x02},
+		}, response
+		if got.StatusCode != want.StatusCode || ((got.Data == nil) != (want.Data == nil) || !bytes.Equal(got.Data, want.Data)) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := card.exchanges; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
 }
 
 func TestCBORReturnsTypedCTAPError(t *testing.T) {
@@ -103,9 +129,21 @@ func TestCBORReturnsTypedCTAPError(t *testing.T) {
 
 	_, err := transport.CBOR(context.Background(), []byte{0x04})
 	var ctapErr *ctaptransport.CTAPError
-	require.ErrorAs(t, err, &ctapErr)
-	assert.Equal(t, protocol.AuthenticatorGetInfo, ctapErr.Command)
-	assert.Equal(t, ctaptransport.CTAP2_ERR_INVALID_CBOR, ctapErr.StatusCode)
+	if err := err; !errors.As(err, &ctapErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := protocol.AuthenticatorGetInfo, ctapErr.Command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := ctaptransport.CTAP2_ERR_INVALID_CBOR, ctapErr.StatusCode
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestCBORReturnsAPDUError(t *testing.T) {
@@ -116,9 +154,21 @@ func TestCBORReturnsAPDUError(t *testing.T) {
 
 	_, err := transport.CBOR(context.Background(), []byte{0x04})
 	var apduErr *APDUError
-	require.ErrorAs(t, err, &apduErr)
-	assert.Equal(t, byte(0x6a), apduErr.SW1)
-	assert.Equal(t, byte(0x82), apduErr.SW2)
+	if err := err; !errors.As(err, &apduErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := byte(0x6a), apduErr.SW1
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := byte(0x82), apduErr.SW2
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestNewRejectsMalformedSelectResponse(t *testing.T) {
@@ -128,15 +178,31 @@ func TestNewRejectsMalformedSelectResponse(t *testing.T) {
 	}}}
 
 	_, err := New(context.Background(), card)
-	require.ErrorIs(t, err, ErrInvalidResponse)
+	{
+		err, target := err, ErrInvalidResponse
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 }
 
 func TestCloseDelegatesToCard(t *testing.T) {
 	transport, card := newFakeTransport(t)
-	require.NoError(t, transport.Close())
-	require.NoError(t, transport.Close())
-	assert.True(t, card.closed)
-	assert.Equal(t, 1, card.closeCalls)
+	if err := transport.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := transport.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := card.closed; !got {
+		t.Errorf("got false, want true")
+	}
+	{
+		want, got := 1, card.closeCalls
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestCloseReturnsTypedIOError(t *testing.T) {
@@ -146,13 +212,29 @@ func TestCloseReturnsTypedIOError(t *testing.T) {
 
 	err := transport.Close()
 
-	require.ErrorIs(t, err, wantErr)
+	{
+		err, target := err, wantErr
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	var ioErr *ctaptransport.IOError
-	require.ErrorAs(t, err, &ioErr)
-	assert.Equal(t, ctaptransport.IOClose, ioErr.Operation)
+	if err := err; !errors.As(err, &ioErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := ctaptransport.IOClose, ioErr.Operation
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	assert.False(t, invalidated)
-	assert.True(t, card.closed)
+	if got := invalidated; got {
+		t.Errorf("got true, want false")
+	}
+	if got := card.closed; !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 func TestNewPropagatesTransmitError(t *testing.T) {
@@ -163,13 +245,29 @@ func TestNewPropagatesTransmitError(t *testing.T) {
 	}}}
 
 	_, err := New(context.Background(), card)
-	require.ErrorIs(t, err, wantErr)
+	{
+		err, target := err, wantErr
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	var ioErr *ctaptransport.IOError
-	require.ErrorAs(t, err, &ioErr)
-	assert.Equal(t, ctaptransport.IOTransmit, ioErr.Operation)
+	if err := err; !errors.As(err, &ioErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := ctaptransport.IOTransmit, ioErr.Operation
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	assert.False(t, invalidated)
-	assert.False(t, card.closed, "the caller retains ownership when initialization fails")
+	if got := invalidated; got {
+		t.Errorf("got true, want false")
+	}
+	if got := card.closed; got {
+		t.Errorf("got true, want false; context: %s", fmt.Sprint("the caller retains ownership when initialization fails"))
+	}
 }
 
 func TestCBORClosesCardAfterTransmitFailure(t *testing.T) {
@@ -181,16 +279,44 @@ func TestCBORClosesCardAfterTransmitFailure(t *testing.T) {
 
 	_, err := transport.CBOR(context.Background(), []byte{0x04})
 
-	require.ErrorIs(t, err, wantErr)
+	{
+		err, target := err, wantErr
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	var ioErr *ctaptransport.IOError
-	require.ErrorAs(t, err, &ioErr)
-	assert.Equal(t, ctaptransport.IOTransmit, ioErr.Operation)
+	if err := err; !errors.As(err, &ioErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := ctaptransport.IOTransmit, ioErr.Operation
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	invalidatedErr, ok := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	require.True(t, ok)
-	assert.Same(t, ioErr, invalidatedErr.Err)
-	assert.True(t, card.closed)
-	require.NoError(t, transport.Close())
-	assert.Equal(t, 1, card.closeCalls)
+	if got := ok; !got {
+		t.Fatalf("got false, want true")
+	}
+	{
+		want, got := ioErr, invalidatedErr.Err
+		if got != want {
+			t.Errorf("got pointer %p, want %p", got, want)
+		}
+	}
+	if got := card.closed; !got {
+		t.Errorf("got false, want true")
+	}
+	if err := transport.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := 1, card.closeCalls
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestCBORClosesCardAfterContextErrorFromActiveContext(t *testing.T) {
@@ -201,10 +327,19 @@ func TestCBORClosesCardAfterContextErrorFromActiveContext(t *testing.T) {
 
 	_, err := transport.CBOR(context.Background(), []byte{0x04})
 
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	{
+		err, target := err, context.DeadlineExceeded
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	require.True(t, invalidated)
-	assert.True(t, card.closed, "an unrelated context error still means transmit failed")
+	if got := invalidated; !got {
+		t.Fatalf("got false, want true")
+	}
+	if got := card.closed; !got {
+		t.Errorf("got false, want true; context: %s", fmt.Sprint("an unrelated context error still means transmit failed"))
+	}
 }
 
 func TestCBORChecksContextBeforeChainedTransmit(t *testing.T) {
@@ -216,11 +351,22 @@ func TestCBORChecksContextBeforeChainedTransmit(t *testing.T) {
 	})
 
 	_, err := transport.CBOR(ctx, []byte{0x04})
-	require.ErrorIs(t, err, context.Canceled)
-	require.Empty(t, card.exchanges)
+	{
+		err, target := err, context.Canceled
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	if got := card.exchanges; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	assert.False(t, invalidated)
-	assert.False(t, card.closed)
+	if got := invalidated; got {
+		t.Errorf("got true, want false")
+	}
+	if got := card.closed; got {
+		t.Errorf("got true, want false")
+	}
 }
 
 func TestCBORPreservesSuccessfulResponseWhenContextIsCanceledConcurrently(t *testing.T) {
@@ -233,9 +379,18 @@ func TestCBORPreservesSuccessfulResponseWhenContextIsCanceledConcurrently(t *tes
 
 	response, err := transport.CBOR(ctx, []byte{0x04})
 
-	require.NoError(t, err)
-	assert.Equal(t, ctaptransport.CTAP2_OK, response.StatusCode)
-	require.Empty(t, card.exchanges)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := ctaptransport.CTAP2_OK, response.StatusCode
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := card.exchanges; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
 }
 
 func TestNewPreCanceledDoesNotTransmit(t *testing.T) {
@@ -244,7 +399,12 @@ func TestNewPreCanceledDoesNotTransmit(t *testing.T) {
 	card := &fakeCard{t: t}
 
 	_, err := New(ctx, card)
-	require.ErrorIs(t, err, context.Canceled)
+	{
+		err, target := err, context.Canceled
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 }
 
 func TestCloseInterruptsBlockedTransmit(t *testing.T) {
@@ -257,14 +417,30 @@ func TestCloseInterruptsBlockedTransmit(t *testing.T) {
 	}()
 
 	receive(t, card.started, "card transmit did not start")
-	require.NoError(t, transport.Close())
+	if err := transport.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	err := receive(t, resultc, "blocked transmit did not stop after close")
-	require.ErrorIs(t, err, io.ErrClosedPipe)
+	{
+		err, target := err, io.ErrClosedPipe
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	var ioErr *ctaptransport.IOError
-	require.ErrorAs(t, err, &ioErr)
-	assert.Equal(t, ctaptransport.IOTransmit, ioErr.Operation)
+	if err := err; !errors.As(err, &ioErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := ctaptransport.IOTransmit, ioErr.Operation
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	require.True(t, invalidated)
+	if got := invalidated; !got {
+		t.Fatalf("got false, want true")
+	}
 }
 
 type blockingCard struct {

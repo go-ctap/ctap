@@ -9,8 +9,6 @@ import (
 	"github.com/telesma-app/ctap/credential"
 	"github.com/telesma-app/ctap/internal/testhid"
 	"github.com/telesma-app/ctap/protocol"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
@@ -42,11 +40,20 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 			0,
 			nil,
 		)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		requests := fake.Requests(t)
-		require.Len(t, requests, 1)
+		if got, want := len(requests), 1; got != want {
+			t.Fatalf("got length %d, want %d", got, want)
+		}
 		command, _ := requests[0].CTAPPayload(t)
-		assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
+		{
+			want, got := protocol.AuthenticatorMakeCredential, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("DeleteCredential", func(t *testing.T) {
@@ -64,11 +71,20 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 			bytes.Repeat([]byte{0x44}, 32),
 			credential.PublicKeyCredentialDescriptor{ID: []byte("credential-id")},
 		)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		requests := fake.Requests(t)
-		require.Len(t, requests, 1)
+		if got, want := len(requests), 1; got != want {
+			t.Fatalf("got length %d, want %d", got, want)
+		}
 		command, _ := requests[0].CTAPPayload(t)
-		assert.Equal(t, protocol.AuthenticatorCredentialManagement, command)
+		{
+			want, got := protocol.AuthenticatorCredentialManagement, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("UpdateUserInformation", func(t *testing.T) {
@@ -87,11 +103,20 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 			credential.PublicKeyCredentialDescriptor{ID: []byte("credential-id")},
 			credential.PublicKeyCredentialUserEntity{ID: []byte("user-id"), Name: "updated"},
 		)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		requests := fake.Requests(t)
-		require.Len(t, requests, 1)
+		if got, want := len(requests), 1; got != want {
+			t.Fatalf("got length %d, want %d", got, want)
+		}
 		command, _ := requests[0].CTAPPayload(t)
-		assert.Equal(t, protocol.AuthenticatorCredentialManagement, command)
+		{
+			want, got := protocol.AuthenticatorCredentialManagement, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 }
 
@@ -123,12 +148,26 @@ func TestMakeCredentialDoesNotRequestGetInfoAfterSuccess(t *testing.T) {
 		0,
 		nil,
 	)
-	require.NoError(t, err)
-	assert.Equal(t, attestation.AttestationStatementFormatIdentifierPacked, result.Format)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := attestation.AttestationStatementFormatIdentifierPacked, result.Format
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	requests := fake.Requests(t)
-	require.Len(t, requests, 1)
+	if got, want := len(requests), 1; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	command, _ := requests[0].CTAPPayload(t)
-	assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
+	{
+		want, got := protocol.AuthenticatorMakeCredential, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestCredentialManagementUnsupportedIteratorsReturnBeforeCommand(t *testing.T) {
@@ -139,12 +178,23 @@ func TestCredentialManagementUnsupportedIteratorsReturnBeforeCommand(t *testing.
 		var count int
 		for rp, err := range d.EnumerateRPs(testContext, nil) {
 			count++
-			assert.Equal(t, protocol.AuthenticatorCredentialManagementResponse{}, rp)
-			require.Error(t, err)
-			assert.True(t, errors.Is(err, ErrNotSupported))
+			if !credentialManagementResponseIsZero(rp) {
+				t.Errorf("got %#v, want zero response", rp)
+			}
+			if err == nil {
+				t.Fatalf("expected an error")
+			}
+			if got := errors.Is(err, ErrNotSupported); !got {
+				t.Errorf("got false, want true")
+			}
 		}
 
-		assert.Equal(t, 1, count)
+		{
+			want, got := 1, count
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -155,12 +205,23 @@ func TestCredentialManagementUnsupportedIteratorsReturnBeforeCommand(t *testing.
 		var count int
 		for cred, err := range d.EnumerateCredentials(testContext, nil, make([]byte, 32)) {
 			count++
-			assert.Equal(t, protocol.AuthenticatorCredentialManagementResponse{}, cred)
-			require.Error(t, err)
-			assert.True(t, errors.Is(err, ErrNotSupported))
+			if !credentialManagementResponseIsZero(cred) {
+				t.Errorf("got %#v, want zero response", cred)
+			}
+			if err == nil {
+				t.Fatalf("expected an error")
+			}
+			if got := errors.Is(err, ErrNotSupported); !got {
+				t.Errorf("got false, want true")
+			}
 		}
 
-		assert.Equal(t, 1, count)
+		{
+			want, got := 1, count
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 }
@@ -182,8 +243,15 @@ func TestUpdateUserInformationUsesPreviewCommandForPreviewOnlyDevice(t *testing.
 		credential.PublicKeyCredentialDescriptor{ID: []byte("credential-id")},
 		credential.PublicKeyCredentialUserEntity{ID: []byte("user-id")},
 	)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	command, _ := fake.FirstCTAPPayload(t)
-	assert.Equal(t, protocol.PrototypeAuthenticatorCredentialManagement, command)
+	{
+		want, got := protocol.PrototypeAuthenticatorCredentialManagement, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }

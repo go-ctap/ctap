@@ -2,11 +2,10 @@ package hidproxy
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestWithContextIOInterruptsBlockedIO(t *testing.T) {
@@ -29,7 +28,12 @@ func TestWithContextIOInterruptsBlockedIO(t *testing.T) {
 
 	select {
 	case err := <-errC:
-		require.ErrorIs(t, err, context.Canceled)
+		{
+			err, target := err, context.Canceled
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	case <-time.After(time.Second):
 		t.Fatal("blocked I/O was not interrupted")
 	}
@@ -41,7 +45,9 @@ func TestWithContextIOSuccessStopsCancellation(t *testing.T) {
 	t.Cleanup(func() { _ = peer.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
-	require.NoError(t, withContextIO(ctx, conn, func() error { return nil }))
+	if err := withContextIO(ctx, conn, func() error { return nil }); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	cancel()
 
 	writeC := make(chan error, 1)
@@ -52,6 +58,10 @@ func TestWithContextIOSuccessStopsCancellation(t *testing.T) {
 
 	buf := make([]byte, 1)
 	_, err := conn.Read(buf)
-	require.NoError(t, err)
-	require.NoError(t, <-writeC)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := <-writeC; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }

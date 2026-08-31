@@ -6,9 +6,6 @@ import (
 	"math/rand"
 	"slices"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -19,26 +16,47 @@ const (
 func TestKDF(t *testing.T) {
 	// Create derived with zero material
 	key1, err := KDF(nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Create a deterministic shared secret
 	sharedSecret := make([]byte, 32)
 	r := rand.New(rand.NewSource(0))
 	_, err = r.Read(sharedSecret)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	wantSharedSecret := slices.Clone(sharedSecret)
 
 	// Create derived with a shared secret
 	key2, err := KDF(sharedSecret)
-	require.NoError(t, err)
-	assert.Equal(t, wantSharedSecret, sharedSecret)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := wantSharedSecret, sharedSecret
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	// Ensure key1 and key2 are different
-	assert.NotEqual(t, key1, key2)
+	{
+		want, got := key1, key2
+		if (got == nil) == (want == nil) && bytes.Equal(got, want) {
+			t.Errorf("got %#v, want a value different from %#v", got, want)
+		}
+	}
 
 	// Compare it with reference
 	savedKey, _ := base64.StdEncoding.DecodeString(derivedSecret)
-	assert.Equal(t, key2, savedKey)
+	{
+		want, got := key2, savedKey
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestEncryptDecrypt(t *testing.T) {
@@ -51,30 +69,52 @@ func TestEncryptDecrypt(t *testing.T) {
 
 	// Encrypt with a 65-byte key
 	_, err := Encrypt(badKey, plaintext)
-	assert.Error(t, err)
+	if err == nil {
+		t.Errorf("expected an error")
+	}
 
 	// Encrypt with a 17-byte block
 	_, err = Encrypt(key, badPlaintext)
-	assert.Error(t, err)
+	if err == nil {
+		t.Errorf("expected an error")
+	}
 
 	// Test encrypt-decrypt with one block
 	{
 		ciphertext, err := Encrypt(key, plaintext)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		decrypted, err := Decrypt(key, ciphertext)
-		require.NoError(t, err)
-		assert.Equal(t, plaintext, decrypted)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := plaintext, decrypted
+			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	}
 
 	// Test encrypt-decrypt with multiple blocks
 	{
 		ciphertext, err := Encrypt(key, longPlaintext)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		decrypted, err := Decrypt(key, ciphertext)
-		require.NoError(t, err)
-		assert.Equal(t, longPlaintext, decrypted)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := longPlaintext, decrypted
+			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	}
 }
 
@@ -84,16 +124,24 @@ func TestDecryptRejectsInvalidInputs(t *testing.T) {
 	iv := bytes.Repeat([]byte{0x01}, 16)
 
 	_, err := Decrypt(badKey, slices.Concat(iv, []byte("16-byte block...")))
-	assert.Error(t, err)
+	if err == nil {
+		t.Errorf("expected an error")
+	}
 
 	_, err = Decrypt(key, []byte("short iv"))
-	assert.Error(t, err)
+	if err == nil {
+		t.Errorf("expected an error")
+	}
 
 	_, err = Decrypt(key, iv)
-	assert.Error(t, err)
+	if err == nil {
+		t.Errorf("expected an error")
+	}
 
 	_, err = Decrypt(key, slices.Concat(iv, []byte("not block aligned!")))
-	assert.Error(t, err)
+	if err == nil {
+		t.Errorf("expected an error")
+	}
 }
 
 func TestAuthenticate(t *testing.T) {
@@ -101,6 +149,16 @@ func TestAuthenticate(t *testing.T) {
 	message := []byte("hello world!")
 
 	mac := Authenticate(key, message)
-	assert.Equal(t, 32, len(mac))
-	assert.Equal(t, messageAuthenticationCode, base64.StdEncoding.EncodeToString(mac))
+	{
+		want, got := 32, len(mac)
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := messageAuthenticationCode, base64.StdEncoding.EncodeToString(mac)
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }

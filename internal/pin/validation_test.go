@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/telesma-app/ctap/protocol"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestValidateUvAuthToken(t *testing.T) {
@@ -30,11 +28,15 @@ func TestValidateUvAuthToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateUvAuthToken(tt.protocol, make([]byte, tt.length))
 			if tt.wantErr {
-				require.Error(t, err)
+				if err == nil {
+					t.Fatalf("expected an error")
+				}
 				return
 			}
 
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 		})
 	}
 }
@@ -42,25 +44,53 @@ func TestValidateUvAuthToken(t *testing.T) {
 func TestNormalizeAndValidate(t *testing.T) {
 	t.Run("rejects PIN below explicit minimum", func(t *testing.T) {
 		_, err := NormalizeAndValidate("12345", 6)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "at least 6")
+		if err == nil {
+			t.Fatalf("expected an error")
+		}
+		{
+			container, element := err.Error(), "at least 6"
+			if !strings.Contains(container, element) {
+				t.Errorf("value does not contain %#v", element)
+			}
+		}
 	})
 
 	t.Run("rejects PIN over UTF-8 limit", func(t *testing.T) {
 		_, err := NormalizeAndValidate(strings.Repeat("a", 64), protocol.DefaultMinPINCodePoints)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "63 UTF-8 bytes")
+		if err == nil {
+			t.Fatalf("expected an error")
+		}
+		{
+			container, element := err.Error(), "63 UTF-8 bytes"
+			if !strings.Contains(container, element) {
+				t.Errorf("value does not contain %#v", element)
+			}
+		}
 	})
 
 	t.Run("normalizes PIN to NFC", func(t *testing.T) {
 		value, err := NormalizeAndValidate("Cafe\u0301123", protocol.DefaultMinPINCodePoints)
-		require.NoError(t, err)
-		assert.Equal(t, "Caf\u00e9123", value)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := "Caf\u00e9123", value
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("rejects PIN ending in NUL byte", func(t *testing.T) {
 		_, err := NormalizeAndValidate("1234\x00", protocol.DefaultMinPINCodePoints)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "0x00")
+		if err == nil {
+			t.Fatalf("expected an error")
+		}
+		{
+			container, element := err.Error(), "0x00"
+			if !strings.Contains(container, element) {
+				t.Errorf("value does not contain %#v", element)
+			}
+		}
 	})
 }

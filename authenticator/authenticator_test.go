@@ -1,6 +1,7 @@
 package authenticator
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"slices"
@@ -11,8 +12,6 @@ import (
 	"github.com/telesma-app/ctap/protocol"
 	ctaptransport "github.com/telesma-app/ctap/transport"
 	"github.com/telesma-app/ctap/transport/ctaphid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -66,17 +65,37 @@ func TestNewUsesConfiguredTransport(t *testing.T) {
 	})}
 
 	device, err := New(testContext, transport)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	info, err := device.GetInfo(testContext)
-	require.NoError(t, err)
-	assert.Equal(t, protocol.Versions{protocol.FIDO_2_1}, info.Versions)
-	assert.Equal(t, [][]byte{
-		{byte(protocol.AuthenticatorGetInfo)},
-		{byte(protocol.AuthenticatorGetInfo)},
-	}, transport.requests)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := protocol.Versions{protocol.FIDO_2_1}, info.Versions
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := [][]byte{
+			{byte(protocol.AuthenticatorGetInfo)},
+			{byte(protocol.AuthenticatorGetInfo)},
+		}, transport.requests
+		if (got == nil) != (want == nil) || !slices.EqualFunc(got, want, func(got, want []byte) bool {
+			return (got == nil) == (want == nil) && bytes.Equal(got, want)
+		}) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
-	require.NoError(t, device.Close())
-	assert.True(t, transport.closed)
+	if err := device.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := transport.closed; !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 func TestGetInfoAlwaysRequestsCurrentDeviceInfo(t *testing.T) {
@@ -94,21 +113,49 @@ func TestGetInfoAlwaysRequestsCurrentDeviceInfo(t *testing.T) {
 	})
 
 	got, err := d.GetInfo(testContext)
-	require.NoError(t, err)
-	assert.Equal(t, first.Versions, got.Versions)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := first.Versions, got.Versions
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	got, err = d.GetInfo(testContext)
-	require.NoError(t, err)
-	assert.Equal(t, second.Versions, got.Versions)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := second.Versions, got.Versions
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	selected, err := d.requirePinUvAuthProtocol()
-	require.NoError(t, err)
-	assert.Equal(t, protocol.PinUvAuthProtocolOne, selected)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := protocol.PinUvAuthProtocolOne, selected
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	requests := fake.Requests(t)
-	require.Len(t, requests, 2)
+	if got, want := len(requests), 2; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	for _, request := range requests {
 		command, _ := request.CTAPPayload(t)
-		assert.Equal(t, protocol.AuthenticatorGetInfo, command)
+		{
+			want, got := protocol.AuthenticatorGetInfo, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	}
 }
 
@@ -123,27 +170,66 @@ func TestGetInfoCachedReportsValidityWithoutRequestingDeviceInfo(t *testing.T) {
 	d := newTestDevice(t, fake, initial)
 
 	got, valid := d.GetInfoCached()
-	assert.True(t, valid)
-	assert.Equal(t, initial.Versions, got.Versions)
-	assert.Empty(t, fake.Requests(t))
+	if got := valid; !got {
+		t.Errorf("got false, want true")
+	}
+	{
+		want, got := initial.Versions, got.Versions
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := fake.Requests(t); len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 
 	d.invalidateInfoLocked()
 	got, valid = d.GetInfoCached()
-	assert.False(t, valid)
-	assert.Equal(t, initial.Versions, got.Versions)
-	assert.Empty(t, fake.Requests(t))
+	if got := valid; got {
+		t.Errorf("got true, want false")
+	}
+	{
+		want, got := initial.Versions, got.Versions
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := fake.Requests(t); len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 
 	got, err := d.GetInfo(testContext)
-	require.NoError(t, err)
-	assert.Equal(t, current.Versions, got.Versions)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := current.Versions, got.Versions
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	got, valid = d.GetInfoCached()
-	assert.True(t, valid)
-	assert.Equal(t, current.Versions, got.Versions)
+	if got := valid; !got {
+		t.Errorf("got false, want true")
+	}
+	{
+		want, got := current.Versions, got.Versions
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	requests := fake.Requests(t)
-	require.Len(t, requests, 1)
+	if got, want := len(requests), 1; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	command, _ := requests[0].CTAPPayload(t)
-	assert.Equal(t, protocol.AuthenticatorGetInfo, command)
+	{
+		want, got := protocol.AuthenticatorGetInfo, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestGetInfoCachedDoesNotWaitForDeviceRequestMutex(t *testing.T) {
@@ -202,12 +288,24 @@ func TestRequirePinUvAuthProtocolSelectsFirstSupported(t *testing.T) {
 			d := &Device{info: protocol.AuthenticatorGetInfoResponse{PinUvAuthProtocols: tt.advertised}}
 			got, err := d.requirePinUvAuthProtocol()
 			if tt.want == 0 {
-				require.ErrorIs(t, err, ErrNotSupported)
+				{
+					err, target := err, ErrNotSupported
+					if !errors.Is(err, target) {
+						t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+					}
+				}
 				return
 			}
 
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			{
+				want, got := tt.want, got
+				if got != want {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
 		})
 	}
 }
@@ -216,30 +314,67 @@ func TestNewLeavesConfiguredTransportOpenAfterGetInfoFailure(t *testing.T) {
 	transport := &optionTransport{err: errors.New("get info failed")}
 
 	_, err := New(testContext, transport)
-	require.Error(t, err)
-	assert.False(t, transport.closed)
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	if got := transport.closed; got {
+		t.Errorf("got true, want false")
+	}
 }
 
 func TestHIDCapabilitiesPreserveDeviceCommands(t *testing.T) {
 	transport := &capabilityTransport{pingResponse: []byte("hello")}
 	d := &Device{transport: transport}
 
-	require.NoError(t, d.Ping(testContext, []byte("hello")))
-	require.NoError(t, d.Wink(testContext))
-	require.NoError(t, d.Lock(testContext, 7))
-	assert.True(t, transport.winked)
-	assert.Equal(t, uint8(7), transport.lockSeconds)
+	if err := d.Ping(testContext, []byte("hello")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := d.Wink(testContext); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := d.Lock(testContext, 7); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := transport.winked; !got {
+		t.Errorf("got false, want true")
+	}
+	{
+		want, got := uint8(7), transport.lockSeconds
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	transport.pingResponse = []byte("different")
-	require.ErrorIs(t, d.Ping(testContext, []byte("hello")), ErrPingPongMismatch)
+	{
+		err, target := d.Ping(testContext, []byte("hello")), ErrPingPongMismatch
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 }
 
 func TestUnsupportedTransportRejectsHIDCommands(t *testing.T) {
 	d := &Device{transport: &optionTransport{}}
 
-	require.ErrorIs(t, d.Ping(testContext, nil), ErrNotSupported)
-	require.ErrorIs(t, d.Wink(testContext), ErrNotSupported)
-	require.ErrorIs(t, d.Lock(testContext, 1), ErrNotSupported)
+	{
+		err, target := d.Ping(testContext, nil), ErrNotSupported
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	{
+		err, target := d.Wink(testContext), ErrNotSupported
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	{
+		err, target := d.Lock(testContext, 1), ErrNotSupported
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 }
 
 func TestGetAssertionContinuesAfterAssertionWithoutExtensionData(t *testing.T) {
@@ -257,13 +392,27 @@ func TestGetAssertionContinuesAfterAssertionWithoutExtensionData(t *testing.T) {
 
 	var assertions []protocol.AuthenticatorGetAssertionResponse
 	for assertion, err := range d.GetAssertion(testContext, nil, "example.com", []byte("client-data"), nil, nil, nil) {
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		assertions = append(assertions, assertion)
 	}
 
-	require.Len(t, assertions, 2)
-	assert.Equal(t, []byte{1}, assertions[0].Signature)
-	assert.Equal(t, []byte{2}, assertions[1].Signature)
+	if got, want := len(assertions), 2; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
+	{
+		want, got := []byte{1}, assertions[0].Signature
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := []byte{2}, assertions[1].Signature
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestLockRejectsOutOfRangeSeconds(t *testing.T) {
@@ -271,7 +420,11 @@ func TestLockRejectsOutOfRangeSeconds(t *testing.T) {
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{})
 
 	err := d.Lock(testContext, 11)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, SyntaxError))
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	if got := errors.Is(err, SyntaxError); !got {
+		t.Errorf("got false, want true")
+	}
 	assertNoAuthenticatorIO(t, fake)
 }

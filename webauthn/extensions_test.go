@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCreateAuthenticationExtensionsClientInputsJSON(t *testing.T) {
@@ -28,19 +27,41 @@ func TestLargeBlobOutputsPreserveOptionalPresence(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			var absent AuthenticationExtensionsLargeBlobOutputs
-			require.NoError(t, decode([]byte(largeBlobOutputEncoding(name, false)), &absent))
-			require.Nil(t, absent.Supported)
-			require.Nil(t, absent.Written)
-			require.Nil(t, absent.Blob)
+			if err := decode([]byte(largeBlobOutputEncoding(name, false)), &absent); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := absent.Supported; got != nil {
+				t.Fatalf("got %#v, want nil", got)
+			}
+			if got := absent.Written; got != nil {
+				t.Fatalf("got %#v, want nil", got)
+			}
+			if got := absent.Blob; got != nil {
+				t.Fatalf("got %#v, want nil", got)
+			}
 
 			var present AuthenticationExtensionsLargeBlobOutputs
-			require.NoError(t, decode([]byte(largeBlobOutputEncoding(name, true)), &present))
-			require.NotNil(t, present.Supported)
-			require.False(t, *present.Supported)
-			require.NotNil(t, present.Written)
-			require.False(t, *present.Written)
-			require.NotNil(t, present.Blob)
-			require.Empty(t, present.Blob)
+			if err := decode([]byte(largeBlobOutputEncoding(name, true)), &present); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := present.Supported; got == nil {
+				t.Fatalf("got nil, want a non-nil value")
+			}
+			if got := *present.Supported; got {
+				t.Fatalf("got true, want false")
+			}
+			if got := present.Written; got == nil {
+				t.Fatalf("got nil, want a non-nil value")
+			}
+			if got := *present.Written; got {
+				t.Fatalf("got true, want false")
+			}
+			if got := present.Blob; got == nil {
+				t.Fatalf("got nil, want a non-nil value")
+			}
+			if got := present.Blob; len(got) != 0 {
+				t.Fatalf("got non-empty value %#v", got)
+			}
 		})
 	}
 }
@@ -52,25 +73,49 @@ func TestLargeBlobOutputsPreservePresentEmptyBlob(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			encoded, err := encode(AuthenticationExtensionsLargeBlobOutputs{Blob: []byte{}})
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			var present map[string]any
 			if name == "CBOR" {
-				require.NoError(t, cbor.Unmarshal(encoded, &present))
+				if err := cbor.Unmarshal(encoded, &present); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			} else {
-				require.NoError(t, json.Unmarshal(encoded, &present))
+				if err := json.Unmarshal(encoded, &present); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
-			require.Contains(t, present, "blob")
+			{
+				container, element := present, "blob"
+				_, ok := container[element]
+				if !ok {
+					t.Fatalf("value does not contain %#v", element)
+				}
+			}
 
 			encoded, err = encode(AuthenticationExtensionsLargeBlobOutputs{})
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			var absent map[string]any
 			if name == "CBOR" {
-				require.NoError(t, cbor.Unmarshal(encoded, &absent))
+				if err := cbor.Unmarshal(encoded, &absent); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			} else {
-				require.NoError(t, json.Unmarshal(encoded, &absent))
+				if err := json.Unmarshal(encoded, &absent); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
-			require.NotContains(t, absent, "blob")
+			{
+				container, element := absent, "blob"
+				_, ok := container[element]
+				if ok {
+					t.Fatalf("value unexpectedly contains %#v", element)
+				}
+			}
 		})
 	}
 }
@@ -82,25 +127,49 @@ func TestLargeBlobInputsPreservePresentEmptyWrite(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			encoded, err := encode(AuthenticationExtensionsLargeBlobInputs{Write: []byte{}})
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			var present map[string]any
 			if name == "CBOR" {
-				require.NoError(t, cbor.Unmarshal(encoded, &present))
+				if err := cbor.Unmarshal(encoded, &present); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			} else {
-				require.NoError(t, json.Unmarshal(encoded, &present))
+				if err := json.Unmarshal(encoded, &present); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
-			require.Contains(t, present, "write")
+			{
+				container, element := present, "write"
+				_, ok := container[element]
+				if !ok {
+					t.Fatalf("value does not contain %#v", element)
+				}
+			}
 
 			encoded, err = encode(AuthenticationExtensionsLargeBlobInputs{})
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			var absent map[string]any
 			if name == "CBOR" {
-				require.NoError(t, cbor.Unmarshal(encoded, &absent))
+				if err := cbor.Unmarshal(encoded, &absent); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			} else {
-				require.NoError(t, json.Unmarshal(encoded, &absent))
+				if err := json.Unmarshal(encoded, &absent); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
-			require.NotContains(t, absent, "write")
+			{
+				container, element := absent, "write"
+				_, ok := container[element]
+				if ok {
+					t.Fatalf("value unexpectedly contains %#v", element)
+				}
+			}
 		})
 	}
 }
@@ -113,25 +182,52 @@ func TestLargeBlobInputsPreservePresentFalseRead(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			read := false
 			encoded, err := encode(AuthenticationExtensionsLargeBlobInputs{Read: &read})
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			var fields map[string]any
 			if name == "CBOR" {
-				require.NoError(t, cbor.Unmarshal(encoded, &fields))
+				if err := cbor.Unmarshal(encoded, &fields); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			} else {
-				require.NoError(t, json.Unmarshal(encoded, &fields))
+				if err := json.Unmarshal(encoded, &fields); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
-			require.Contains(t, fields, "read")
-			require.Equal(t, false, fields["read"])
+			{
+				container, element := fields, "read"
+				_, ok := container[element]
+				if !ok {
+					t.Fatalf("value does not contain %#v", element)
+				}
+			}
+			{
+				want, got := false, fields["read"]
+				gotValue, ok := got.(bool)
+
+				if !ok || gotValue != want {
+					t.Fatalf("got %#v, want %#v", got, want)
+				}
+			}
 
 			var decoded AuthenticationExtensionsLargeBlobInputs
 			if name == "CBOR" {
-				require.NoError(t, cbor.Unmarshal(encoded, &decoded))
+				if err := cbor.Unmarshal(encoded, &decoded); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			} else {
-				require.NoError(t, json.Unmarshal(encoded, &decoded))
+				if err := json.Unmarshal(encoded, &decoded); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
-			require.NotNil(t, decoded.Read)
-			require.False(t, *decoded.Read)
+			if got := decoded.Read; got == nil {
+				t.Fatalf("got nil, want a non-nil value")
+			}
+			if got := *decoded.Read; got {
+				t.Fatalf("got true, want false")
+			}
 		})
 	}
 }

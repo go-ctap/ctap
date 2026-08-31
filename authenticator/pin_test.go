@@ -2,13 +2,13 @@ package authenticator
 
 import (
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/telesma-app/ctap/internal/testhid"
 	"github.com/telesma-app/ctap/protocol"
 	ctaptransport "github.com/telesma-app/ctap/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMissingPinUvAuthProtocolsReturnsError(t *testing.T) {
@@ -18,8 +18,12 @@ func TestMissingPinUvAuthProtocolsReturnsError(t *testing.T) {
 	})
 
 	err := d.SetPIN(testContext, "1234")
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrNotSupported))
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	if got := errors.Is(err, ErrNotSupported); !got {
+		t.Errorf("got false, want true")
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -31,8 +35,15 @@ func TestGetPinUvAuthTokenUsingPINValidatesPINBeforeCommand(t *testing.T) {
 	})
 
 	_, err := d.GetPinUvAuthTokenUsingPIN(testContext, "123\x00", protocol.PermissionCredentialManagement, "")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "0x00")
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	{
+		container, element := err.Error(), "0x00"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -49,8 +60,18 @@ func TestGetPinUvAuthTokenUsingPINRequiresPINChangeBeforeCommand(t *testing.T) {
 		protocol.PermissionCredentialManagement,
 		"",
 	)
-	require.ErrorIs(t, err, ErrPinChangeRequired)
-	assert.Contains(t, err.Error(), "https://example.com/pin-policy")
+	{
+		err, target := err, ErrPinChangeRequired
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	{
+		container, element := err.Error(), "https://example.com/pin-policy"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -76,30 +97,92 @@ func TestGetPinUvAuthTokenUsingUVUsesPreviewRequestShape(t *testing.T) {
 	})
 
 	token, err := d.GetPinUvAuthTokenUsingUV(testContext, protocol.PermissionBioEnrollment, "")
-	require.NoError(t, err)
-	assert.Len(t, token, 16)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(token), 16; got != want {
+		t.Errorf("got length %d, want %d", got, want)
+	}
 
 	requests := fake.Requests(t)
-	require.Len(t, requests, 2)
+	if got, want := len(requests), 2; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 
 	command, request := requests[0].CTAPRequestMap(t)
-	assert.Equal(t, protocol.AuthenticatorClientPIN, command)
-	assert.Len(t, request, 2)
-	assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)])
-	assert.Equal(t, uint64(protocol.ClientPINSubCommandGetKeyAgreement), request[uint64(2)])
+	{
+		want, got := protocol.AuthenticatorClientPIN, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got, want := len(request), 2; got != want {
+		t.Errorf("got length %d, want %d", got, want)
+	}
+	{
+		want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)]
+		gotValue, ok := got.(uint64)
+
+		if !ok || gotValue != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := uint64(protocol.ClientPINSubCommandGetKeyAgreement), request[uint64(2)]
+		gotValue, ok := got.(uint64)
+
+		if !ok || gotValue != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	command, request = requests[1].CTAPRequestMap(t)
-	assert.Equal(t, protocol.AuthenticatorClientPIN, command)
-	assert.Len(t, request, 3)
-	assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)])
-	assert.Equal(
-		t,
-		uint64(protocol.ClientPINSubCommandGetPinUvAuthTokenUsingUvWithPermissions),
-		request[uint64(2)],
-	)
-	assert.Contains(t, request, uint64(3))
-	assert.NotContains(t, request, uint64(9))
-	assert.NotContains(t, request, uint64(10))
+	{
+		want, got := protocol.AuthenticatorClientPIN, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got, want := len(request), 3; got != want {
+		t.Errorf("got length %d, want %d", got, want)
+	}
+	{
+		want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)]
+		gotValue, ok := got.(uint64)
+
+		if !ok || gotValue != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := uint64(protocol.ClientPINSubCommandGetPinUvAuthTokenUsingUvWithPermissions), request[uint64(2)]
+		gotValue, ok := got.(uint64)
+
+		if !ok || gotValue != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		container, element := request, uint64(3)
+		_, ok := container[element]
+		if !ok {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := request, uint64(9)
+		_, ok := container[element]
+		if ok {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		container, element := request, uint64(10)
+		_, ok := container[element]
+		if ok {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
 }
 
 func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
@@ -111,8 +194,15 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 		})
 
 		err := d.SetPIN(testContext, "123")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "at least 4")
+		if err == nil {
+			t.Fatalf("expected an error")
+		}
+		{
+			container, element := err.Error(), "at least 4"
+			if !strings.Contains(container, element) {
+				t.Errorf("value does not contain %#v", element)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -125,8 +215,15 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 		})
 
 		err := d.SetPIN(testContext, "1234567")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "at least 8")
+		if err == nil {
+			t.Fatalf("expected an error")
+		}
+		{
+			container, element := err.Error(), "at least 8"
+			if !strings.Contains(container, element) {
+				t.Errorf("value does not contain %#v", element)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -139,8 +236,15 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 		})
 
 		err := d.SetPIN(testContext, "123456789")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "at most 8")
+		if err == nil {
+			t.Fatalf("expected an error")
+		}
+		{
+			container, element := err.Error(), "at most 8"
+			if !strings.Contains(container, element) {
+				t.Errorf("value does not contain %#v", element)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 }
@@ -151,12 +255,26 @@ func TestNormalizeAndValidateNewPINAppliesMaximumAfterNFCNormalization(t *testin
 	}}
 
 	pin, err := d.normalizeAndValidateNewPIN("e\u0301123")
-	require.NoError(t, err)
-	assert.Equal(t, "\u00e9123", pin)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := "\u00e9123", pin
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	_, err = d.normalizeAndValidateNewPIN("12345")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "at most 4")
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	{
+		container, element := err.Error(), "at most 4"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 }
 
 func TestSetPINAddsPINPolicyURLToAuthenticatorError(t *testing.T) {
@@ -175,11 +293,25 @@ func TestSetPINAddsPINPolicyURLToAuthenticatorError(t *testing.T) {
 	})
 
 	err := d.SetPIN(testContext, "1234")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "https://example.com/pin-policy")
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	{
+		container, element := err.Error(), "https://example.com/pin-policy"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 	var ctapErr *ctaptransport.CTAPError
-	require.ErrorAs(t, err, &ctapErr)
-	assert.Equal(t, ctaptransport.CTAP2_ERR_PIN_POLICY_VIOLATION, ctapErr.StatusCode)
+	if err := err; !errors.As(err, &ctapErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := ctaptransport.CTAP2_ERR_PIN_POLICY_VIOLATION, ctapErr.StatusCode
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestSetPINDoesNotRequestGetInfo(t *testing.T) {
@@ -192,15 +324,26 @@ func TestSetPINDoesNotRequestGetInfo(t *testing.T) {
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
 	})
 
-	require.NoError(t, d.SetPIN(testContext, "1234"))
+	if err := d.SetPIN(testContext, "1234"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	_, valid := d.GetInfoCached()
-	assert.False(t, valid)
+	if got := valid; got {
+		t.Errorf("got true, want false")
+	}
 
 	requests := fake.Requests(t)
-	require.Len(t, requests, 2)
+	if got, want := len(requests), 2; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	for _, request := range requests {
 		command, _ := request.CTAPPayload(t)
-		assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+		{
+			want, got := protocol.AuthenticatorClientPIN, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	}
 }
 
@@ -218,23 +361,34 @@ func TestSetPINInvalidatesInfoAndChangePINRefreshesIt(t *testing.T) {
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
 	})
 
-	require.NoError(t, d.SetPIN(testContext, "1234"))
-	require.NoError(t, d.ChangePIN(testContext, "1234", "5678"))
+	if err := d.SetPIN(testContext, "1234"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := d.ChangePIN(testContext, "1234", "5678"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	requests := fake.Requests(t)
-	require.Len(t, requests, 5)
+	if got, want := len(requests), 5; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	commands := make([]protocol.Command, 0, len(requests))
 	for _, request := range requests {
 		command, _ := request.CTAPPayload(t)
 		commands = append(commands, command)
 	}
-	assert.Equal(t, []protocol.Command{
-		protocol.AuthenticatorClientPIN,
-		protocol.AuthenticatorClientPIN,
-		protocol.AuthenticatorGetInfo,
-		protocol.AuthenticatorClientPIN,
-		protocol.AuthenticatorClientPIN,
-	}, commands)
+	{
+		want, got := []protocol.Command{
+			protocol.AuthenticatorClientPIN,
+			protocol.AuthenticatorClientPIN,
+			protocol.AuthenticatorGetInfo,
+			protocol.AuthenticatorClientPIN,
+			protocol.AuthenticatorClientPIN,
+		}, commands
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestChangePINValidatesNewPINBeforeCommand(t *testing.T) {
@@ -246,8 +400,15 @@ func TestChangePINValidatesNewPINBeforeCommand(t *testing.T) {
 	})
 
 	err := d.ChangePIN(testContext, "1234", "1234567")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "at least 8")
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	{
+		container, element := err.Error(), "at least 8"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -262,11 +423,20 @@ func TestChangePINRemainsAvailableWhenPINChangeIsRequired(t *testing.T) {
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
 	})
 
-	require.NoError(t, d.ChangePIN(testContext, "1234", "5678"))
+	if err := d.ChangePIN(testContext, "1234", "5678"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	requests := fake.Requests(t)
-	require.Len(t, requests, 2)
+	if got, want := len(requests), 2; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	for _, request := range requests {
 		command, _ := request.CTAPPayload(t)
-		assert.Equal(t, protocol.AuthenticatorClientPIN, command)
+		{
+			want, got := protocol.AuthenticatorClientPIN, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	}
 }

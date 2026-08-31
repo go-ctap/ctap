@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"testing"
 	"time"
 
 	ctaptransport "github.com/telesma-app/ctap/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestChannelDeviceFiltersReports(t *testing.T) {
@@ -19,7 +19,9 @@ func TestChannelDeviceFiltersReports(t *testing.T) {
 	dev := newMultiplexedDevice(cid)
 	channel := newChannelDevice(dev, cid)
 	t.Cleanup(func() {
-		require.NoError(t, channel.Close())
+		if err := channel.Close(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	})
 
 	foreignReport := rawResponseReport(
@@ -38,31 +40,55 @@ func TestChannelDeviceFiltersReports(t *testing.T) {
 
 	want := rawResponseReport(cid, CTAPHID_CBOR, []byte{byte(ctaptransport.CTAP2_OK)})
 	dev.reads <- want
-	assert.Equal(t, want, readChannelReport(t, channel))
+	{
+		want, got := want, readChannelReport(t, channel)
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestChannelDeviceSwitchesCID(t *testing.T) {
 	dev := newMultiplexedDevice(ChannelID{1, 2, 3, 4})
 	channel := newChannelDevice(dev, BROADCAST_CID)
 	t.Cleanup(func() {
-		require.NoError(t, channel.Close())
+		if err := channel.Close(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	})
 
 	broadcast := rawResponseReport(BROADCAST_CID, CTAPHID_INIT, nil)
-	require.True(t, channel.enqueue(broadcast))
+	if got := channel.enqueue(broadcast); !got {
+		t.Fatalf("got false, want true")
+	}
 
 	allocatedCID := ChannelID{9, 8, 7, 6}
 	channel.setCID(allocatedCID)
 	report, err := channel.nextReport()
-	require.NoError(t, err)
-	assert.Nil(t, report, "reports queued for the previous CID must be discarded")
-	assert.False(t, channel.enqueue(broadcast))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := report; got != nil {
+		t.Errorf("got %#v, want nil; context: %s", got, fmt.Sprint("reports queued for the previous CID must be discarded"))
+	}
+	if got := channel.enqueue(broadcast); got {
+		t.Errorf("got true, want false")
+	}
 
 	allocated := rawResponseReport(allocatedCID, CTAPHID_CBOR, nil)
-	require.True(t, channel.enqueue(allocated))
+	if got := channel.enqueue(allocated); !got {
+		t.Fatalf("got false, want true")
+	}
 	report, err = channel.nextReport()
-	require.NoError(t, err)
-	assert.Equal(t, allocated, report)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := allocated, report
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestChannelDeviceReadsReportInParts(t *testing.T) {
@@ -70,14 +96,21 @@ func TestChannelDeviceReadsReportInParts(t *testing.T) {
 	dev := newMultiplexedDevice(cid)
 	channel := newChannelDevice(dev, cid)
 	t.Cleanup(func() {
-		require.NoError(t, channel.Close())
+		if err := channel.Close(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	})
 
 	want := rawResponseReport(cid, CTAPHID_CBOR, []byte{byte(ctaptransport.CTAP2_OK)})
 	dev.reads <- bytes.Clone(want[:17])
 	dev.reads <- bytes.Clone(want[17:])
 
-	assert.Equal(t, want, readChannelReport(t, channel))
+	{
+		want, got := want, readChannelReport(t, channel)
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestChannelDeviceStopLeavesDeviceOpen(t *testing.T) {
@@ -97,9 +130,21 @@ func TestChannelDeviceStopLeavesDeviceOpen(t *testing.T) {
 	default:
 	}
 	_, err := channel.nextReport()
-	require.ErrorIs(t, err, context.Canceled)
-	require.NotErrorIs(t, err, io.ErrClosedPipe)
-	require.NoError(t, dev.Close())
+	{
+		err, target := err, context.Canceled
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	{
+		err, target := err, io.ErrClosedPipe
+		if errors.Is(err, target) {
+			t.Fatalf("got error %v, unexpectedly matches %#v", err, target)
+		}
+	}
+	if err := dev.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestChannelDeviceCloseCancelsReaderBeforeWaiting(t *testing.T) {
@@ -112,17 +157,31 @@ func TestChannelDeviceCloseCancelsReaderBeforeWaiting(t *testing.T) {
 		closed <- channel.Close()
 	}()
 
-	require.NoError(t, receive(t, closed, "Close did not cancel the channel reader"))
+	if err := receive(t, closed, "Close did not cancel the channel reader"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	select {
 	case <-dev.closed:
 	default:
 		t.Fatal("Close did not close the underlying device")
 	}
 	_, err := channel.nextReport()
-	require.ErrorIs(t, err, io.ErrClosedPipe)
+	{
+		err, target := err, io.ErrClosedPipe
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	var readErr *ctaptransport.IOError
-	require.ErrorAs(t, err, &readErr)
-	assert.Equal(t, ctaptransport.IORead, readErr.Operation)
+	if err := err; !errors.As(err, &readErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := ctaptransport.IORead, readErr.Operation
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func readChannelReport(t *testing.T, channel *channelDevice) []byte {
@@ -133,8 +192,15 @@ func readChannelReport(t *testing.T, channel *channelDevice) []byte {
 
 	report := make([]byte, hidPacketSize)
 	n, err := channel.Read(ctx, report)
-	require.NoError(t, err)
-	require.Equal(t, hidPacketSize, n)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := hidPacketSize, n
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 	return report
 }
 

@@ -16,8 +16,6 @@ import (
 	"github.com/telesma-app/ctap/protocol"
 	ctaptransport "github.com/telesma-app/ctap/transport"
 	"github.com/telesma-app/ctap/transport/ctaphid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var testCID = ctaphid.ChannelID{1, 2, 3, 4}
@@ -25,7 +23,9 @@ var testCID = ctaphid.ChannelID{1, 2, 3, 4}
 func newTestClient(t testing.TB, device *testhid.Device) *Client {
 	t.Helper()
 	client, err := NewClient(options.WithTransport(ctaphid.NewTransport(device, testCID)))
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	return client
 }
 
@@ -38,7 +38,12 @@ type fakeCBORTransport struct {
 
 func (f *fakeCBORTransport) CBOR(_ context.Context, data []byte) (ctaptransport.CBORResponse, error) {
 	f.t.Helper()
-	assert.Equal(f.t, f.request, data)
+	{
+		want, got := f.request, data
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			f.t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	return ctaptransport.ValidateCBORResponse(protocol.Command(data[0]), ctaptransport.CBORResponse{
 		StatusCode: f.status,
 		Data:       slices.Clone(f.response),
@@ -49,7 +54,9 @@ func encodeCBOR(t testing.TB, v any) []byte {
 	t.Helper()
 
 	b, err := cbor.Marshal(v)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	return b
 }
 
@@ -64,23 +71,62 @@ func assertRequestKeys(t testing.TB, request map[uint64]any, keys ...uint64) {
 	for key := range request {
 		actual = append(actual, key)
 	}
-	assert.ElementsMatch(t, keys, actual)
+	want := slices.Clone(keys)
+	slices.Sort(want)
+	slices.Sort(actual)
+	if !slices.Equal(actual, want) {
+		t.Errorf("got request keys %v, want %v", actual, want)
+	}
+}
+
+func requestBytes(t testing.TB, request map[uint64]any, key uint64) []byte {
+	t.Helper()
+
+	value, ok := request[key].([]byte)
+	if !ok {
+		t.Fatalf("request field %d has type %T, want []byte", key, request[key])
+	}
+
+	return value
+}
+
+func assertionResponseIsZero(response protocol.AuthenticatorGetAssertionResponse) bool {
+	return response.Credential.Type == "" &&
+		response.Credential.ID == nil &&
+		response.Credential.Transports == nil &&
+		response.AuthDataRaw == nil &&
+		response.AuthData == nil &&
+		response.Signature == nil &&
+		response.User == nil &&
+		response.NumberOfCredentials == 0 &&
+		!response.UserSelected &&
+		response.LargeBlobKey == nil &&
+		response.UnsignedExtensionOutputs == nil &&
+		response.ExtensionOutputs == nil
 }
 
 type expectedCTAPRequest struct {
 	command protocol.Command
 	keys    []uint64
-	fields  map[uint64]any
+	fields  map[uint64]uint64
 }
 
 func assertCTAPRequest(t testing.TB, device *testhid.Device, want expectedCTAPRequest) map[uint64]any {
 	t.Helper()
 
 	command, request := device.FirstCTAPRequestMap(t)
-	assert.Equal(t, want.command, command)
+	{
+		want, got := want.command, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	assertRequestKeys(t, request, want.keys...)
-	for key, value := range want.fields {
-		assert.Equal(t, value, request[key], "request field %d", key)
+	for key, wantValue := range want.fields {
+		gotValue, ok := request[key].(uint64)
+		if !ok || gotValue != wantValue {
+			t.Errorf("request field %d = %#v, want %#v", key, request[key], wantValue)
+		}
 	}
 	return request
 }
@@ -89,10 +135,14 @@ func testKeyAgreement(t testing.TB) cose.Key {
 	t.Helper()
 
 	privateKey, err := ecdh.P256().GenerateKey(rand.Reader)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	coseKey, err := cose.KeyFromP256PublicKey(privateKey.PublicKey())
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	return coseKey
 }

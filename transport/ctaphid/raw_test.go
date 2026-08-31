@@ -2,11 +2,9 @@ package ctaphid
 
 import (
 	"bytes"
+	"slices"
 	"strconv"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMessagePayloadBoundaries(t *testing.T) {
@@ -21,12 +19,34 @@ func TestMessagePayloadBoundaries(t *testing.T) {
 		t.Run(strconv.Itoa(payloadLen), func(t *testing.T) {
 			payload := bytes.Repeat([]byte{0xa5}, payloadLen)
 			message, err := NewMessage(cid, CTAPHID_PING, payload)
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-			assert.Equal(t, cid, message.CID())
-			assert.Equal(t, CTAPHID_PING, message.Command())
-			assert.Equal(t, uint16(payloadLen), message.DeclaredLength())
-			assert.Equal(t, payload, message.Payload())
+			{
+				want, got := cid, message.CID()
+				if got != want {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
+			{
+				want, got := CTAPHID_PING, message.Command()
+				if got != want {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
+			{
+				want, got := uint16(payloadLen), message.DeclaredLength()
+				if got != want {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
+			{
+				want, got := payload, message.Payload()
+				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
 		})
 	}
 }
@@ -37,7 +57,9 @@ func TestMessageOutputReportsCanBeModified(t *testing.T) {
 		CTAPHID_PING,
 		bytes.Repeat([]byte{0xa5}, initPacketDataSize+1),
 	)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	want := message.OutputReports()
 	reports := message.OutputReports()
@@ -45,7 +67,12 @@ func TestMessageOutputReportsCanBeModified(t *testing.T) {
 	reports[0], reports[1] = reports[1], reports[0]
 	reports = reports[:1]
 
-	assert.Equal(t, want, message.OutputReports())
+	{
+		want, got := want, message.OutputReports()
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestMessageOutputReportBoundaries(t *testing.T) {
@@ -65,12 +92,18 @@ func TestMessageOutputReportBoundaries(t *testing.T) {
 				CTAPHID_PING,
 				bytes.Repeat([]byte{0xa5}, tc.payloadLen),
 			)
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			reports := message.OutputReports()
-			require.Len(t, reports, tc.reportCount)
+			if got, want := len(reports), tc.reportCount; got != want {
+				t.Fatalf("got length %d, want %d", got, want)
+			}
 			for _, report := range reports {
-				assert.Zero(t, report[0])
+				if got := report[0]; !(got == 0) {
+					t.Errorf("got %#v, want zero value", got)
+				}
 			}
 		})
 	}

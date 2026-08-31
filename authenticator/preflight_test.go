@@ -9,8 +9,6 @@ import (
 	"github.com/telesma-app/ctap/internal/testhid"
 	"github.com/telesma-app/ctap/protocol"
 	"github.com/telesma-app/ctap/webauthn"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBioEnrollmentMode(t *testing.T) {
@@ -57,10 +55,17 @@ func TestBioEnrollmentMode(t *testing.T) {
 			d := newTestDevice(t, fake, tt.info)
 
 			_, err := d.GetBioModality(testContext)
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			command, _ := fake.FirstCTAPPayload(t)
-			assert.Equal(t, tt.wantCommand, command)
+			{
+				want, got := tt.wantCommand, command
+				if got != want {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
 		})
 	}
 }
@@ -73,7 +78,12 @@ func TestBioEnrollmentPreviewAbsentIsNotSupported(t *testing.T) {
 	})
 
 	_, err := d.GetBioModality(testContext)
-	require.ErrorIs(t, err, ErrNotSupported)
+	{
+		err, target := err, ErrNotSupported
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -88,7 +98,12 @@ func TestProtectedSubcommandsRejectMissingOrMalformedTokenBeforeCommand(t *testi
 		})
 
 		_, err := d.EnrollBegin(testContext, nil, 0)
-		require.ErrorIs(t, err, ErrPinUvAuthTokenRequired)
+		{
+			err, target := err, ErrPinUvAuthTokenRequired
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -102,7 +117,12 @@ func TestProtectedSubcommandsRejectMissingOrMalformedTokenBeforeCommand(t *testi
 		})
 
 		_, err := d.GetCredsMetadata(testContext, nil)
-		require.ErrorIs(t, err, ErrPinUvAuthTokenRequired)
+		{
+			err, target := err, ErrPinUvAuthTokenRequired
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -116,7 +136,12 @@ func TestProtectedSubcommandsRejectMissingOrMalformedTokenBeforeCommand(t *testi
 		})
 
 		_, err := d.GetCredsMetadata(testContext, make([]byte, 16))
-		require.ErrorIs(t, err, SyntaxError)
+		{
+			err, target := err, SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 }
@@ -129,8 +154,15 @@ func TestPinUvAuthTokenLengthUsesCTAPVersion(t *testing.T) {
 		})
 
 		got, err := d.pinUvAuthProtocolForRequest(make([]byte, 48), true)
-		require.NoError(t, err)
-		assert.Equal(t, protocol.PinUvAuthProtocolOne, got)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := protocol.PinUvAuthProtocolOne, got
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("FIDO 2.1 rejects a longer protocol 1 token", func(t *testing.T) {
@@ -140,7 +172,12 @@ func TestPinUvAuthTokenLengthUsesCTAPVersion(t *testing.T) {
 		})
 
 		_, err := d.pinUvAuthProtocolForRequest(make([]byte, 48), true)
-		require.ErrorIs(t, err, SyntaxError)
+		{
+			err, target := err, SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 
 	t.Run("FIDO 2.1 Preview accepts a longer protocol 1 token", func(t *testing.T) {
@@ -150,8 +187,15 @@ func TestPinUvAuthTokenLengthUsesCTAPVersion(t *testing.T) {
 		})
 
 		got, err := d.pinUvAuthProtocolForRequest(make([]byte, 48), true)
-		require.NoError(t, err)
-		assert.Equal(t, protocol.PinUvAuthProtocolOne, got)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := protocol.PinUvAuthProtocolOne, got
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 }
 
@@ -286,12 +330,24 @@ func TestSelectPinTokenFlowUsingPIN(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			flow, err := selectPinTokenFlowUsingPIN(tt.info, tt.permission, tt.rpID)
 			if tt.wantErr != nil {
-				require.ErrorIs(t, err, tt.wantErr)
+				{
+					err, target := err, tt.wantErr
+					if !errors.Is(err, target) {
+						t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+					}
+				}
 				return
 			}
 
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantFlow, flow)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			{
+				want, got := tt.wantFlow, flow
+				if got != want {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
 		})
 	}
 }
@@ -314,12 +370,24 @@ func TestSelectPinUvAuthTokenFlowUsingUV(t *testing.T) {
 		}
 
 		_, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionBioEnrollment, "")
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 
 		info.Options[protocol.OptionUvBioEnroll] = true
 		flow, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionBioEnrollment, "")
-		require.NoError(t, err)
-		assert.Equal(t, uvTokenFlowWithPermissions, flow)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := uvTokenFlowWithPermissions, flow
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("acfg requires uvAcfg and authnrCfg", func(t *testing.T) {
@@ -331,21 +399,45 @@ func TestSelectPinUvAuthTokenFlowUsingUV(t *testing.T) {
 		}
 
 		_, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionAuthenticatorConfiguration, "")
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 
 		info.Options[protocol.OptionAuthenticatorConfig] = true
 		flow, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionAuthenticatorConfiguration, "")
-		require.NoError(t, err)
-		assert.Equal(t, uvTokenFlowWithPermissions, flow)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := uvTokenFlowWithPermissions, flow
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("ga requires RP ID", func(t *testing.T) {
 		_, err := selectPinUvAuthTokenFlowUsingUV(baseInfo, protocol.PermissionGetAssertion, "")
-		require.ErrorIs(t, err, SyntaxError)
+		{
+			err, target := err, SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 
 		flow, err := selectPinUvAuthTokenFlowUsingUV(baseInfo, protocol.PermissionGetAssertion, "example.com")
-		require.NoError(t, err)
-		assert.Equal(t, uvTokenFlowWithPermissions, flow)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := uvTokenFlowWithPermissions, flow
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("FIDO 2.0 ignores unknown pinUvAuthToken option", func(t *testing.T) {
@@ -353,7 +445,12 @@ func TestSelectPinUvAuthTokenFlowUsingUV(t *testing.T) {
 		info.Versions = protocol.Versions{protocol.FIDO_2_0}
 
 		_, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionGetAssertion, "example.com")
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 
 	previewInfo := protocol.AuthenticatorGetInfoResponse{
@@ -375,8 +472,15 @@ func TestSelectPinUvAuthTokenFlowUsingUV(t *testing.T) {
 			protocol.PermissionBioEnrollment,
 			"",
 		)
-		require.NoError(t, err)
-		assert.Equal(t, uvTokenFlowPreview, flow)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := uvTokenFlowPreview, flow
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("preview credential management uses legacy UV token", func(t *testing.T) {
@@ -385,8 +489,15 @@ func TestSelectPinUvAuthTokenFlowUsingUV(t *testing.T) {
 			protocol.PermissionCredentialManagement,
 			"",
 		)
-		require.NoError(t, err)
-		assert.Equal(t, uvTokenFlowPreview, flow)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := uvTokenFlowPreview, flow
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("preview get assertion does not require RP ID", func(t *testing.T) {
@@ -395,8 +506,15 @@ func TestSelectPinUvAuthTokenFlowUsingUV(t *testing.T) {
 			protocol.PermissionGetAssertion,
 			"",
 		)
-		require.NoError(t, err)
-		assert.Equal(t, uvTokenFlowPreview, flow)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := uvTokenFlowPreview, flow
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("preview requires uvToken option", func(t *testing.T) {
@@ -405,7 +523,12 @@ func TestSelectPinUvAuthTokenFlowUsingUV(t *testing.T) {
 		delete(info.Options, protocol.OptionUvToken)
 
 		_, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionBioEnrollment, "")
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 
 	t.Run("preview requires protocol one", func(t *testing.T) {
@@ -413,7 +536,12 @@ func TestSelectPinUvAuthTokenFlowUsingUV(t *testing.T) {
 		info.PinUvAuthProtocols = []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo}
 
 		_, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionBioEnrollment, "")
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 
 	t.Run("preview allows omitted optional protocol list", func(t *testing.T) {
@@ -421,13 +549,25 @@ func TestSelectPinUvAuthTokenFlowUsingUV(t *testing.T) {
 		info.PinUvAuthProtocols = nil
 
 		flow, err := selectPinUvAuthTokenFlowUsingUV(info, protocol.PermissionBioEnrollment, "")
-		require.NoError(t, err)
-		assert.Equal(t, uvTokenFlowPreview, flow)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := uvTokenFlowPreview, flow
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("preview rejects permissions not granted by getUvToken", func(t *testing.T) {
 		_, err := selectPinUvAuthTokenFlowUsingUV(previewInfo, protocol.PermissionLargeBlobWrite, "")
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 }
 
@@ -480,7 +620,12 @@ func TestConditionalAuthorizationUsesCTAPVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, largeBlobsAuthorizationRequired(tt.info))
+			{
+				want, got := tt.want, largeBlobsAuthorizationRequired(tt.info)
+				if got != want {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
 		})
 	}
 }
@@ -498,12 +643,31 @@ func TestSetLargeBlobsConditionalAuthorization(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil)
 		d := newTestDevice(t, fake, baseInfo)
 
-		require.NoError(t, d.SetLargeBlobs(testContext, nil, nil))
+		if err := d.SetLargeBlobs(testContext, nil, nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		command, request := fake.FirstCTAPRequestMap(t)
-		assert.Equal(t, protocol.AuthenticatorLargeBlobs, command)
-		assert.NotContains(t, request, uint64(5))
-		assert.NotContains(t, request, uint64(6))
+		{
+			want, got := protocol.AuthenticatorLargeBlobs, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
+		{
+			container, element := request, uint64(5)
+			_, ok := container[element]
+			if ok {
+				t.Errorf("value unexpectedly contains %#v", element)
+			}
+		}
+		{
+			container, element := request, uint64(6)
+			_, ok := container[element]
+			if ok {
+				t.Errorf("value unexpectedly contains %#v", element)
+			}
+		}
 	})
 
 	t.Run("protected authenticator requires auth", func(t *testing.T) {
@@ -516,7 +680,12 @@ func TestSetLargeBlobsConditionalAuthorization(t *testing.T) {
 		d := newTestDevice(t, fake, info)
 
 		err := d.SetLargeBlobs(testContext, nil, nil)
-		require.ErrorIs(t, err, ErrPinUvAuthTokenRequired)
+		{
+			err, target := err, ErrPinUvAuthTokenRequired
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 }
@@ -534,14 +703,33 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, info))
 		d := newTestDevice(t, fake, info)
 
-		require.NoError(t, d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+		if err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
 			NewMinPINLength: new(uint(8)),
-		}))
+		}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		command, request := fake.FirstCTAPRequestMap(t)
-		assert.Equal(t, protocol.AuthenticatorConfig, command)
-		assert.NotContains(t, request, uint64(3))
-		assert.NotContains(t, request, uint64(4))
+		{
+			want, got := protocol.AuthenticatorConfig, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
+		{
+			container, element := request, uint64(3)
+			_, ok := container[element]
+			if ok {
+				t.Errorf("value unexpectedly contains %#v", element)
+			}
+		}
+		{
+			container, element := request, uint64(4)
+			_, ok := container[element]
+			if ok {
+				t.Errorf("value unexpectedly contains %#v", element)
+			}
+		}
 	})
 
 	t.Run("protected config requires auth", func(t *testing.T) {
@@ -558,7 +746,12 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
 			NewMinPINLength: new(uint(8)),
 		})
-		require.ErrorIs(t, err, ErrPinUvAuthTokenRequired)
+		{
+			err, target := err, ErrPinUvAuthTokenRequired
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -574,7 +767,12 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
 			NewMinPINLength: new(uint(8)),
 		})
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -592,7 +790,12 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
 			NewMinPINLength: new(uint(8)),
 		})
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -609,7 +812,12 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
 			NewMinPINLength: new(uint(8)),
 		})
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -625,9 +833,11 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, info))
 		d := newTestDevice(t, fake, info)
 
-		require.NoError(t, d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
+		if err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
 			NewMinPINLength: new(uint(8)),
-		}))
+		}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	})
 
 	t.Run("unprotected alwaysUv can be disabled without auth", func(t *testing.T) {
@@ -642,11 +852,25 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil, encodeCBOR(t, info))
 		d := newTestDevice(t, fake, info)
 
-		require.NoError(t, d.ToggleAlwaysUV(testContext, nil))
+		if err := d.ToggleAlwaysUV(testContext, nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		_, request := fake.FirstCTAPRequestMap(t)
-		assert.NotContains(t, request, uint64(3))
-		assert.NotContains(t, request, uint64(4))
+		{
+			container, element := request, uint64(3)
+			_, ok := container[element]
+			if ok {
+				t.Errorf("value unexpectedly contains %#v", element)
+			}
+		}
+		{
+			container, element := request, uint64(4)
+			_, ok := container[element]
+			if ok {
+				t.Errorf("value unexpectedly contains %#v", element)
+			}
+		}
 	})
 
 	t.Run("enables long touch without requesting getInfo", func(t *testing.T) {
@@ -663,14 +887,31 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		fake := testhid.NewCBORDevice(t, testCID, nil)
 		d := newTestDevice(t, fake, info)
 
-		require.NoError(t, d.EnableLongTouchForReset(testContext, nil))
+		if err := d.EnableLongTouchForReset(testContext, nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		requests := fake.Requests(t)
-		require.Len(t, requests, 1)
+		if got, want := len(requests), 1; got != want {
+			t.Fatalf("got length %d, want %d", got, want)
+		}
 		command, request := requests[0].CTAPRequestMap(t)
-		assert.Equal(t, protocol.AuthenticatorConfig, command)
-		assert.Len(t, request, 1)
-		assert.Contains(t, request, uint64(1))
+		{
+			want, got := protocol.AuthenticatorConfig, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
+		if got, want := len(request), 1; got != want {
+			t.Errorf("got length %d, want %d", got, want)
+		}
+		{
+			container, element := request, uint64(1)
+			_, ok := container[element]
+			if !ok {
+				t.Errorf("value does not contain %#v", element)
+			}
+		}
 	})
 
 	t.Run("long touch requires feature field", func(t *testing.T) {
@@ -686,7 +927,12 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		})
 
 		err := d.EnableLongTouchForReset(testContext, nil)
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -704,7 +950,12 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
 			NewMinPINLength: new(uint(7)),
 		})
-		require.ErrorIs(t, err, SyntaxError)
+		{
+			err, target := err, SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -723,7 +974,12 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
 			MinPINLengthRPIDs: []string{"one.example", "two.example"},
 		})
-		require.ErrorIs(t, err, SyntaxError)
+		{
+			err, target := err, SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -740,7 +996,12 @@ func TestAuthenticatorConfigCapabilityAndAuthorization(t *testing.T) {
 		err := d.SetMinPINLength(testContext, nil, protocol.SetMinPINLengthConfigSubCommandParams{
 			PINComplexityPolicy: true,
 		})
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 }
@@ -786,8 +1047,12 @@ func TestGetAssertionRejectsUnadvertisedExtensions(t *testing.T) {
 				gotErr = err
 			}
 
-			require.Error(t, gotErr)
-			assert.True(t, errors.Is(gotErr, ErrNotSupported))
+			if err := gotErr; err == nil {
+				t.Fatalf("expected an error")
+			}
+			if got := errors.Is(gotErr, ErrNotSupported); !got {
+				t.Errorf("got false, want true")
+			}
 			assertNoAuthenticatorIO(t, fake)
 		})
 	}
@@ -822,7 +1087,12 @@ func TestGetAssertionRejectsMalformedTokenBeforeExtensionKeyAgreement(t *testing
 		gotErr = err
 	}
 
-	require.ErrorIs(t, gotErr, SyntaxError)
+	{
+		err, target := gotErr, SyntaxError
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -839,8 +1109,15 @@ func TestRetryQueriesWorkBeforePINOrUVConfiguration(t *testing.T) {
 		})
 
 		retries, _, err := d.GetPINRetries(testContext)
-		require.NoError(t, err)
-		assert.Equal(t, uint(8), retries)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := uint(8), retries
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("UV", func(t *testing.T) {
@@ -856,13 +1133,39 @@ func TestRetryQueriesWorkBeforePINOrUVConfiguration(t *testing.T) {
 		})
 
 		retries, err := d.GetUVRetries(testContext)
-		require.NoError(t, err)
-		assert.Equal(t, uint(5), retries)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := uint(5), retries
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 
 		command, request := fake.FirstCTAPRequestMap(t)
-		assert.Equal(t, protocol.AuthenticatorClientPIN, command)
-		assert.Equal(t, uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)])
-		assert.Equal(t, uint64(protocol.ClientPINSubCommandGetUVRetries), request[uint64(2)])
+		{
+			want, got := protocol.AuthenticatorClientPIN, command
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
+		{
+			want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)]
+			gotValue, ok := got.(uint64)
+
+			if !ok || gotValue != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
+		{
+			want, got := uint64(protocol.ClientPINSubCommandGetUVRetries), request[uint64(2)]
+			gotValue, ok := got.(uint64)
+
+			if !ok || gotValue != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("UV without pinUvAuthProtocol", func(t *testing.T) {
@@ -877,12 +1180,21 @@ func TestRetryQueriesWorkBeforePINOrUVConfiguration(t *testing.T) {
 		})
 
 		retries, err := d.GetUVRetries(testContext)
-		require.NoError(t, err)
-		assert.Equal(t, uint(5), retries)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := uint(5), retries
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 
 		_, request := fake.FirstCTAPRequestMap(t)
 		_, present := request[uint64(1)]
-		assert.False(t, present)
+		if got := present; got {
+			t.Errorf("got true, want false")
+		}
 	})
 }
 
@@ -897,7 +1209,12 @@ func TestFIDO20RejectsCTAP21OnlyCommands(t *testing.T) {
 		})
 
 		_, err := d.GetUVRetries(testContext)
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -908,7 +1225,12 @@ func TestFIDO20RejectsCTAP21OnlyCommands(t *testing.T) {
 		})
 
 		err := d.Selection(testContext)
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 }
@@ -1160,11 +1482,18 @@ func TestValidateMakeCredentialAuthorization(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			err := validateMakeCredentialAuthorization(test.info, test.token, test.options)
 			if test.wantErr == nil {
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 				return
 			}
 
-			require.ErrorIs(t, err, test.wantErr)
+			{
+				err, target := err, test.wantErr
+				if !errors.Is(err, target) {
+					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+				}
+			}
 		})
 	}
 }
@@ -1370,11 +1699,18 @@ func TestValidateGetAssertionAuthorization(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			err := validateGetAssertionAuthorization(test.info, test.token, test.options)
 			if test.wantErr == nil {
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 				return
 			}
 
-			require.ErrorIs(t, err, test.wantErr)
+			{
+				err, target := err, test.wantErr
+				if !errors.Is(err, target) {
+					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+				}
+			}
 		})
 	}
 }
@@ -1400,10 +1736,22 @@ func TestGetAssertionValidatesAuthorizationBeforeCommand(t *testing.T) {
 		nil,
 	) {
 		count++
-		assert.Equal(t, protocol.AuthenticatorGetAssertionResponse{}, assertion)
-		require.ErrorIs(t, err, ErrPinUvAuthTokenRequired)
+		if !assertionResponseIsZero(assertion) {
+			t.Errorf("got %#v, want zero response", assertion)
+		}
+		{
+			err, target := err, ErrPinUvAuthTokenRequired
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	}
 
-	assert.Equal(t, 1, count)
+	{
+		want, got := 1, count
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }

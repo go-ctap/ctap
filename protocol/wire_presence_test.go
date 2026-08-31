@@ -1,31 +1,48 @@
 package protocol
 
 import (
+	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/telesma-app/ctap/attestation"
 	"github.com/telesma-app/ctap/credential"
-	"github.com/stretchr/testify/require"
 )
 
 func cborIntegerFields(t *testing.T, value any) map[uint64]cbor.RawMessage {
 	t.Helper()
 
 	raw, err := cbor.Marshal(value)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var fields map[uint64]cbor.RawMessage
-	require.NoError(t, cbor.Unmarshal(raw, &fields))
+	if err := cbor.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	return fields
 }
 
 func TestEmptyExtensionAggregatesAreOmittedFromRequests(t *testing.T) {
 	makeFields := cborIntegerFields(t, AuthenticatorMakeCredentialRequest{})
-	require.NotContains(t, makeFields, uint64(6))
+	{
+		container, element := makeFields, uint64(6)
+		_, ok := container[element]
+		if ok {
+			t.Fatalf("value unexpectedly contains %#v", element)
+		}
+	}
 
 	getFields := cborIntegerFields(t, AuthenticatorGetAssertionRequest{})
-	require.NotContains(t, getFields, uint64(4))
+	{
+		container, element := getFields, uint64(4)
+		_, ok := container[element]
+		if ok {
+			t.Fatalf("value unexpectedly contains %#v", element)
+		}
+	}
 }
 
 func TestZeroLengthPinUvAuthParamPreservesPresence(t *testing.T) {
@@ -52,10 +69,21 @@ func TestZeroLengthPinUvAuthParamPreservesPresence(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			absentFields := cborIntegerFields(t, tt.absent)
-			require.NotContains(t, absentFields, tt.memberKey)
+			{
+				container, element := absentFields, tt.memberKey
+				_, ok := container[element]
+				if ok {
+					t.Fatalf("value unexpectedly contains %#v", element)
+				}
+			}
 
 			presentFields := cborIntegerFields(t, tt.present)
-			require.Equal(t, cbor.RawMessage{0x40}, presentFields[tt.memberKey])
+			{
+				want, got := cbor.RawMessage{0x40}, presentFields[tt.memberKey]
+				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+					t.Fatalf("got %#v, want %#v", got, want)
+				}
+			}
 		})
 	}
 }
@@ -63,7 +91,13 @@ func TestZeroLengthPinUvAuthParamPreservesPresence(t *testing.T) {
 func TestGetInfoPreservesOnlyPresenceSensitiveZeroValues(t *testing.T) {
 	absentFields := cborIntegerFields(t, AuthenticatorGetInfoResponse{})
 	for _, key := range []uint64{5, 7, 8, 11, 12, 13, 15, 17, 29} {
-		require.NotContains(t, absentFields, key)
+		{
+			container, element := absentFields, key
+			_, ok := container[element]
+			if ok {
+				t.Fatalf("value unexpectedly contains %#v", element)
+			}
+		}
 	}
 
 	zero := uint(0)
@@ -78,7 +112,13 @@ func TestGetInfoPreservesOnlyPresenceSensitiveZeroValues(t *testing.T) {
 		AuthenticatorConfigCommands:      []ConfigSubCommand{},
 	})
 	for _, key := range []uint64{16, 20, 21, 23, 24, 27, 31} {
-		require.Contains(t, presentFields, key)
+		{
+			container, element := presentFields, key
+			_, ok := container[element]
+			if !ok {
+				t.Fatalf("value does not contain %#v", element)
+			}
+		}
 	}
 }
 
@@ -88,29 +128,65 @@ func TestPresenceSensitiveEmptyWireValuesAreEncoded(t *testing.T) {
 			Format:               attestation.AttestationStatementFormatIdentifierNone,
 			AttestationStatement: map[string]any{},
 		})
-		require.Equal(t, cbor.RawMessage{0xa0}, fields[3])
+		{
+			want, got := cbor.RawMessage{0xa0}, fields[3]
+			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Fatalf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("large blob EOF fragment", func(t *testing.T) {
 		fields := cborIntegerFields(t, AuthenticatorLargeBlobsResponse{Config: []byte{}})
-		require.Equal(t, cbor.RawMessage{0x40}, fields[1])
+		{
+			want, got := cbor.RawMessage{0x40}, fields[1]
+			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Fatalf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("empty biometric friendly name", func(t *testing.T) {
 		empty := ""
 		fields := cborIntegerFields(t, BioEnrollmentSubCommandParams{TemplateFriendlyName: &empty})
-		require.Equal(t, cbor.RawMessage{0x60}, fields[2])
+		{
+			want, got := cbor.RawMessage{0x60}, fields[2]
+			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Fatalf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("empty user names are omitted", func(t *testing.T) {
 		raw, err := cbor.Marshal(credential.PublicKeyCredentialUserEntity{ID: []byte{}})
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		var fields map[string]cbor.RawMessage
-		require.NoError(t, cbor.Unmarshal(raw, &fields))
-		require.Equal(t, cbor.RawMessage{0x40}, fields["id"])
-		require.NotContains(t, fields, "name")
-		require.NotContains(t, fields, "displayName")
+		if err := cbor.Unmarshal(raw, &fields); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := cbor.RawMessage{0x40}, fields["id"]
+			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Fatalf("got %#v, want %#v", got, want)
+			}
+		}
+		{
+			container, element := fields, "name"
+			_, ok := container[element]
+			if ok {
+				t.Fatalf("value unexpectedly contains %#v", element)
+			}
+		}
+		{
+			container, element := fields, "displayName"
+			_, ok := container[element]
+			if ok {
+				t.Fatalf("value unexpectedly contains %#v", element)
+			}
+		}
 	})
 }
 
@@ -118,20 +194,52 @@ func TestLargeBlobsRequestPreservesZeroLengthOperations(t *testing.T) {
 	zero := uint(0)
 
 	getFields := cborIntegerFields(t, AuthenticatorLargeBlobsRequest{Get: &zero})
-	require.Equal(t, cbor.RawMessage{0x00}, getFields[1])
-	require.NotContains(t, getFields, uint64(2))
+	{
+		want, got := cbor.RawMessage{0x00}, getFields[1]
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		container, element := getFields, uint64(2)
+		_, ok := container[element]
+		if ok {
+			t.Fatalf("value unexpectedly contains %#v", element)
+		}
+	}
 
 	setFields := cborIntegerFields(t, AuthenticatorLargeBlobsRequest{Set: []byte{}})
-	require.NotContains(t, setFields, uint64(1))
-	require.Equal(t, cbor.RawMessage{0x40}, setFields[2])
+	{
+		container, element := setFields, uint64(1)
+		_, ok := container[element]
+		if ok {
+			t.Fatalf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		want, got := cbor.RawMessage{0x40}, setFields[2]
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestConditionalResponseMembersAreOmittedWhenAbsent(t *testing.T) {
-	require.Empty(t, cborIntegerFields(t, AuthenticatorClientPINResponse{}))
-	require.Empty(t, cborIntegerFields(t, AuthenticatorCredentialManagementResponse{}))
+	if got := cborIntegerFields(t, AuthenticatorClientPINResponse{}); len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	if got := cborIntegerFields(t, AuthenticatorCredentialManagementResponse{}); len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
 
 	assertionFields := cborIntegerFields(t, AuthenticatorGetAssertionResponse{})
-	require.NotContains(t, assertionFields, uint64(1), "CTAP 2.0 permits credential to be omitted")
+	{
+		container, element := assertionFields, uint64(1)
+		_, ok := container[element]
+		if ok {
+			t.Fatalf("value unexpectedly contains %#v; context: %s", element, fmt.Sprint("CTAP 2.0 permits credential to be omitted"))
+		}
+	}
 }
 
 func TestPresenceSensitiveZeroResponseMembersAreEncoded(t *testing.T) {
@@ -144,7 +252,13 @@ func TestPresenceSensitiveZeroResponseMembersAreEncoded(t *testing.T) {
 		UvRetries:       &zero,
 	})
 	for _, key := range []uint64{3, 4, 5} {
-		require.Contains(t, clientPINFields, key)
+		{
+			container, element := clientPINFields, key
+			_, ok := container[element]
+			if !ok {
+				t.Fatalf("value does not contain %#v", element)
+			}
+		}
 	}
 
 	goodSample := LastEnrollSampleStatus(0)
@@ -152,14 +266,33 @@ func TestPresenceSensitiveZeroResponseMembersAreEncoded(t *testing.T) {
 		LastEnrollSampleStatus: &goodSample,
 		RemainingSamples:       &zero,
 	})
-	require.Equal(t, cbor.RawMessage{0x00}, bioFields[5])
-	require.Equal(t, cbor.RawMessage{0x00}, bioFields[6])
+	{
+		want, got := cbor.RawMessage{0x00}, bioFields[5]
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := cbor.RawMessage{0x00}, bioFields[6]
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 
 	raw, err := cbor.Marshal(GetExtensionOutputs{
 		GetCredBlobOutput: GetCredBlobOutput{CredBlob: []byte{}},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	var extensionFields map[string]cbor.RawMessage
-	require.NoError(t, cbor.Unmarshal(raw, &extensionFields))
-	require.Equal(t, cbor.RawMessage{0x40}, extensionFields["credBlob"])
+	if err := cbor.Unmarshal(raw, &extensionFields); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := cbor.RawMessage{0x40}, extensionFields["credBlob"]
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 }

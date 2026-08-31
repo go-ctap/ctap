@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	ctaptransport "github.com/telesma-app/ctap/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -39,9 +37,16 @@ func TestMessage_ReadFrom(t *testing.T) {
 	device := bytes.NewReader(resp)
 
 	n, err := m.ReadFrom(device)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	assert.Equal(t, int64(len(resp)), n)
+	{
+		want, got := int64(len(resp)), n
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestMessage_ReadFromRejectsInvalidContinuationSequence(t *testing.T) {
@@ -50,8 +55,12 @@ func TestMessage_ReadFromRejectsInvalidContinuationSequence(t *testing.T) {
 
 	m := new(Message)
 	_, err := m.ReadFrom(bytes.NewReader(raw))
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrInvalidResponseMessage))
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	if got := errors.Is(err, ErrInvalidResponseMessage); !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 func TestMessage_ReadFromRejectsInvalidContinuationCID(t *testing.T) {
@@ -60,39 +69,60 @@ func TestMessage_ReadFromRejectsInvalidContinuationCID(t *testing.T) {
 
 	m := new(Message)
 	_, err := m.ReadFrom(bytes.NewReader(raw))
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrInvalidResponseMessage))
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	if got := errors.Is(err, ErrInvalidResponseMessage); !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 func TestCBORSkipsUnexpectedResponseCID(t *testing.T) {
 	responseCID := ChannelID{9, 9, 9, 9}
 	msg, err := NewMessage(responseCID, CTAPHID_CBOR, []byte{byte(ctaptransport.CTAP2_OK)})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	reads := bytes.NewBuffer(nil)
 	for _, p := range msg {
 		_, err := p.WriteTo(reads)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	}
 
 	dev := &scriptedDevice{reads: bytes.NewReader(reads.Bytes())}
 	_, err = NewTransport(dev, ChannelID{1, 2, 3, 4}).CBOR(context.Background(), []byte{0x04})
-	require.Error(t, err)
-	assert.ErrorIs(t, err, io.EOF)
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	{
+		err, target := err, io.EOF
+		if !errors.Is(err, target) {
+			t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	var ioErr *ctaptransport.IOError
-	assert.True(t, errors.As(err, &ioErr))
+	if got := errors.As(err, &ioErr); !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 func newRawMessage(t *testing.T) []byte {
 	t.Helper()
 
 	msg, err := NewMessage(ChannelID{1, 2, 3, 4}, CTAPHID_CBOR, bytes.Repeat([]byte{0xaa}, initPacketDataSize+1))
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	buf := bytes.NewBuffer(nil)
 	for _, p := range msg {
 		_, err := p.WriteTo(buf)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	}
 
 	return buf.Bytes()

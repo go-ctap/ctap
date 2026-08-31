@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"testing"
@@ -11,8 +12,6 @@ import (
 
 	"github.com/telesma-app/ctap/protocol"
 	ctaptransport "github.com/telesma-app/ctap/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var transportTestCID = ChannelID{1, 2, 3, 4}
@@ -25,11 +24,22 @@ func TestOpenAllocatesChannelAndTransfersDevice(t *testing.T) {
 	}
 
 	transport, err := Open(context.Background(), dev)
-	require.NoError(t, err)
-	assert.Equal(t, transportTestCID, transport.cid)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := transportTestCID, transport.cid
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
-	require.NoError(t, transport.Close())
-	assert.True(t, dev.closed)
+	if err := transport.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := dev.closed; !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 func TestOpenCanceledLeavesDeviceOpen(t *testing.T) {
@@ -39,8 +49,15 @@ func TestOpenCanceledLeavesDeviceOpen(t *testing.T) {
 
 	_, err := Open(ctx, dev)
 
-	require.ErrorIs(t, err, context.Canceled)
-	assert.False(t, dev.closed)
+	{
+		err, target := err, context.Canceled
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	if got := dev.closed; got {
+		t.Errorf("got true, want false")
+	}
 }
 
 func TestOpenInitFailureLeavesDeviceOpen(t *testing.T) {
@@ -48,13 +65,29 @@ func TestOpenInitFailureLeavesDeviceOpen(t *testing.T) {
 
 	_, err := Open(t.Context(), dev)
 
-	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	{
+		err, target := err, io.ErrUnexpectedEOF
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	var deviceErr *ctaptransport.IOError
-	require.ErrorAs(t, err, &deviceErr)
-	assert.Equal(t, ctaptransport.IORead, deviceErr.Operation)
+	if err := err; !errors.As(err, &deviceErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := ctaptransport.IORead, deviceErr.Operation
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	assert.False(t, invalidated)
-	assert.False(t, dev.closed)
+	if got := invalidated; got {
+		t.Errorf("got true, want false")
+	}
+	if got := dev.closed; got {
+		t.Errorf("got true, want false")
+	}
 }
 
 func TestOpenInitWriteFailureReturnsTypedIOError(t *testing.T) {
@@ -62,13 +95,29 @@ func TestOpenInitWriteFailureReturnsTypedIOError(t *testing.T) {
 
 	_, err := Open(t.Context(), dev)
 
-	require.ErrorIs(t, err, io.ErrClosedPipe)
+	{
+		err, target := err, io.ErrClosedPipe
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	var ioErr *ctaptransport.IOError
-	require.ErrorAs(t, err, &ioErr)
-	assert.Equal(t, ctaptransport.IOWrite, ioErr.Operation)
+	if err := err; !errors.As(err, &ioErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := ctaptransport.IOWrite, ioErr.Operation
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	assert.False(t, invalidated)
-	assert.False(t, dev.closed)
+	if got := invalidated; got {
+		t.Errorf("got true, want false")
+	}
+	if got := dev.closed; got {
+		t.Errorf("got true, want false")
+	}
 }
 
 func TestTransportCBORPreCanceledWritesNothing(t *testing.T) {
@@ -78,8 +127,15 @@ func TestTransportCBORPreCanceledWritesNothing(t *testing.T) {
 	cancel()
 
 	_, err := transport.CBOR(ctx, []byte{byte(protocol.AuthenticatorSelection)})
-	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, dev.writes)
+	{
+		err, target := err, context.Canceled
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	if got := dev.writes; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 }
 
 func TestTransportCommandsCloseDeviceAfterWriteFailure(t *testing.T) {
@@ -120,14 +176,35 @@ func TestTransportCommandsCloseDeviceAfterWriteFailure(t *testing.T) {
 
 			err := test.call(transport)
 
-			require.ErrorIs(t, err, io.ErrClosedPipe)
+			{
+				err, target := err, io.ErrClosedPipe
+				if !errors.Is(err, target) {
+					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+				}
+			}
 			var ioErr *ctaptransport.IOError
-			require.ErrorAs(t, err, &ioErr)
-			assert.Equal(t, ctaptransport.IOWrite, ioErr.Operation)
+			if err := err; !errors.As(err, &ioErr) {
+				t.Fatalf("error %v does not match requested type", err)
+			}
+			{
+				want, got := ctaptransport.IOWrite, ioErr.Operation
+				if got != want {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
 			invalidatedErr, ok := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-			require.True(t, ok)
-			assert.Same(t, ioErr, invalidatedErr.Err)
-			assert.True(t, dev.closed)
+			if got := ok; !got {
+				t.Fatalf("got false, want true")
+			}
+			{
+				want, got := ioErr, invalidatedErr.Err
+				if got != want {
+					t.Errorf("got pointer %p, want %p", got, want)
+				}
+			}
+			if got := dev.closed; !got {
+				t.Errorf("got false, want true")
+			}
 		})
 	}
 }
@@ -176,16 +253,29 @@ func TestTransportCBORKeepsDeviceOpenAfterResponseError(t *testing.T) {
 			_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
 
 			if test.wantError != nil {
-				require.ErrorIs(t, err, test.wantError)
+				{
+					err, target := err, test.wantError
+					if !errors.Is(err, target) {
+						t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+					}
+				}
 			} else if test.wantCode != 0 {
 				requireCTAPHIDError(t, err, test.wantCode)
 			} else {
-				require.Error(t, err)
+				if err == nil {
+					t.Fatalf("expected an error")
+				}
 			}
 			_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-			assert.False(t, invalidated)
-			assert.False(t, dev.isClosed())
-			require.NoError(t, transport.Close())
+			if got := invalidated; got {
+				t.Errorf("got true, want false")
+			}
+			if got := dev.isClosed(); got {
+				t.Errorf("got true, want false")
+			}
+			if err := transport.Close(); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 		})
 	}
 }
@@ -197,17 +287,35 @@ func TestTransportCBORContinuesOnSameChannelAfterUnexpectedCommand(t *testing.T)
 	)
 	transport := NewTransport(dev, transportTestCID)
 	t.Cleanup(func() {
-		require.NoError(t, transport.Close())
+		if err := transport.Close(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	})
 
 	_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
-	require.ErrorIs(t, err, ErrUnexpectedCommand)
-	assert.False(t, dev.isClosed())
+	{
+		err, target := err, ErrUnexpectedCommand
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	if got := dev.isClosed(); got {
+		t.Errorf("got true, want false")
+	}
 
 	response, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
-	require.NoError(t, err)
-	assert.Equal(t, ctaptransport.CTAP2_OK, response.StatusCode)
-	assert.False(t, dev.isClosed())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := ctaptransport.CTAP2_OK, response.StatusCode
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := dev.isClosed(); got {
+		t.Errorf("got true, want false")
+	}
 }
 
 func TestOpenDrainsReportsForOtherChannelsBeforeAllocation(t *testing.T) {
@@ -219,15 +327,31 @@ func TestOpenDrainsReportsForOtherChannelsBeforeAllocation(t *testing.T) {
 	dev.reads <- foreignReport
 
 	transport, err := Open(t.Context(), dev)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	t.Cleanup(func() {
-		require.NoError(t, transport.Close())
+		if err := transport.Close(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	})
-	assert.Equal(t, dev.cid, transport.cid)
+	{
+		want, got := dev.cid, transport.cid
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	response, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
-	require.NoError(t, err)
-	assert.Equal(t, ctaptransport.CTAP2_OK, response.StatusCode)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := ctaptransport.CTAP2_OK, response.StatusCode
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestRetryChannelBusyRetriesAfterShortDelay(t *testing.T) {
@@ -241,9 +365,21 @@ func TestRetryChannelBusyRetriesAfterShortDelay(t *testing.T) {
 		return "ok", nil
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, "ok", result)
-	assert.Equal(t, 2, attempts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := "ok", result
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := 2, attempts
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestRetryChannelBusyStopsWhenContextExpires(t *testing.T) {
@@ -256,8 +392,18 @@ func TestRetryChannelBusyStopsWhenContextExpires(t *testing.T) {
 		return struct{}{}, &ErrorResponse{ErrorCode: ERR_CHANNEL_BUSY}
 	})
 
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	assert.Equal(t, 1, attempts)
+	{
+		err, target := err, context.DeadlineExceeded
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	{
+		want, got := 1, attempts
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestTransportPreCanceledContextTakesPriorityOverValidation(t *testing.T) {
@@ -294,7 +440,12 @@ func TestTransportPreCanceledContextTakesPriorityOverValidation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			transport := NewTransport(&failedOpenDevice{}, transportTestCID)
 
-			require.ErrorIs(t, test.call(transport), context.Canceled)
+			{
+				err, target := test.call(transport), context.Canceled
+				if !errors.Is(err, target) {
+					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+				}
+			}
 		})
 	}
 }
@@ -311,7 +462,12 @@ func TestTransportCBORWritesSelectionBeforeCancel(t *testing.T) {
 	}()
 
 	request := receive(t, dev.writes, "Selection request was not written")
-	assert.Equal(t, byte(CTAPHID_CBOR)|INIT_PACKET_BIT, request[5])
+	{
+		want, got := byte(CTAPHID_CBOR)|INIT_PACKET_BIT, request[5]
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	cancel()
 
 	select {
@@ -322,16 +478,35 @@ func TestTransportCBORWritesSelectionBeforeCancel(t *testing.T) {
 
 	close(dev.releaseRequest)
 	cancelRequest := receive(t, dev.writes, "CANCEL was not written")
-	assert.Equal(t, byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5])
+	{
+		want, got := byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5]
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	err := receive(t, resultc, "Selection cancellation did not complete")
-	require.ErrorIs(t, err, context.Canceled)
+	{
+		err, target := err, context.Canceled
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	assert.False(t, invalidated)
+	if got := invalidated; got {
+		t.Errorf("got true, want false")
+	}
 
 	response, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
-	require.NoError(t, err)
-	assert.Equal(t, ctaptransport.CTAP2_OK, response.StatusCode)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := ctaptransport.CTAP2_OK, response.StatusCode
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestTransportCBORReportsInvalidationWhenCanceledResponseCannotBeDrained(t *testing.T) {
@@ -346,18 +521,42 @@ func TestTransportCBORReportsInvalidationWhenCanceledResponseCannotBeDrained(t *
 	}()
 
 	request := receive(t, dev.writes, "Selection request was not written")
-	assert.Equal(t, byte(CTAPHID_CBOR)|INIT_PACKET_BIT, request[5])
+	{
+		want, got := byte(CTAPHID_CBOR)|INIT_PACKET_BIT, request[5]
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	cancel()
 
 	cancelRequest := receive(t, dev.writes, "CANCEL was not written")
-	assert.Equal(t, byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5])
+	{
+		want, got := byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5]
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	err := receive(t, resultc, "Selection cancellation did not complete")
-	require.ErrorIs(t, err, context.Canceled)
+	{
+		err, target := err, context.Canceled
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	invalidatedErr, ok := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	require.True(t, ok)
-	require.ErrorIs(t, invalidatedErr.Err, context.Canceled)
-	assert.True(t, dev.isClosed())
+	if got := ok; !got {
+		t.Fatalf("got false, want true")
+	}
+	{
+		err, target := invalidatedErr.Err, context.Canceled
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	if got := dev.isClosed(); !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 func TestTransportCBORPreservesReadError(t *testing.T) {
@@ -366,12 +565,31 @@ func TestTransportCBORPreservesReadError(t *testing.T) {
 
 	_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorSelection)})
 
-	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
-	require.NotErrorIs(t, err, context.Canceled)
+	{
+		err, target := err, io.ErrUnexpectedEOF
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
+	{
+		err, target := err, context.Canceled
+		if errors.Is(err, target) {
+			t.Fatalf("got error %v, unexpectedly matches %#v", err, target)
+		}
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	require.True(t, invalidated)
-	assert.Equal(t, 1, dev.writes, "an unrelated read error must not trigger CTAPHID_CANCEL")
-	assert.True(t, dev.closed)
+	if got := invalidated; !got {
+		t.Fatalf("got false, want true")
+	}
+	{
+		want, got := 1, dev.writes
+		if got != want {
+			t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("an unrelated read error must not trigger CTAPHID_CANCEL"))
+		}
+	}
+	if got := dev.closed; !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 func TestTransportCBORDoesNotCancelForContextErrorFromActiveContext(t *testing.T) {
@@ -382,11 +600,25 @@ func TestTransportCBORDoesNotCancelForContextErrorFromActiveContext(t *testing.T
 
 			_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorSelection)})
 
-			require.ErrorIs(t, err, readErr)
+			{
+				err, target := err, readErr
+				if !errors.Is(err, target) {
+					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+				}
+			}
 			_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-			require.True(t, invalidated)
-			assert.Equal(t, 1, dev.writes, "an error unrelated to the active context must not trigger CTAPHID_CANCEL")
-			assert.True(t, dev.closed)
+			if got := invalidated; !got {
+				t.Fatalf("got false, want true")
+			}
+			{
+				want, got := 1, dev.writes
+				if got != want {
+					t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("an error unrelated to the active context must not trigger CTAPHID_CANCEL"))
+				}
+			}
+			if got := dev.closed; !got {
+				t.Errorf("got false, want true")
+			}
 		})
 	}
 }
@@ -401,16 +633,37 @@ func TestTransportCloseCancelsAndInterruptsBlockedCBOR(t *testing.T) {
 	}()
 
 	receive(t, dev.writes, "Selection request was not written")
-	require.NoError(t, transport.Close())
+	if err := transport.Close(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	cancelRequest := receive(t, dev.writes, "CANCEL was not written before Close")
-	assert.Equal(t, byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5])
+	{
+		want, got := byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5]
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	err := receive(t, resultc, "Close did not interrupt Selection")
-	require.ErrorIs(t, err, io.ErrClosedPipe)
+	{
+		err, target := err, io.ErrClosedPipe
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	var deviceErr *ctaptransport.IOError
-	require.ErrorAs(t, err, &deviceErr)
-	assert.Equal(t, ctaptransport.IORead, deviceErr.Operation)
+	if err := err; !errors.As(err, &deviceErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := ctaptransport.IORead, deviceErr.Operation
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	require.True(t, invalidated)
+	if got := invalidated; !got {
+		t.Fatalf("got false, want true")
+	}
 }
 
 func TestTransportCloseReturnsTypedIOError(t *testing.T) {
@@ -419,13 +672,29 @@ func TestTransportCloseReturnsTypedIOError(t *testing.T) {
 
 	err := transport.Close()
 
-	require.ErrorIs(t, err, io.ErrClosedPipe)
+	{
+		err, target := err, io.ErrClosedPipe
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	var ioErr *ctaptransport.IOError
-	require.ErrorAs(t, err, &ioErr)
-	assert.Equal(t, ctaptransport.IOClose, ioErr.Operation)
+	if err := err; !errors.As(err, &ioErr) {
+		t.Fatalf("error %v does not match requested type", err)
+	}
+	{
+		want, got := ctaptransport.IOClose, ioErr.Operation
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
-	assert.False(t, invalidated)
-	assert.True(t, dev.closed)
+	if got := invalidated; got {
+		t.Errorf("got true, want false")
+	}
+	if got := dev.closed; !got {
+		t.Errorf("got false, want true")
+	}
 }
 
 type orderedDevice struct {
@@ -715,8 +984,15 @@ func (d *failedOpenDevice) Close() error {
 
 func (d *initOpenDevice) Write(_ context.Context, p []byte) (int, error) {
 	d.t.Helper()
-	require.Len(d.t, p, hidReportPacketSize)
-	assert.Equal(d.t, byte(CTAPHID_INIT)|INIT_PACKET_BIT, p[5])
+	if got, want := len(p), hidReportPacketSize; got != want {
+		d.t.Fatalf("got length %d, want %d", got, want)
+	}
+	{
+		want, got := byte(CTAPHID_INIT)|INIT_PACKET_BIT, p[5]
+		if got != want {
+			d.t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	nonce := bytes.Clone(p[8:16])
 	response := append(bytes.Clone(nonce), d.cid[:]...)
 	response = append(response, 2, 1, 0, 0, byte(CAPABILITY_CBOR))

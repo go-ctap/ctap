@@ -1,6 +1,7 @@
 package authenticator
 
 import (
+	"bytes"
 	"crypto/ecdh"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -11,8 +12,6 @@ import (
 	"github.com/telesma-app/ctap/crypto/protocolone"
 	"github.com/telesma-app/ctap/crypto/protocoltwo"
 	"github.com/telesma-app/ctap/webauthn"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // These values are published in WebAuthn Level 3, § 16.17.1:
@@ -34,28 +33,51 @@ func TestWebAuthnPRFReferenceVectors(t *testing.T) {
 		First:  firstInput,
 		Second: secondInput,
 	})
-	assert.Equal(t, slices.Concat(firstSalt, secondSalt), salts)
-	assert.Equal(t, firstOutput, hmacSHA256(credentialRandom, firstSalt))
-	assert.Equal(t, secondOutput, hmacSHA256(credentialRandom, secondSalt))
+	{
+		want, got := slices.Concat(firstSalt, secondSalt), salts
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := firstOutput, hmacSHA256(credentialRandom, firstSalt)
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := secondOutput, hmacSHA256(credentialRandom, secondSalt)
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	curve := ecdh.P256()
 	privateKey, err := curve.NewPrivateKey(platformPrivateKey)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	publicKey, err := curve.NewPublicKey(slices.Concat(
 		[]byte{0x04},
 		authenticatorPublicKeyX,
 		authenticatorPublicKeyY,
 	))
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	ecdhSecret, err := privateKey.ECDH(publicKey)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	t.Run("PIN UV protocol one", func(t *testing.T) {
 		sharedSecret := protocolone.KDF(ecdhSecret)
-		assert.Equal(t,
-			decodePRFVector(t, "23e5ed7157c25892b77732fb9c8a107e3518800db2af4142f9f4adfacb771d39"),
-			sharedSecret,
-		)
+		{
+			want, got := decodePRFVector(t, "23e5ed7157c25892b77732fb9c8a107e3518800db2af4142f9f4adfacb771d39"), sharedSecret
+			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 
 		saltEnc := decodePRFVector(t, "ab8c878bb05d04700f077ed91845ec9c503c925cb12b327ddbeb4243c397f913")
 		outputEnc := decodePRFVector(t, "15d4e4f3f04109b492b575c1b38c28585b6719cf8d61304215108d939f37ccfb")
@@ -63,17 +85,28 @@ func TestWebAuthnPRFReferenceVectors(t *testing.T) {
 		assertPRFVectorDecryption(t, protocolone.Decrypt, sharedSecret, outputEnc, firstOutput)
 
 		gotSaltEnc, err := protocolone.Encrypt(sharedSecret, firstSalt)
-		require.NoError(t, err)
-		assert.Equal(t, saltEnc, gotSaltEnc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := saltEnc, gotSaltEnc
+			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("PIN UV protocol two", func(t *testing.T) {
 		sharedSecret, err := protocoltwo.KDF(ecdhSecret)
-		require.NoError(t, err)
-		assert.Equal(t,
-			decodePRFVector(t, "0c63083de8170101d38bcf8bd72309568ddb4550867e23404b35d85712f7c20d8bc911ee23c06034cbc14290b9669bec07739053c5a416e313ef905c79955876"),
-			sharedSecret,
-		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			want, got := decodePRFVector(t, "0c63083de8170101d38bcf8bd72309568ddb4550867e23404b35d85712f7c20d8bc911ee23c06034cbc14290b9669bec07739053c5a416e313ef905c79955876"), sharedSecret
+			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 
 		assertPRFVectorDecryption(
 			t,
@@ -110,7 +143,9 @@ func decodePRFVector(t *testing.T, value string) []byte {
 	t.Helper()
 
 	decoded, err := hex.DecodeString(value)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	return decoded
 }
 
@@ -130,6 +165,13 @@ func assertPRFVectorDecryption(
 	t.Helper()
 
 	got, err := decrypt(sharedSecret, ciphertext)
-	require.NoError(t, err)
-	assert.Equal(t, want, got)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := want, got
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }

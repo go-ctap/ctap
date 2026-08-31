@@ -4,8 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"io"
-
-	"github.com/samber/lo"
+	"slices"
 )
 
 // NewMessage creates a new message.
@@ -20,20 +19,21 @@ func NewMessage(cid ChannelID, cmd Command, data []byte) (Message, error) {
 		command: cmd,
 		length:  uint16(len(data)),
 		// DATA starts from offset 7
-		data: lo.Slice(data, 0, initPacketDataSize),
+		data: data[:min(len(data), initPacketDataSize)],
 	})
 
 	// if data is longer than 64 bytes minus offset, split it into chunks and
 	// append them to the message as continuation packets
 	if len(data) > initPacketDataSize {
-		chunks := lo.Chunk[byte](data[initPacketDataSize:], continuationPacketDataSize)
-		for i, chunk := range chunks {
+		var sequence byte
+		for chunk := range slices.Chunk(data[initPacketDataSize:], continuationPacketDataSize) {
 			msg = append(msg, &packet{
 				cid:          cid,
-				sequence:     byte(i),
+				sequence:     sequence,
 				data:         chunk,
 				continuation: true,
 			})
+			sequence++
 		}
 	}
 

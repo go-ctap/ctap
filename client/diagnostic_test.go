@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/hex"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	ctapdiag "github.com/telesma-app/ctap/diagnostic"
 	"github.com/telesma-app/ctap/options"
 	"github.com/telesma-app/ctap/protocol"
@@ -25,7 +25,9 @@ func TestRenderDiagnosticRedactsTaggedFieldsAndShowsOtherFields(t *testing.T) {
 	}
 	configured := options.NewOptions()
 	raw, err := configured.EncMode.Marshal(request)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	diagnostic, _ := renderDiagnostic(
 		configured.DecMode,
@@ -34,12 +36,39 @@ func TestRenderDiagnosticRedactsTaggedFieldsAndShowsOtherFields(t *testing.T) {
 		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorClientPINRequest]()},
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Contains(t, diagnostic.Notation, diagnosticRedacted)
-	assert.Contains(t, diagnostic.Notation, "h'/[REDACTED]/'")
-	assert.Contains(t, diagnostic.Notation, "engineers.example")
-	assert.NotContains(t, diagnostic.Notation, hex.EncodeToString(secret))
-	assert.Equal(t, []string{"PinHashEnc"}, diagnostic.RedactedFields)
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		container, element := diagnostic.Notation, diagnosticRedacted
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "h'/[REDACTED]/'"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "engineers.example"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, hex.EncodeToString(secret)
+		if strings.Contains(container, element) {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		want, got := []string{"PinHashEnc"}, diagnostic.RedactedFields
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestDiagnosticRedactionPreservesCBORMajorType(t *testing.T) {
@@ -73,12 +102,26 @@ func TestDiagnosticRedactionPreservesCBORMajorType(t *testing.T) {
 			}
 
 			raw, err := encoder.Marshal(test.value)
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			notation, err := formatter.redactedNotation(raw, 0)
-			require.NoError(t, err)
-			assert.Equal(t, test.want, notation)
-			assert.NotContains(t, notation, "secret-canary")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			{
+				want, got := test.want, notation
+				if got != want {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
+			{
+				container, element := notation, "secret-canary"
+				if strings.Contains(container, element) {
+					t.Errorf("value unexpectedly contains %#v", element)
+				}
+			}
 		})
 	}
 }
@@ -98,7 +141,9 @@ func TestRenderDiagnosticRedactsNestedExtensionFields(t *testing.T) {
 	}
 	configured := options.NewOptions()
 	raw, err := configured.EncMode.Marshal(request)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	diagnostic, _ := renderDiagnostic(
 		configured.DecMode,
@@ -107,13 +152,30 @@ func TestRenderDiagnosticRedactsNestedExtensionFields(t *testing.T) {
 		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorGetAssertionRequest]()},
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Contains(t, diagnostic.Notation, diagnosticRedacted)
-	assert.NotContains(t, diagnostic.Notation, hex.EncodeToString(salt))
-	assert.Equal(t, []string{
-		"Extensions.HMACSecret.SaltAuth",
-		"Extensions.HMACSecret.SaltEnc",
-	}, diagnostic.RedactedFields)
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		container, element := diagnostic.Notation, diagnosticRedacted
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, hex.EncodeToString(salt)
+		if strings.Contains(container, element) {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		want, got := []string{
+			"Extensions.HMACSecret.SaltAuth",
+			"Extensions.HMACSecret.SaltEnc",
+		}, diagnostic.RedactedFields
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestRenderDiagnosticPreservesUnknownFields(t *testing.T) {
@@ -123,7 +185,9 @@ func TestRenderDiagnosticPreservesUnknownFields(t *testing.T) {
 		10: "engineers.example",
 		99: "unknown-field-canary",
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	diagnostic, _ := renderDiagnostic(
 		configured.DecMode,
@@ -132,11 +196,33 @@ func TestRenderDiagnosticPreservesUnknownFields(t *testing.T) {
 		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorClientPINRequest]()},
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Contains(t, diagnostic.Notation, "engineers.example")
-	assert.Contains(t, diagnostic.Notation, "unknown-field-canary")
-	assert.Contains(t, diagnostic.Notation, "/subCommand/ 2:")
-	assert.Contains(t, diagnostic.Notation, "/rpId/ 10:")
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		container, element := diagnostic.Notation, "engineers.example"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "unknown-field-canary"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "/subCommand/ 2:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "/rpId/ 10:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 }
 
 func TestRenderDiagnosticPreservesNestedUnknownFieldsAndRedactsKnownWrongType(t *testing.T) {
@@ -148,7 +234,9 @@ func TestRenderDiagnosticPreservesNestedUnknownFieldsAndRedactsKnownWrongType(t 
 			1: "nested-unknown-canary",
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	diagnostic, subCommand := renderDiagnostic(
 		configured.DecMode,
@@ -157,12 +245,39 @@ func TestRenderDiagnosticPreservesNestedUnknownFieldsAndRedactsKnownWrongType(t 
 		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorClientPINRequest]()},
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Equal(t, uint64(protocol.ClientPINSubCommandGetPINRetries), subCommand)
-	assert.Contains(t, diagnostic.Notation, "nested-unknown-canary")
-	assert.Contains(t, diagnostic.Notation, diagnosticRedacted)
-	assert.NotContains(t, diagnostic.Notation, "secret-canary")
-	assert.Equal(t, []string{"PinHashEnc"}, diagnostic.RedactedFields)
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		want, got := uint64(protocol.ClientPINSubCommandGetPINRetries), subCommand
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "nested-unknown-canary"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, diagnosticRedacted
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "secret-canary"
+		if strings.Contains(container, element) {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		want, got := []string{"PinHashEnc"}, diagnostic.RedactedFields
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestRenderDiagnosticUsesExplicitAndDerivedFieldNames(t *testing.T) {
@@ -173,7 +288,9 @@ func TestRenderDiagnosticUsesExplicitAndDerivedFieldNames(t *testing.T) {
 		3: map[string]any{"alg": -7},
 		4: true,
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	diagnostic, _ := renderDiagnostic(
 		configured.DecMode,
@@ -182,13 +299,45 @@ func TestRenderDiagnosticUsesExplicitAndDerivedFieldNames(t *testing.T) {
 		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorMakeCredentialResponse]()},
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Contains(t, diagnostic.Notation, "/fmt/ 1:")
-	assert.Contains(t, diagnostic.Notation, "/authData/ 2:")
-	assert.Contains(t, diagnostic.Notation, "/attStmt/ 3:")
-	assert.Contains(t, diagnostic.Notation, "/epAtt/ 4:")
-	assert.NotContains(t, diagnostic.Notation, "auth-data-canary")
-	assert.Equal(t, []string{"AuthDataRaw"}, diagnostic.RedactedFields)
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		container, element := diagnostic.Notation, "/fmt/ 1:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "/authData/ 2:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "/attStmt/ 3:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "/epAtt/ 4:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "auth-data-canary"
+		if strings.Contains(container, element) {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		want, got := []string{"AuthDataRaw"}, diagnostic.RedactedFields
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestRenderDiagnosticRedactsPreviewSignDataToBeSigned(t *testing.T) {
@@ -207,15 +356,34 @@ func TestRenderDiagnosticRedactsPreviewSignDataToBeSigned(t *testing.T) {
 	}
 	configured := options.NewOptions()
 	raw, err := configured.EncMode.Marshal(request)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	requestSchema, _ := exchangeSchemas(protocol.AuthenticatorGetAssertion)
 
 	diagnostic, _ := renderDiagnostic(configured.DecMode, configured.EncMode, raw, requestSchema)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Contains(t, diagnostic.Notation, "key-handle-canary")
-	assert.NotContains(t, diagnostic.Notation, hex.EncodeToString(toBeSigned))
-	assert.Equal(t, []string{"Extensions.PreviewSign.ToBeSigned"}, diagnostic.RedactedFields)
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		container, element := diagnostic.Notation, "key-handle-canary"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, hex.EncodeToString(toBeSigned)
+		if strings.Contains(container, element) {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		want, got := []string{"Extensions.PreviewSign.ToBeSigned"}, diagnostic.RedactedFields
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestRenderDiagnosticUsesProtocolSpellingOverrides(t *testing.T) {
@@ -233,15 +401,24 @@ func TestRenderDiagnosticUsesProtocolSpellingOverrides(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			raw, err := configured.EncMode.Marshal(map[uint64]any{test.key: "value"})
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			diagnostic, _ := renderDiagnostic(
 				configured.DecMode,
 				configured.EncMode,
 				raw,
 				diagnosticMessageSchema{typeInfo: test.schema},
 			)
-			require.Empty(t, diagnostic.Error)
-			assert.Contains(t, diagnostic.Notation, test.want)
+			if got := diagnostic.Error; len(got) != 0 {
+				t.Fatalf("got non-empty value %#v", got)
+			}
+			{
+				container, element := diagnostic.Notation, test.want
+				if !strings.Contains(container, element) {
+					t.Errorf("value does not contain %#v", element)
+				}
+			}
 		})
 	}
 }
@@ -256,7 +433,9 @@ func TestRenderDiagnosticUsesConfigSubCommandParamsSchema(t *testing.T) {
 			99: "vendor-param-canary",
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	requestSchema, _ := exchangeSchemas(protocol.AuthenticatorConfig)
 
 	diagnostic, subCommand := renderDiagnostic(
@@ -266,12 +445,39 @@ func TestRenderDiagnosticUsesConfigSubCommandParamsSchema(t *testing.T) {
 		requestSchema,
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Equal(t, uint64(protocol.ConfigSubCommandSetMinPINLength), subCommand)
-	assert.Contains(t, diagnostic.Notation, "/subCommandParams/ 2:")
-	assert.Contains(t, diagnostic.Notation, "/newMinPINLength/ 1:")
-	assert.Contains(t, diagnostic.Notation, "/pinComplexityPolicy/ 4:")
-	assert.Contains(t, diagnostic.Notation, "vendor-param-canary")
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		want, got := uint64(protocol.ConfigSubCommandSetMinPINLength), subCommand
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "/subCommandParams/ 2:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "/newMinPINLength/ 1:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "/pinComplexityPolicy/ 4:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "vendor-param-canary"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 }
 
 func TestRenderDiagnosticRedactsKnownUnsignedExtensionOutputFields(t *testing.T) {
@@ -289,7 +495,9 @@ func TestRenderDiagnosticRedactsKnownUnsignedExtensionOutputFields(t *testing.T)
 			},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	_, responseSchema := exchangeSchemas(protocol.AuthenticatorGetAssertion)
 
 	diagnostic, _ := renderDiagnostic(
@@ -299,14 +507,51 @@ func TestRenderDiagnosticRedactsKnownUnsignedExtensionOutputFields(t *testing.T)
 		responseSchema,
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Contains(t, diagnostic.Notation, "/unsignedExtensionOutputs/ 8:")
-	assert.Contains(t, diagnostic.Notation, `"written": true`)
-	assert.Contains(t, diagnostic.Notation, `"blob": h'/[REDACTED]/'`)
-	assert.Contains(t, diagnostic.Notation, `"originalSize": 42`)
-	assert.Contains(t, diagnostic.Notation, "vendor-canary")
-	assert.NotContains(t, diagnostic.Notation, hex.EncodeToString(secret))
-	assert.Equal(t, []string{"UnsignedExtensionOutputs.Blob"}, diagnostic.RedactedFields)
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		container, element := diagnostic.Notation, "/unsignedExtensionOutputs/ 8:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, `"written": true`
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, `"blob": h'/[REDACTED]/'`
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, `"originalSize": 42`
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "vendor-canary"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, hex.EncodeToString(secret)
+		if strings.Contains(container, element) {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		want, got := []string{"UnsignedExtensionOutputs.Blob"}, diagnostic.RedactedFields
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestRenderDiagnosticShowsSafeMakeCredentialUnsignedExtensionOutputs(t *testing.T) {
@@ -318,7 +563,9 @@ func TestRenderDiagnosticShowsSafeMakeCredentialUnsignedExtensionOutputs(t *test
 			},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	_, responseSchema := exchangeSchemas(protocol.AuthenticatorMakeCredential)
 
 	diagnostic, _ := renderDiagnostic(
@@ -328,11 +575,30 @@ func TestRenderDiagnosticShowsSafeMakeCredentialUnsignedExtensionOutputs(t *test
 		responseSchema,
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Contains(t, diagnostic.Notation, "/unsignedExtensionOutputs/ 6:")
-	assert.Contains(t, diagnostic.Notation, `"supported": true`)
-	assert.NotContains(t, diagnostic.Notation, diagnosticRedacted)
-	assert.Empty(t, diagnostic.RedactedFields)
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		container, element := diagnostic.Notation, "/unsignedExtensionOutputs/ 6:"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, `"supported": true`
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, diagnosticRedacted
+		if strings.Contains(container, element) {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	if got := diagnostic.RedactedFields; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 }
 
 func TestRenderDiagnosticWithoutSchemaShowsRawCBOR(t *testing.T) {
@@ -340,7 +606,9 @@ func TestRenderDiagnosticWithoutSchemaShowsRawCBOR(t *testing.T) {
 	raw, err := configured.EncMode.Marshal(map[uint64]any{
 		99: []any{"vendor", map[string]any{"future": true}},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	diagnostic, _ := renderDiagnostic(
 		configured.DecMode,
@@ -349,9 +617,21 @@ func TestRenderDiagnosticWithoutSchemaShowsRawCBOR(t *testing.T) {
 		diagnosticMessageSchema{},
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Contains(t, diagnostic.Notation, "vendor")
-	assert.Contains(t, diagnostic.Notation, "future")
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	{
+		container, element := diagnostic.Notation, "vendor"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := diagnostic.Notation, "future"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 }
 
 func TestRenderDiagnosticHasDeterministicMapOrder(t *testing.T) {
@@ -361,7 +641,9 @@ func TestRenderDiagnosticHasDeterministicMapOrder(t *testing.T) {
 		2:  uint64(protocol.ClientPINSubCommandGetPINRetries),
 		1:  uint64(protocol.PinUvAuthProtocolOne),
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	diagnostic, _ := renderDiagnostic(
 		configured.DecMode,
@@ -370,15 +652,17 @@ func TestRenderDiagnosticHasDeterministicMapOrder(t *testing.T) {
 		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorClientPINRequest]()},
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Equal(t,
-		`{
-  /pinUvAuthProtocol/ 1: 1,
-  /subCommand/ 2: 1,
-  /rpId/ 10: "example.com"
-}`,
-		diagnostic.Notation,
-	)
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	want := "{\n" +
+		"  /pinUvAuthProtocol/ 1: 1,\n" +
+		"  /subCommand/ 2: 1,\n" +
+		"  /rpId/ 10: \"example.com\"\n" +
+		"}"
+	if got := diagnostic.Notation; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
+	}
 }
 
 func TestRenderDiagnosticPrettyPrintsNestedCollections(t *testing.T) {
@@ -391,7 +675,9 @@ func TestRenderDiagnosticPrettyPrintsNestedCollections(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	diagnostic, _ := renderDiagnostic(
 		configured.DecMode,
@@ -400,18 +686,20 @@ func TestRenderDiagnosticPrettyPrintsNestedCollections(t *testing.T) {
 		diagnosticMessageSchema{},
 	)
 
-	require.Empty(t, diagnostic.Error)
-	assert.Equal(t,
-		`{
-  99: [
-    {
-      "empty": [],
-      "value": true
-    }
-  ]
-}`,
-		diagnostic.Notation,
-	)
+	if got := diagnostic.Error; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	want := "{\n" +
+		"  99: [\n" +
+		"    {\n" +
+		"      \"empty\": [],\n" +
+		"      \"value\": true\n" +
+		"    }\n" +
+		"  ]\n" +
+		"}"
+	if got := diagnostic.Notation; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
+	}
 }
 
 func TestRenderDiagnosticRejectsMalformedCBORWithoutNotation(t *testing.T) {
@@ -423,15 +711,39 @@ func TestRenderDiagnosticRejectsMalformedCBORWithoutNotation(t *testing.T) {
 		diagnosticMessageSchema{typeInfo: reflect.TypeFor[protocol.AuthenticatorClientPINRequest]()},
 	)
 
-	assert.NotEmpty(t, diagnostic.Error)
-	assert.Empty(t, diagnostic.Notation)
+	if got := diagnostic.Error; len(got) == 0 {
+		t.Errorf("got empty value %#v, want non-empty", got)
+	}
+	if got := diagnostic.Notation; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 }
 
 func TestLowerCamel(t *testing.T) {
-	assert.Equal(t, "clientDataHash", lowerCamel("ClientDataHash"))
-	assert.Equal(t, "pinComplexityPolicy", lowerCamel("PINComplexityPolicy"))
-	assert.Equal(t, "aaguid", lowerCamel("AAGUID"))
-	assert.Equal(t, "maxRPIDsForSetMinPINLength", lowerCamel("MaxRPIDsForSetMinPINLength"))
+	{
+		want, got := "clientDataHash", lowerCamel("ClientDataHash")
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := "pinComplexityPolicy", lowerCamel("PINComplexityPolicy")
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := "aaguid", lowerCamel("AAGUID")
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := "maxRPIDsForSetMinPINLength", lowerCamel("MaxRPIDsForSetMinPINLength")
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestExchangeLogsStructuredRedactedDiagnostic(t *testing.T) {
@@ -445,12 +757,16 @@ func TestExchangeLogsStructuredRedactedDiagnostic(t *testing.T) {
 	}
 	configured := options.NewOptions()
 	requestBody, err := configured.EncMode.Marshal(request)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	responseBody, err := configured.EncMode.Marshal(map[uint64]any{
 		2:  responseSecret,
 		99: "response-unknown-canary",
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var events []ctapdiag.Exchange
 	transport := &fakeCBORTransport{
@@ -464,27 +780,100 @@ func TestExchangeLogsStructuredRedactedDiagnostic(t *testing.T) {
 		}),
 		options.WithTransport(transport),
 	)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	_, err = client.cbor(context.Background(), transport.request)
-	require.NoError(t, err)
-	require.Len(t, events, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(events), 1; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 
 	event := events[0]
-	assert.Equal(t, protocol.AuthenticatorClientPIN, event.Command)
-	assert.Equal(t, uint64(protocol.ClientPINSubCommandGetPinUvAuthTokenUsingPinWithPermissions), event.SubCommand)
-	assert.Equal(t, len(requestBody), event.Request.Bytes)
-	assert.Equal(t, len(responseBody), event.Response.Bytes)
-	require.NotNil(t, event.Status)
-	assert.Equal(t, ctaptransport.CTAP2_OK, *event.Status)
+	{
+		want, got := protocol.AuthenticatorClientPIN, event.Command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := uint64(protocol.ClientPINSubCommandGetPinUvAuthTokenUsingPinWithPermissions), event.SubCommand
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := len(requestBody), event.Request.Bytes
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := len(responseBody), event.Response.Bytes
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := event.Status; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	{
+		want, got := ctaptransport.CTAP2_OK, *event.Status
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
-	assert.Contains(t, event.Request.Notation, "engineers.example")
-	assert.Contains(t, event.Request.Notation, "REDACTED")
-	assert.NotContains(t, event.Request.Notation, hex.EncodeToString(requestSecret))
-	assert.Equal(t, []string{"PinHashEnc"}, event.Request.RedactedFields)
+	{
+		container, element := event.Request.Notation, "engineers.example"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := event.Request.Notation, "REDACTED"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := event.Request.Notation, hex.EncodeToString(requestSecret)
+		if strings.Contains(container, element) {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		want, got := []string{"PinHashEnc"}, event.Request.RedactedFields
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
-	assert.Contains(t, event.Response.Notation, "REDACTED")
-	assert.Contains(t, event.Response.Notation, "response-unknown-canary")
-	assert.NotContains(t, event.Response.Notation, hex.EncodeToString(responseSecret))
-	assert.Equal(t, []string{"PinUvAuthToken"}, event.Response.RedactedFields)
+	{
+		container, element := event.Response.Notation, "REDACTED"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := event.Response.Notation, "response-unknown-canary"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := event.Response.Notation, hex.EncodeToString(responseSecret)
+		if strings.Contains(container, element) {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		want, got := []string{"PinUvAuthToken"}, event.Response.RedactedFields
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }

@@ -1,12 +1,13 @@
 package arkg
 
 import (
+	"bytes"
 	"crypto/ecdh"
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/stretchr/testify/require"
 	"github.com/telesma-app/ctap/cose"
 )
 
@@ -56,26 +57,72 @@ func TestDeriveP256DraftVectors(t *testing.T) {
 			context := []byte(test.context)
 
 			derived, keyHandle, err := DeriveP256(seed, input, context)
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			algorithm, err := derived.Algorithm()
-			require.NoError(t, err)
-			require.Equal(t, cose.AlgorithmESP256, algorithm)
-			require.Equal(t, hexBytes(t, test.derivedX), derived[cose.EC2KeyParameterX])
-			require.Equal(t, hexBytes(t, test.derivedY), derived[cose.EC2KeyParameterY])
-			require.Equal(t, hexBytes(t, test.keyHandle), keyHandle)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			{
+				want, got := cose.AlgorithmESP256, algorithm
+				if got != want {
+					t.Fatalf("got %#v, want %#v", got, want)
+				}
+			}
+			{
+				want, got := hexBytes(t, test.derivedX), derived[cose.EC2KeyParameterX]
+				gotValue, ok := got.([]byte)
+
+				if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
+					t.Fatalf("got %#v, want %#v", got, want)
+				}
+			}
+			{
+				want, got := hexBytes(t, test.derivedY), derived[cose.EC2KeyParameterY]
+				gotValue, ok := got.([]byte)
+
+				if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
+					t.Fatalf("got %#v, want %#v", got, want)
+				}
+			}
+			{
+				want, got := hexBytes(t, test.keyHandle), keyHandle
+				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+					t.Fatalf("got %#v, want %#v", got, want)
+				}
+			}
 
 			kemKey, err := nestedKey(seed, -2, "KEM public key")
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			kemCurvePoint, err := p256PublicKey(kemKey, cose.AlgorithmECDHESHKDF256, "KEM public key")
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			kemPoint, err := ecdh.P256().NewPublicKey(kemCurvePoint.Bytes())
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			contextWithLength := append([]byte{byte(len(context))}, context...)
 			kemContext := append([]byte("ARKG-Derive-Key-KEM."), contextWithLength...)
 			sharedSecret, encapsulatedHandle, err := p256Encapsulate(kemPoint, input, kemContext)
-			require.NoError(t, err)
-			require.Equal(t, hexBytes(t, test.sharedSecret), sharedSecret)
-			require.Equal(t, keyHandle, encapsulatedHandle)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			{
+				want, got := hexBytes(t, test.sharedSecret), sharedSecret
+				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+					t.Fatalf("got %#v, want %#v", got, want)
+				}
+			}
+			{
+				want, got := keyHandle, encapsulatedHandle
+				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+					t.Fatalf("got %#v, want %#v", got, want)
+				}
+			}
 		})
 	}
 }
@@ -88,19 +135,41 @@ func TestDeriveP256AcceptsOptionalCOSEParameters(t *testing.T) {
 	delete(seed[-2].(cose.Key), cose.KeyParameterAlg)
 
 	derived, _, err := DeriveP256(seed, make([]byte, 32), nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	_, hasAlgorithm := derived[cose.KeyParameterAlg]
-	require.False(t, hasAlgorithm)
+	if got := hasAlgorithm; got {
+		t.Fatalf("got true, want false")
+	}
 
 	seed[-3] = "example.org/algorithm"
 	derived, _, err = DeriveP256(seed, make([]byte, 32), nil)
-	require.NoError(t, err)
-	require.Equal(t, "example.org/algorithm", derived[cose.KeyParameterAlg])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := "example.org/algorithm", derived[cose.KeyParameterAlg]
+		gotValue, ok := got.(string)
+
+		if !ok || gotValue != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 
 	seed[-3] = ^uint64(0)
 	derived, _, err = DeriveP256(seed, make([]byte, 32), nil)
-	require.NoError(t, err)
-	require.Equal(t, ^uint64(0), derived[cose.KeyParameterAlg])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := ^uint64(0), derived[cose.KeyParameterAlg]
+		gotValue, ok := got.(uint64)
+
+		if !ok || gotValue != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestDeriveP256RejectsInvalidPublicSeed(t *testing.T) {
@@ -194,22 +263,36 @@ func TestDeriveP256RejectsInvalidPublicSeed(t *testing.T) {
 			seed := p256Seed(t)
 			test.mutate(seed)
 			_, _, err := DeriveP256(seed, make([]byte, 32), nil)
-			require.ErrorContains(t, err, test.want)
+			{
+				err, substring := err, test.want
+				if err == nil || !strings.Contains(err.Error(), substring) {
+					t.Fatalf("error %v does not contain %q", err, substring)
+				}
+			}
 		})
 	}
 }
 
 func TestDeriveP256RejectsLongContext(t *testing.T) {
 	_, _, err := DeriveP256(p256Seed(t), make([]byte, 32), make([]byte, p256ContextLimit))
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	_, _, err = DeriveP256(p256Seed(t), make([]byte, 32), make([]byte, p256ContextLimit+1))
-	require.EqualError(t, err, "arkg: P-256 context is 65 bytes, maximum is 64")
+	{
+		err, want := err, "arkg: P-256 context is 65 bytes, maximum is 64"
+		if err == nil || err.Error() != want {
+			t.Fatalf("got error %v, want %q", err, want)
+		}
+	}
 }
 
 func FuzzDeriveP256(f *testing.F) {
 	encoded, err := cbor.Marshal(p256Seed(f))
-	require.NoError(f, err)
+	if err != nil {
+		f.Fatalf("unexpected error: %v", err)
+	}
 	f.Add(encoded, make([]byte, 32), []byte("context"))
 	f.Add([]byte{0xa0}, []byte{}, make([]byte, p256ContextLimit+1))
 
@@ -225,9 +308,13 @@ func FuzzDeriveP256(f *testing.F) {
 func decodedP256Seed(t *testing.T) cose.Key {
 	t.Helper()
 	encoded, err := cbor.Marshal(p256Seed(t))
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	var seed cose.Key
-	require.NoError(t, cbor.Unmarshal(encoded, &seed))
+	if err := cbor.Unmarshal(encoded, &seed); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	return seed
 }
 

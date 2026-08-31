@@ -6,7 +6,9 @@ import (
 	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -18,9 +20,6 @@ import (
 	"github.com/telesma-app/ctap/internal/testhid"
 	"github.com/telesma-app/ctap/protocol"
 	"github.com/telesma-app/ctap/webauthn"
-	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDirectLargeBlobMakeCredential(t *testing.T) {
@@ -42,17 +41,39 @@ func TestDirectLargeBlobMakeCredential(t *testing.T) {
 			Support: extension.LargeBlobSupportRequired,
 		},
 	}, nil)
-	require.NoError(t, err)
-	require.NotNil(t, result.ExtensionOutputs.LargeBlobOutputs)
-	require.NotNil(t, result.ExtensionOutputs.LargeBlobOutputs.LargeBlob.Supported)
-	assert.True(t, *result.ExtensionOutputs.LargeBlobOutputs.LargeBlob.Supported)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := result.ExtensionOutputs.LargeBlobOutputs; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := result.ExtensionOutputs.LargeBlobOutputs.LargeBlob.Supported; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := *result.ExtensionOutputs.LargeBlobOutputs.LargeBlob.Supported; !got {
+		t.Errorf("got false, want true")
+	}
 
 	command, payload := fake.FirstCTAPPayload(t)
-	assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
+	{
+		want, got := protocol.AuthenticatorMakeCredential, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	var request protocol.AuthenticatorMakeCredentialRequest
-	require.NoError(t, cbor.Unmarshal(payload, &request))
-	assert.Equal(t, extension.LargeBlobSupportRequired, request.Extensions.CreateLargeBlobInput.LargeBlob.Support)
-	assert.Zero(t, request.Extensions.CreateLargeBlobKeyInput)
+	if err := cbor.Unmarshal(payload, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := extension.LargeBlobSupportRequired, request.Extensions.CreateLargeBlobInput.LargeBlob.Support
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := request.Extensions.CreateLargeBlobKeyInput; got.LargeBlobKey {
+		t.Errorf("got %#v, want zero value", got)
+	}
 }
 
 func TestLegacyLargeBlobMakeCredential(t *testing.T) {
@@ -71,17 +92,36 @@ func TestLegacyLargeBlobMakeCredential(t *testing.T) {
 			Support: extension.LargeBlobSupportRequired,
 		},
 	}, map[protocol.Option]bool{protocol.OptionResidentKeys: true})
-	require.NoError(t, err)
-	require.NotNil(t, result.ExtensionOutputs.LargeBlobOutputs)
-	require.NotNil(t, result.ExtensionOutputs.LargeBlobOutputs.LargeBlob.Supported)
-	assert.True(t, *result.ExtensionOutputs.LargeBlobOutputs.LargeBlob.Supported)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := result.ExtensionOutputs.LargeBlobOutputs; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := result.ExtensionOutputs.LargeBlobOutputs.LargeBlob.Supported; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := *result.ExtensionOutputs.LargeBlobOutputs.LargeBlob.Supported; !got {
+		t.Errorf("got false, want true")
+	}
 
 	command, payload := fake.FirstCTAPPayload(t)
-	assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
+	{
+		want, got := protocol.AuthenticatorMakeCredential, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	var request protocol.AuthenticatorMakeCredentialRequest
-	require.NoError(t, cbor.Unmarshal(payload, &request))
-	assert.True(t, request.Extensions.CreateLargeBlobKeyInput.LargeBlobKey)
-	assert.Zero(t, request.Extensions.CreateLargeBlobInput)
+	if err := cbor.Unmarshal(payload, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := request.Extensions.CreateLargeBlobKeyInput.LargeBlobKey; !got {
+		t.Errorf("got false, want true")
+	}
+	if got := request.Extensions.CreateLargeBlobInput; got.LargeBlob.Support != "" {
+		t.Errorf("got %#v, want zero value", got)
+	}
 }
 
 func TestLegacyLargeBlobMakeCredentialValidatesKeyRequestCorrelation(t *testing.T) {
@@ -98,13 +138,27 @@ func TestLegacyLargeBlobMakeCredentialValidatesKeyRequestCorrelation(t *testing.
 				Support: extension.LargeBlobSupportPreferred,
 			},
 		}, map[protocol.Option]bool{protocol.OptionResidentKeys: true})
-		require.ErrorIs(t, err, ErrSpecViolation)
-		assert.Contains(t, err.Error(), "omitted")
+		{
+			err, target := err, ErrSpecViolation
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
+		{
+			container, element := err.Error(), "omitted"
+			if !strings.Contains(container, element) {
+				t.Errorf("value does not contain %#v", element)
+			}
+		}
 
 		_, payload := fake.FirstCTAPPayload(t)
 		var request protocol.AuthenticatorMakeCredentialRequest
-		require.NoError(t, cbor.Unmarshal(payload, &request))
-		assert.True(t, request.Extensions.CreateLargeBlobKeyInput.LargeBlobKey)
+		if err := cbor.Unmarshal(payload, &request); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := request.Extensions.CreateLargeBlobKeyInput.LargeBlobKey; !got {
+			t.Errorf("got false, want true")
+		}
 	})
 
 	t.Run("key without CTAP extension input is unsolicited", func(t *testing.T) {
@@ -121,13 +175,27 @@ func TestLegacyLargeBlobMakeCredentialValidatesKeyRequestCorrelation(t *testing.
 				Support: extension.LargeBlobSupportPreferred,
 			},
 		}, nil)
-		require.ErrorIs(t, err, ErrSpecViolation)
-		assert.Contains(t, err.Error(), "unsolicited")
+		{
+			err, target := err, ErrSpecViolation
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
+		{
+			container, element := err.Error(), "unsolicited"
+			if !strings.Contains(container, element) {
+				t.Errorf("value does not contain %#v", element)
+			}
+		}
 
 		_, payload := fake.FirstCTAPPayload(t)
 		var request protocol.AuthenticatorMakeCredentialRequest
-		require.NoError(t, cbor.Unmarshal(payload, &request))
-		assert.Zero(t, request.Extensions.CreateLargeBlobKeyInput)
+		if err := cbor.Unmarshal(payload, &request); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := request.Extensions.CreateLargeBlobKeyInput; got.LargeBlobKey {
+			t.Errorf("got %#v, want zero value", got)
+		}
 	})
 }
 
@@ -142,7 +210,12 @@ func TestMakeCredentialRejectsUnsolicitedLargeBlobResponseWithoutClientInput(t *
 		d := newTestDevice(t, fake, legacyLargeBlobInfo())
 
 		_, err := makeCredentialWithLargeBlob(t, d, nil, nil)
-		require.ErrorIs(t, err, ErrSpecViolation)
+		{
+			err, target := err, ErrSpecViolation
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 
 	t.Run("direct output", func(t *testing.T) {
@@ -160,7 +233,12 @@ func TestMakeCredentialRejectsUnsolicitedLargeBlobResponseWithoutClientInput(t *
 		})
 
 		_, err := makeCredentialWithLargeBlob(t, d, nil, nil)
-		require.ErrorIs(t, err, ErrSpecViolation)
+		{
+			err, target := err, ErrSpecViolation
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 }
 
@@ -175,7 +253,12 @@ func TestGetAssertionRejectsUnsolicitedLargeBlobResponseWithoutClientInput(t *te
 		d := newTestDevice(t, fake, legacyLargeBlobInfo())
 
 		_, err := getAssertionsWithLargeBlob(d, nil, nil)
-		require.ErrorIs(t, err, ErrSpecViolation)
+		{
+			err, target := err, ErrSpecViolation
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 
 	t.Run("direct output", func(t *testing.T) {
@@ -193,14 +276,21 @@ func TestGetAssertionRejectsUnsolicitedLargeBlobResponseWithoutClientInput(t *te
 		})
 
 		_, err := getAssertionsWithLargeBlob(d, nil, nil)
-		require.ErrorIs(t, err, ErrSpecViolation)
+		{
+			err, target := err, ErrSpecViolation
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 }
 
 func TestDirectLargeBlobGetAssertionRead(t *testing.T) {
 	want := []byte("direct large blob")
 	compressed, err := ctapcrypto.CompressLargeBlobData(want)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	originalSize := uint(len(want))
 	response := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 		AuthDataRaw: minimalAuthData(),
@@ -221,18 +311,42 @@ func TestDirectLargeBlobGetAssertionRead(t *testing.T) {
 	assertions, gotErr := getAssertionsWithLargeBlob(d, nil, &webauthn.LargeBlobInputs{
 		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: new(true)},
 	})
-	require.NoError(t, gotErr)
-	require.Len(t, assertions, 1)
-	require.NotNil(t, assertions[0].ExtensionOutputs.LargeBlobOutputs)
-	require.NotNil(t, assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Blob)
-	assert.Equal(t, want, assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Blob)
+	if err := gotErr; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(assertions), 1; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
+	if got := assertions[0].ExtensionOutputs.LargeBlobOutputs; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Blob; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	{
+		want, got := want, assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Blob
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	command, payload := fake.FirstCTAPPayload(t)
-	assert.Equal(t, protocol.AuthenticatorGetAssertion, command)
+	{
+		want, got := protocol.AuthenticatorGetAssertion, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	var request protocol.AuthenticatorGetAssertionRequest
-	require.NoError(t, cbor.Unmarshal(payload, &request))
-	assert.True(t, request.Extensions.GetLargeBlobInput.LargeBlob.Read)
-	assert.Zero(t, request.Extensions.GetLargeBlobKeyInput)
+	if err := cbor.Unmarshal(payload, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := request.Extensions.GetLargeBlobInput.LargeBlob.Read; !got {
+		t.Errorf("got false, want true")
+	}
+	if got := request.Extensions.GetLargeBlobKeyInput; got.LargeBlobKey {
+		t.Errorf("got %#v, want zero value", got)
+	}
 }
 
 func TestDirectLargeBlobGetAssertionPreservesEmptyWrite(t *testing.T) {
@@ -256,21 +370,41 @@ func TestDirectLargeBlobGetAssertionPreservesEmptyWrite(t *testing.T) {
 	assertions, gotErr := getAssertionsWithLargeBlob(d, allowList, &webauthn.LargeBlobInputs{
 		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Write: []byte{}},
 	})
-	require.NoError(t, gotErr)
-	require.Len(t, assertions, 1)
-	require.NotNil(t, assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Written)
-	assert.True(t, *assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Written)
+	if err := gotErr; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(assertions), 1; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
+	if got := assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Written; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := *assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Written; !got {
+		t.Errorf("got false, want true")
+	}
 
 	_, payload := fake.FirstCTAPPayload(t)
 	var request protocol.AuthenticatorGetAssertionRequest
-	require.NoError(t, cbor.Unmarshal(payload, &request))
+	if err := cbor.Unmarshal(payload, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	params := request.Extensions.GetLargeBlobInput.LargeBlob
-	require.NotNil(t, params.Write)
-	require.NotNil(t, params.OriginalSize)
-	assert.Zero(t, *params.OriginalSize)
+	if got := params.Write; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := params.OriginalSize; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := *params.OriginalSize; !(got == 0) {
+		t.Errorf("got %#v, want zero value", got)
+	}
 	uncompressed, err := ctapcrypto.DecompressLargeBlobData(params.Write, *params.OriginalSize)
-	require.NoError(t, err)
-	assert.Empty(t, uncompressed)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := uncompressed; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 }
 
 func TestLegacyLargeBlobGetAssertionBuffersAllAssertionsBeforeRead(t *testing.T) {
@@ -280,7 +414,9 @@ func TestLegacyLargeBlobGetAssertionBuffersAllAssertionsBeforeRead(t *testing.T)
 	secondKey[0] = 2
 	want := []byte("legacy large blob")
 	encrypted, err := ctapcrypto.EncryptLargeBlob(firstKey, want)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	first := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 		AuthDataRaw:         minimalAuthData(),
@@ -301,37 +437,65 @@ func TestLegacyLargeBlobGetAssertionBuffersAllAssertionsBeforeRead(t *testing.T)
 	assertions, gotErr := getAssertionsWithLargeBlob(d, nil, &webauthn.LargeBlobInputs{
 		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: new(true)},
 	})
-	require.NoError(t, gotErr)
-	require.Len(t, assertions, 2)
-	require.NotNil(t, assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Blob)
-	assert.Equal(t, want, assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Blob)
-	assert.Nil(t, assertions[1].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Blob)
+	if err := gotErr; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(assertions), 2; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
+	if got := assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Blob; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	{
+		want, got := want, assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Blob
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got := assertions[1].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Blob; got != nil {
+		t.Errorf("got %#v, want nil", got)
+	}
 
 	requests := fake.Requests(t)
-	require.Len(t, requests, 3)
+	if got, want := len(requests), 3; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	commands := make([]protocol.Command, 0, len(requests))
 	for _, request := range requests {
 		command, _ := request.CTAPPayload(t)
 		commands = append(commands, command)
 	}
-	assert.Equal(t, []protocol.Command{
-		protocol.AuthenticatorGetAssertion,
-		protocol.AuthenticatorGetNextAssertion,
-		protocol.AuthenticatorLargeBlobs,
-	}, commands)
+	{
+		want, got := []protocol.Command{
+			protocol.AuthenticatorGetAssertion,
+			protocol.AuthenticatorGetNextAssertion,
+			protocol.AuthenticatorLargeBlobs,
+		}, commands
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	_, payload := requests[0].CTAPPayload(t)
 	var request protocol.AuthenticatorGetAssertionRequest
-	require.NoError(t, cbor.Unmarshal(payload, &request))
-	assert.True(t, request.Extensions.GetLargeBlobKeyInput.LargeBlobKey)
-	assert.Zero(t, request.Extensions.GetLargeBlobInput)
+	if err := cbor.Unmarshal(payload, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := request.Extensions.GetLargeBlobKeyInput.LargeBlobKey; !got {
+		t.Errorf("got false, want true")
+	}
+	if got := request.Extensions.GetLargeBlobInput; got.LargeBlob.Read || got.LargeBlob.Write != nil || got.LargeBlob.OriginalSize != nil {
+		t.Errorf("got %#v, want zero value", got)
+	}
 }
 
 func TestLegacyLargeBlobGetAssertionWrite(t *testing.T) {
 	key := make([]byte, 32)
 	key[0] = 1
 	oldBlob, err := ctapcrypto.EncryptLargeBlob(key, []byte("old"))
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	assertion := encodeCBOR(t, &protocol.AuthenticatorGetAssertionResponse{
 		AuthDataRaw:  minimalAuthData(),
 		Signature:    []byte("signature"),
@@ -352,27 +516,65 @@ func TestLegacyLargeBlobGetAssertionWrite(t *testing.T) {
 	assertions, gotErr := getAssertionsWithLargeBlob(d, allowList, &webauthn.LargeBlobInputs{
 		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Write: want},
 	})
-	require.NoError(t, gotErr)
-	require.Len(t, assertions, 1)
-	require.NotNil(t, assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Written)
-	assert.True(t, *assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Written)
+	if err := gotErr; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(assertions), 1; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
+	if got := assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Written; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := *assertions[0].ExtensionOutputs.LargeBlobOutputs.LargeBlob.Written; !got {
+		t.Errorf("got false, want true")
+	}
 
 	requests := fake.Requests(t)
-	require.Len(t, requests, 3)
+	if got, want := len(requests), 3; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	command, payload := requests[2].CTAPPayload(t)
-	assert.Equal(t, protocol.AuthenticatorLargeBlobs, command)
+	{
+		want, got := protocol.AuthenticatorLargeBlobs, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	var request protocol.AuthenticatorLargeBlobsRequest
-	require.NoError(t, cbor.Unmarshal(payload, &request))
-	require.GreaterOrEqual(t, len(request.Set), 16)
+	if err := cbor.Unmarshal(payload, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		got, limit := len(request.Set), 16
+		if got < limit {
+			t.Fatalf("got %v, want greater than or equal to %v", got, limit)
+		}
+	}
 	serialized := request.Set[:len(request.Set)-16]
 	checksum := sha256.Sum256(serialized)
-	assert.Equal(t, checksum[:16], request.Set[len(request.Set)-16:])
+	{
+		want, got := checksum[:16], request.Set[len(request.Set)-16:]
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	var stored []protocol.LargeBlob
-	require.NoError(t, cbor.Unmarshal(serialized, &stored))
-	require.Len(t, stored, 1)
+	if err := cbor.Unmarshal(serialized, &stored); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(stored), 1; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	got, err := ctapcrypto.DecryptLargeBlob(key, stored[0])
-	require.NoError(t, err)
-	assert.Equal(t, want, got)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := want, got
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestLegacyLargeBlobReadReturnsMatchedDecompressionError(t *testing.T) {
@@ -393,7 +595,9 @@ func TestLegacyLargeBlobReadReturnsMatchedDecompressionError(t *testing.T) {
 	_, gotErr := getAssertionsWithLargeBlob(d, nil, &webauthn.LargeBlobInputs{
 		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: new(true)},
 	})
-	require.Error(t, gotErr)
+	if err := gotErr; err == nil {
+		t.Fatalf("expected an error")
+	}
 }
 
 func TestLegacyLargeBlobWriteReplacesAEADMatchWithoutDecompressing(t *testing.T) {
@@ -420,21 +624,40 @@ func TestLegacyLargeBlobWriteReplacesAEADMatchWithoutDecompressing(t *testing.T)
 	assertions, gotErr := getAssertionsWithLargeBlob(d, allowList, &webauthn.LargeBlobInputs{
 		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Write: want},
 	})
-	require.NoError(t, gotErr)
-	require.Len(t, assertions, 1)
+	if err := gotErr; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(assertions), 1; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 
 	requests := fake.Requests(t)
-	require.Len(t, requests, 3)
+	if got, want := len(requests), 3; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	_, payload := requests[2].CTAPPayload(t)
 	var request protocol.AuthenticatorLargeBlobsRequest
-	require.NoError(t, cbor.Unmarshal(payload, &request))
+	if err := cbor.Unmarshal(payload, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	serialized := request.Set[:len(request.Set)-16]
 	var stored []protocol.LargeBlob
-	require.NoError(t, cbor.Unmarshal(serialized, &stored))
-	require.Len(t, stored, 1)
+	if err := cbor.Unmarshal(serialized, &stored); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(stored), 1; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	got, err := ctapcrypto.DecryptLargeBlob(key, stored[0])
-	require.NoError(t, err)
-	assert.Equal(t, want, got)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := want, got
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestLargeBlobInputValidationUsesReadPresence(t *testing.T) {
@@ -447,7 +670,12 @@ func TestLargeBlobInputValidationUsesReadPresence(t *testing.T) {
 		_, err := makeCredentialWithLargeBlob(t, d, &webauthn.LargeBlobInputs{
 			LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: presentFalse},
 		}, nil)
-		require.ErrorIs(t, err, SyntaxError)
+		{
+			err, target := err, SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -465,7 +693,12 @@ func TestLargeBlobInputValidationUsesReadPresence(t *testing.T) {
 				Write: []byte("blob"),
 			},
 		})
-		require.ErrorIs(t, err, SyntaxError)
+		{
+			err, target := err, SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 }
@@ -483,7 +716,12 @@ func TestLargeBlobRejectsMutuallyExclusiveAuthenticatorCapabilities(t *testing.T
 	_, gotErr := getAssertionsWithLargeBlob(d, nil, &webauthn.LargeBlobInputs{
 		LargeBlob: webauthn.AuthenticationExtensionsLargeBlobInputs{Read: new(true)},
 	})
-	require.ErrorIs(t, gotErr, ErrSpecViolation)
+	{
+		err, target := gotErr, ErrSpecViolation
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }
 
@@ -547,7 +785,9 @@ func legacyLargeBlobInfo() protocol.AuthenticatorGetInfoResponse {
 func encodeLargeBlobConfig(t *testing.T, blobs []protocol.LargeBlob) []byte {
 	t.Helper()
 	serialized, err := marshalLargeBlobArray(blobs)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	sum := sha256.Sum256(serialized)
 	return append(serialized, sum[:16]...)
 }
@@ -556,9 +796,13 @@ func encryptRawLargeBlob(t *testing.T, key, plaintext []byte, originalSize uint)
 	t.Helper()
 
 	block, err := aes.NewCipher(key)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	gcm, err := cipher.NewGCM(block)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	nonce := make([]byte, gcm.NonceSize())
 	nonce[0] = 1
 	additionalData := make([]byte, 12)
@@ -586,14 +830,32 @@ func TestLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
 	})
 
 	blobs, err := d.GetLargeBlobs(testContext)
-	require.NoError(t, err)
-	assert.Empty(t, blobs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := blobs; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 
 	command, requestCBOR := fake.FirstCTAPPayload(t)
-	require.Equal(t, protocol.AuthenticatorLargeBlobs, command)
+	{
+		want, got := protocol.AuthenticatorLargeBlobs, command
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 	var request map[uint64]any
-	require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-	assert.Equal(t, uint64(960), request[uint64(1)])
+	if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := uint64(960), request[uint64(1)]
+		gotValue, ok := got.(uint64)
+
+		if !ok || gotValue != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestGetLargeBlobsReadsAllFullFragments(t *testing.T) {
@@ -603,13 +865,20 @@ func TestGetLargeBlobsReadsAllFullFragments(t *testing.T) {
 		OrigSize:   16,
 	}}
 	encodedBlobs, err := marshalLargeBlobArray(want)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	sum := sha256.Sum256(encodedBlobs)
 	config := slices.Concat(encodedBlobs, sum[:16])
 
 	const maxFragmentLength = 16
-	chunks := lo.Chunk(config, maxFragmentLength)
-	require.Greater(t, len(chunks), 2)
+	chunks := slices.Collect(slices.Chunk(config, maxFragmentLength))
+	{
+		got, limit := len(chunks), 2
+		if got <= limit {
+			t.Fatalf("got %v, want greater than %v", got, limit)
+		}
+	}
 	responses := make([][]byte, len(chunks))
 	for i, chunk := range chunks {
 		responses[i] = encodeCBOR(t, &protocol.AuthenticatorLargeBlobsResponse{Config: chunk})
@@ -624,9 +893,24 @@ func TestGetLargeBlobsReadsAllFullFragments(t *testing.T) {
 	})
 
 	got, err := d.GetLargeBlobs(testContext)
-	require.NoError(t, err)
-	assert.Equal(t, want, got)
-	assert.Len(t, fake.Requests(t), len(chunks))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := want, got
+		if (got == nil) != (want == nil) || !slices.EqualFunc(got, want, func(got, want protocol.LargeBlob) bool {
+			return (got.Ciphertext == nil) == (want.Ciphertext == nil) &&
+				bytes.Equal(got.Ciphertext, want.Ciphertext) &&
+				(got.Nonce == nil) == (want.Nonce == nil) &&
+				bytes.Equal(got.Nonce, want.Nonce) &&
+				got.OrigSize == want.OrigSize
+		}) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	if got, want := len(fake.Requests(t)), len(chunks); got != want {
+		t.Errorf("got length %d, want %d", got, want)
+	}
 }
 
 func TestGetLargeBlobsStopsAfterTrailingEmptyFragment(t *testing.T) {
@@ -649,14 +933,32 @@ func TestGetLargeBlobsStopsAfterTrailingEmptyFragment(t *testing.T) {
 	})
 
 	blobs, err := d.GetLargeBlobs(testContext)
-	require.NoError(t, err)
-	assert.Empty(t, blobs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := blobs; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 
 	requests := fake.Requests(t)
-	require.Len(t, requests, 2)
+	if got, want := len(requests), 2; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 	command, request := requests[1].CTAPRequestMap(t)
-	assert.Equal(t, protocol.AuthenticatorLargeBlobs, command)
-	assert.Equal(t, uint64(len(config)), request[uint64(3)])
+	{
+		want, got := protocol.AuthenticatorLargeBlobs, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := uint64(len(config)), request[uint64(3)]
+		gotValue, ok := got.(uint64)
+
+		if !ok || gotValue != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestLargeBlobsReturnsIntegrityErrorForCorruptConfig(t *testing.T) {
@@ -672,7 +974,12 @@ func TestLargeBlobsReturnsIntegrityErrorForCorruptConfig(t *testing.T) {
 	})
 
 	_, err := d.GetLargeBlobs(testContext)
-	require.ErrorIs(t, err, ErrLargeBlobsIntegrityCheck)
+	{
+		err, target := err, ErrLargeBlobsIntegrityCheck
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 }
 
 func TestLargeBlobsReturnsInvalidArrayError(t *testing.T) {
@@ -689,7 +996,12 @@ func TestLargeBlobsReturnsInvalidArrayError(t *testing.T) {
 	})
 
 	_, err := d.GetLargeBlobs(testContext)
-	require.ErrorIs(t, err, SyntaxError)
+	{
+		err, target := err, SyntaxError
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 }
 
 func TestSetLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
@@ -707,16 +1019,36 @@ func TestSetLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
 	}
 
 	err := d.SetLargeBlobs(testContext, make([]byte, 32), []protocol.LargeBlob{blob})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	command, requestCBOR := fake.FirstCTAPPayload(t)
-	require.Equal(t, protocol.AuthenticatorLargeBlobs, command)
+	{
+		want, got := protocol.AuthenticatorLargeBlobs, command
+		if got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 	var request map[uint64]any
-	require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
+	if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	set, ok := request[uint64(2)].([]byte)
-	require.True(t, ok)
-	assert.Len(t, set, 960)
-	assert.Equal(t, uint64(0), request[uint64(3)])
+	if got := ok; !got {
+		t.Fatalf("got false, want true")
+	}
+	if got, want := len(set), 960; got != want {
+		t.Errorf("got length %d, want %d", got, want)
+	}
+	{
+		want, got := uint64(0), request[uint64(3)]
+		gotValue, ok := got.(uint64)
+
+		if !ok || gotValue != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestSetLargeBlobsRequiresReportedMaxSerializedLargeBlobArray(t *testing.T) {
@@ -729,7 +1061,14 @@ func TestSetLargeBlobsRequiresReportedMaxSerializedLargeBlobArray(t *testing.T) 
 	})
 
 	err := d.SetLargeBlobs(testContext, make([]byte, 32), []protocol.LargeBlob{})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "maxSerializedLargeBlobArray")
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	{
+		container, element := err.Error(), "maxSerializedLargeBlobArray"
+		if !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
+		}
+	}
 	assertNoAuthenticatorIO(t, fake)
 }

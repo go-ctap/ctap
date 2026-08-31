@@ -1,29 +1,38 @@
 package cose
 
 import (
+	"bytes"
 	"crypto/ecdh"
 	"encoding/hex"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestP256PublicKeyCOSECBORRoundTrip(t *testing.T) {
 	privateKeyBytes := make([]byte, 32)
 	privateKeyBytes[31] = 1
 	privateKey, err := ecdh.P256().NewPrivateKey(privateKeyBytes)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	key, err := KeyFromP256PublicKey(privateKey.PublicKey())
-	require.NoError(t, err)
-	require.Len(t, key, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(key), 5; got != want {
+		t.Fatalf("got length %d, want %d", got, want)
+	}
 
 	encMode, err := cbor.CTAP2EncOptions().EncMode()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	encoded, err := encMode.Marshal(key)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	want := mustDecodeHex(t,
 		"a501020338182001215820"+
@@ -31,23 +40,43 @@ func TestP256PublicKeyCOSECBORRoundTrip(t *testing.T) {
 			"225820"+
 			"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
 	)
-	assert.Equal(t, want, encoded)
+	{
+		want, got := want, encoded
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	var decoded Key
-	require.NoError(t, cbor.Unmarshal(encoded, &decoded))
+	if err := cbor.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	publicKey, err := decoded.P256PublicKey()
-	require.NoError(t, err)
-	assert.Equal(t, privateKey.PublicKey().Bytes(), publicKey.Bytes())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := privateKey.PublicKey().Bytes(), publicKey.Bytes()
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestKeyFromP256PublicKeyRejectsUnsupportedKeys(t *testing.T) {
 	_, err := KeyFromP256PublicKey(nil)
-	require.Error(t, err)
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
 
 	x25519PrivateKey, err := ecdh.X25519().NewPrivateKey(make([]byte, 32))
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	_, err = KeyFromP256PublicKey(x25519PrivateKey.PublicKey())
-	require.Error(t, err)
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
 }
 
 func TestP256PublicKeyRejectsMalformedKeys(t *testing.T) {
@@ -87,12 +116,16 @@ func TestP256PublicKeyRejectsMalformedKeys(t *testing.T) {
 			tt.mutate(key)
 
 			_, err := key.P256PublicKey()
-			require.Error(t, err)
+			if err == nil {
+				t.Fatalf("expected an error")
+			}
 		})
 	}
 
 	_, err := (Key)(nil).P256PublicKey()
-	require.Error(t, err)
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
 }
 
 func TestP256PublicKeyAcceptsUnsignedDecodedIntegers(t *testing.T) {
@@ -102,7 +135,9 @@ func TestP256PublicKeyAcceptsUnsignedDecodedIntegers(t *testing.T) {
 	key[EC2KeyParameterCrv] = uint64(EllipticCurveP256)
 
 	_, err := key.P256PublicKey()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func validP256Key(t *testing.T) Key {
@@ -110,9 +145,13 @@ func validP256Key(t *testing.T) Key {
 	privateKeyBytes := make([]byte, 32)
 	privateKeyBytes[31] = 1
 	privateKey, err := ecdh.P256().NewPrivateKey(privateKeyBytes)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	key, err := KeyFromP256PublicKey(privateKey.PublicKey())
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	return key
 }
 
@@ -131,6 +170,8 @@ func cloneKey(key Key) Key {
 func mustDecodeHex(t *testing.T, value string) []byte {
 	t.Helper()
 	decoded, err := hex.DecodeString(value)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	return decoded
 }

@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/samber/lo"
 	"github.com/telesma-app/ctap/attestation"
 	"github.com/telesma-app/ctap/client"
 	"github.com/telesma-app/ctap/cose"
@@ -1906,9 +1905,8 @@ func (d *Device) setLargeBlobsLocked(ctx context.Context, pinUvAuthToken []byte,
 	offset := uint(0)
 	length := uint(len(set))
 
-	setChunks := lo.Chunk(set, int(maxFragmentLength))
-	for i, chunk := range setChunks {
-		if i > 0 {
+	for chunk := range slices.Chunk(set, int(maxFragmentLength)) {
+		if offset > 0 {
 			length = 0
 		}
 

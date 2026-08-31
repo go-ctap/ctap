@@ -1,18 +1,21 @@
 package protocol
 
 import (
+	"bytes"
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/telesma-app/ctap/cose"
 	"github.com/telesma-app/ctap/extension"
 )
 
 func TestLargeBlobKeyExtensionInputs(t *testing.T) {
 	encMode, err := cbor.CTAP2EncOptions().EncMode()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	tests := []struct {
 		name  string
@@ -35,19 +38,28 @@ func TestLargeBlobKeyExtensionInputs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			encoded, err := encMode.Marshal(tt.input)
-			require.NoError(t, err)
-			assert.Equal(t, []byte{
-				0xa1,
-				0x6c, 'l', 'a', 'r', 'g', 'e', 'B', 'l', 'o', 'b', 'K', 'e', 'y',
-				0xf5,
-			}, encoded)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			{
+				want, got := []byte{
+					0xa1,
+					0x6c, 'l', 'a', 'r', 'g', 'e', 'B', 'l', 'o', 'b', 'K', 'e', 'y',
+					0xf5,
+				}, encoded
+				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+					t.Errorf("got %#v, want %#v", got, want)
+				}
+			}
 		})
 	}
 }
 
 func TestPreviewSignExtensionWireTypes(t *testing.T) {
 	encMode, err := cbor.CTAP2EncOptions().EncMode()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	flags := AuthDataFlagUserPresent
 	createEncoded, err := encMode.Marshal(CreateExtensionInputs{
@@ -58,16 +70,40 @@ func TestPreviewSignExtensionWireTypes(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	var create map[string]map[uint64]cbor.RawMessage
-	require.NoError(t, cbor.Unmarshal(createEncoded, &create))
-	require.Contains(t, create, "previewSign")
+	if err := cbor.Unmarshal(createEncoded, &create); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := create, "previewSign"
+		_, ok := container[element]
+		if !ok {
+			t.Fatalf("value does not contain %#v", element)
+		}
+	}
 	var algorithms []cose.Algorithm
-	require.NoError(t, cbor.Unmarshal(create["previewSign"][3], &algorithms))
-	assert.Equal(t, []cose.Algorithm{cose.AlgorithmESP256SplitARKGPlaceholder}, algorithms)
+	if err := cbor.Unmarshal(create["previewSign"][3], &algorithms); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := []cose.Algorithm{cose.AlgorithmESP256SplitARKGPlaceholder}, algorithms
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	var gotFlags AuthDataFlag
-	require.NoError(t, cbor.Unmarshal(create["previewSign"][4], &gotFlags))
-	assert.Equal(t, flags, gotFlags)
+	if err := cbor.Unmarshal(create["previewSign"][4], &gotFlags); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := flags, gotFlags
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	unattended := AuthDataFlag(0)
 	unattendedEncoded, err := encMode.Marshal(CreateExtensionInputs{
@@ -78,34 +114,72 @@ func TestPreviewSignExtensionWireTypes(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	create = nil
-	require.NoError(t, cbor.Unmarshal(unattendedEncoded, &create))
-	assert.Contains(t, create["previewSign"], uint64(4), "explicit unattended flags must not be omitted")
-	require.NoError(t, cbor.Unmarshal(create["previewSign"][4], &gotFlags))
-	assert.Zero(t, gotFlags)
+	if err := cbor.Unmarshal(unattendedEncoded, &create); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := create["previewSign"], uint64(4)
+		_, ok := container[element]
+		if !ok {
+			t.Errorf("value does not contain %#v; context: %s", element, fmt.Sprint("explicit unattended flags must not be omitted"))
+		}
+	}
+	if err := cbor.Unmarshal(create["previewSign"][4], &gotFlags); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := gotFlags; !(got == 0) {
+		t.Errorf("got %#v, want zero value", got)
+	}
 
 	outputEncoded, err := encMode.Marshal(CreateExtensionOutputs{
 		CreatePreviewSignOutput: CreatePreviewSignOutput{
 			PreviewSign: &PreviewSignOutput{Flags: &unattended},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	var output map[string]map[uint64]cbor.RawMessage
-	require.NoError(t, cbor.Unmarshal(outputEncoded, &output))
-	require.Contains(t, output["previewSign"], uint64(4))
-	require.NoError(t, cbor.Unmarshal(output["previewSign"][4], &gotFlags))
-	assert.Zero(t, gotFlags)
+	if err := cbor.Unmarshal(outputEncoded, &output); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := output["previewSign"], uint64(4)
+		_, ok := container[element]
+		if !ok {
+			t.Fatalf("value does not contain %#v", element)
+		}
+	}
+	if err := cbor.Unmarshal(output["previewSign"][4], &gotFlags); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := gotFlags; !(got == 0) {
+		t.Errorf("got %#v, want zero value", got)
+	}
 
 	outputEncoded, err = encMode.Marshal(GetExtensionOutputs{
 		GetPreviewSignOutput: GetPreviewSignOutput{
 			PreviewSign: &PreviewSignOutput{Signature: []byte{}},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	output = nil
-	require.NoError(t, cbor.Unmarshal(outputEncoded, &output))
-	assert.Contains(t, output["previewSign"], uint64(6), "present empty signature must not be omitted")
+	if err := cbor.Unmarshal(outputEncoded, &output); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := output["previewSign"], uint64(6)
+		_, ok := container[element]
+		if !ok {
+			t.Errorf("value does not contain %#v; context: %s", element, fmt.Sprint("present empty signature must not be omitted"))
+		}
+	}
 
 	additionalArguments := []byte{0xa1, 0x03, 0x26}
 	getEncoded, err := encMode.Marshal(GetExtensionInputs{
@@ -117,25 +191,58 @@ func TestPreviewSignExtensionWireTypes(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	var get map[string]map[uint64]cbor.RawMessage
-	require.NoError(t, cbor.Unmarshal(getEncoded, &get))
-	require.Contains(t, get, "previewSign")
+	if err := cbor.Unmarshal(getEncoded, &get); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := get, "previewSign"
+		_, ok := container[element]
+		if !ok {
+			t.Fatalf("value does not contain %#v", element)
+		}
+	}
 	for _, key := range []uint64{2, 6, 7} {
-		assert.Contains(t, get["previewSign"], key)
+		{
+			container, element := get["previewSign"], key
+			_, ok := container[element]
+			if !ok {
+				t.Errorf("value does not contain %#v", element)
+			}
+		}
 	}
 	var keyHandle, toBeSigned, gotAdditionalArguments []byte
-	require.NoError(t, cbor.Unmarshal(get["previewSign"][2], &keyHandle))
-	require.NoError(t, cbor.Unmarshal(get["previewSign"][6], &toBeSigned))
-	require.NoError(t, cbor.Unmarshal(get["previewSign"][7], &gotAdditionalArguments))
-	assert.Empty(t, keyHandle)
-	assert.Empty(t, toBeSigned)
-	assert.Equal(t, additionalArguments, gotAdditionalArguments)
+	if err := cbor.Unmarshal(get["previewSign"][2], &keyHandle); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := cbor.Unmarshal(get["previewSign"][6], &toBeSigned); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := cbor.Unmarshal(get["previewSign"][7], &gotAdditionalArguments); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := keyHandle; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
+	if got := toBeSigned; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
+	{
+		want, got := additionalArguments, gotAdditionalArguments
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestPreviewSignAttestationIsNestedInUnsignedExtensionOutputs(t *testing.T) {
 	encMode, err := cbor.CTAP2EncOptions().EncMode()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	attestationObject := []byte{0xa0}
 	encoded, err := encMode.Marshal(AuthenticatorMakeCredentialResponse{
@@ -145,63 +252,139 @@ func TestPreviewSignAttestationIsNestedInUnsignedExtensionOutputs(t *testing.T) 
 			},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var response map[uint64]cbor.RawMessage
-	require.NoError(t, cbor.Unmarshal(encoded, &response))
-	require.Contains(t, response, uint64(6))
-	assert.NotContains(t, response, uint64(7))
+	if err := cbor.Unmarshal(encoded, &response); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := response, uint64(6)
+		_, ok := container[element]
+		if !ok {
+			t.Fatalf("value does not contain %#v", element)
+		}
+	}
+	{
+		container, element := response, uint64(7)
+		_, ok := container[element]
+		if ok {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
 
 	var unsignedOutputs map[string]cbor.RawMessage
-	require.NoError(t, cbor.Unmarshal(response[6], &unsignedOutputs))
-	require.Contains(t, unsignedOutputs, "previewSign")
+	if err := cbor.Unmarshal(response[6], &unsignedOutputs); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := unsignedOutputs, "previewSign"
+		_, ok := container[element]
+		if !ok {
+			t.Fatalf("value does not contain %#v", element)
+		}
+	}
 
 	var previewSign map[uint64]cbor.RawMessage
-	require.NoError(t, cbor.Unmarshal(unsignedOutputs["previewSign"], &previewSign))
-	require.Contains(t, previewSign, uint64(7))
+	if err := cbor.Unmarshal(unsignedOutputs["previewSign"], &previewSign); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := previewSign, uint64(7)
+		_, ok := container[element]
+		if !ok {
+			t.Fatalf("value does not contain %#v", element)
+		}
+	}
 
 	var gotAttestationObject []byte
-	require.NoError(t, cbor.Unmarshal(previewSign[7], &gotAttestationObject))
-	assert.Equal(t, attestationObject, gotAttestationObject)
+	if err := cbor.Unmarshal(previewSign[7], &gotAttestationObject); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := attestationObject, gotAttestationObject
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestPreviewSignOutputPreservesPresentEmptySignature(t *testing.T) {
 	var output GetExtensionOutputs
-	require.NoError(t, cbor.Unmarshal(
+	if err := cbor.Unmarshal(
 		[]byte{0xa1, 0x6b, 'p', 'r', 'e', 'v', 'i', 'e', 'w', 'S', 'i', 'g', 'n', 0xa1, 0x06, 0x40},
 		&output,
-	))
-	require.NotNil(t, output.PreviewSign)
-	assert.NotNil(t, output.PreviewSign.Signature)
-	assert.Empty(t, output.PreviewSign.Signature)
+	); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := output.PreviewSign; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := output.PreviewSign.Signature; got == nil {
+		t.Errorf("got nil, want a non-nil value")
+	}
+	if got := output.PreviewSign.Signature; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 }
 
 func TestLargeBlobKeyExtensionInputIsOmittedWhenAbsent(t *testing.T) {
 	encMode, err := cbor.CTAP2EncOptions().EncMode()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	createEncoded, err := encMode.Marshal(CreateExtensionInputs{})
-	require.NoError(t, err)
-	assert.Equal(t, []byte{0xa0}, createEncoded)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := []byte{0xa0}, createEncoded
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	getEncoded, err := encMode.Marshal(GetExtensionInputs{})
-	require.NoError(t, err)
-	assert.Equal(t, []byte{0xa0}, getEncoded)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := []byte{0xa0}, getEncoded
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestDirectLargeBlobExtensionWireTypes(t *testing.T) {
 	encMode, err := cbor.CTAP2EncOptions().EncMode()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	createEncoded, err := encMode.Marshal(CreateExtensionInputs{
 		CreateLargeBlobInput: CreateLargeBlobInput{
 			LargeBlob: CreateLargeBlobParams{Support: extension.LargeBlobSupportRequired},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	var create map[string]map[string]any
-	require.NoError(t, cbor.Unmarshal(createEncoded, &create))
-	assert.Equal(t, "required", create["largeBlob"]["support"])
+	if err := cbor.Unmarshal(createEncoded, &create); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := "required", create["largeBlob"]["support"]
+		gotValue, ok := got.(string)
+
+		if !ok || gotValue != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	emptyBlob := []byte{}
 	getEncoded, err := encMode.Marshal(GetExtensionInputs{
@@ -212,37 +395,109 @@ func TestDirectLargeBlobExtensionWireTypes(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	var get map[string]map[string]any
-	require.NoError(t, cbor.Unmarshal(getEncoded, &get))
-	require.Contains(t, get["largeBlob"], "write")
-	assert.Empty(t, get["largeBlob"]["write"])
-	assert.Equal(t, uint64(0), get["largeBlob"]["originalSize"])
+	if err := cbor.Unmarshal(getEncoded, &get); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := get["largeBlob"], "write"
+		_, ok := container[element]
+		if !ok {
+			t.Fatalf("value does not contain %#v", element)
+		}
+	}
+	write, ok := get["largeBlob"]["write"].([]byte)
+	if !ok {
+		t.Fatalf("largeBlob.write has type %T, want []byte", get["largeBlob"]["write"])
+	}
+	if len(write) != 0 {
+		t.Errorf("got non-empty largeBlob.write %#v", write)
+	}
+	{
+		want, got := uint64(0), get["largeBlob"]["originalSize"]
+		gotValue, ok := got.(uint64)
+
+		if !ok || gotValue != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	getEncoded, err = encMode.Marshal(GetExtensionInputs{
 		GetLargeBlobInput: GetLargeBlobInput{
 			LargeBlob: GetLargeBlobParams{Read: true},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	get = nil
-	require.NoError(t, cbor.Unmarshal(getEncoded, &get))
-	assert.Equal(t, true, get["largeBlob"]["read"])
-	assert.NotContains(t, get["largeBlob"], "write")
-	assert.NotContains(t, get["largeBlob"], "originalSize")
+	if err := cbor.Unmarshal(getEncoded, &get); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := true, get["largeBlob"]["read"]
+		gotValue, ok := got.(bool)
+
+		if !ok || gotValue != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		container, element := get["largeBlob"], "write"
+		_, ok := container[element]
+		if ok {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
+	{
+		container, element := get["largeBlob"], "originalSize"
+		_, ok := container[element]
+		if ok {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
 
 	outputEncoded, err := encMode.Marshal(GetLargeBlobOutput{Blob: []byte{}})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	var output map[string]any
-	require.NoError(t, cbor.Unmarshal(outputEncoded, &output))
-	require.Contains(t, output, "blob")
-	assert.Empty(t, output["blob"])
+	if err := cbor.Unmarshal(outputEncoded, &output); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := output, "blob"
+		_, ok := container[element]
+		if !ok {
+			t.Fatalf("value does not contain %#v", element)
+		}
+	}
+	blob, ok := output["blob"].([]byte)
+	if !ok {
+		t.Fatalf("blob has type %T, want []byte", output["blob"])
+	}
+	if len(blob) != 0 {
+		t.Errorf("got non-empty blob %#v", blob)
+	}
 
 	outputEncoded, err = encMode.Marshal(GetLargeBlobOutput{})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	output = nil
-	require.NoError(t, cbor.Unmarshal(outputEncoded, &output))
-	assert.NotContains(t, output, "blob")
+	if err := cbor.Unmarshal(outputEncoded, &output); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := output, "blob"
+		_, ok := container[element]
+		if ok {
+			t.Errorf("value unexpectedly contains %#v", element)
+		}
+	}
 }
 
 func TestLargeBlobUnsignedOutputsPreserveUnknownExtensionsAndProvideTypedAccessors(t *testing.T) {
@@ -252,16 +507,34 @@ func TestLargeBlobUnsignedOutputsPreserveUnknownExtensionsAndProvideTypedAccesso
 			"vendor.example": map[string]any{"value": uint64(42)},
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var makeCredential AuthenticatorMakeCredentialResponse
-	require.NoError(t, cbor.Unmarshal(raw, &makeCredential))
-	require.NotNil(t, makeCredential.UnsignedExtensionOutputs)
-	require.Contains(t, makeCredential.UnsignedExtensionOutputs, extension.ExtensionIdentifier("vendor.example"))
+	if err := cbor.Unmarshal(raw, &makeCredential); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := makeCredential.UnsignedExtensionOutputs; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	{
+		container, element := makeCredential.UnsignedExtensionOutputs, extension.ExtensionIdentifier("vendor.example")
+		_, ok := container[element]
+		if !ok {
+			t.Fatalf("value does not contain %#v", element)
+		}
+	}
 	makeCredentialOutput, err := makeCredential.LargeBlobUnsignedExtensionOutput()
-	require.NoError(t, err)
-	require.NotNil(t, makeCredentialOutput)
-	require.False(t, makeCredentialOutput.Supported)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := makeCredentialOutput; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := makeCredentialOutput.Supported; got {
+		t.Fatalf("got true, want false")
+	}
 
 	raw, err = cbor.Marshal(map[uint64]any{
 		8: map[string]any{
@@ -273,18 +546,44 @@ func TestLargeBlobUnsignedOutputsPreserveUnknownExtensionsAndProvideTypedAccesso
 			"vendor.example": true,
 		},
 	})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var getAssertion AuthenticatorGetAssertionResponse
-	require.NoError(t, cbor.Unmarshal(raw, &getAssertion))
-	require.Contains(t, getAssertion.UnsignedExtensionOutputs, extension.ExtensionIdentifier("vendor.example"))
+	if err := cbor.Unmarshal(raw, &getAssertion); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		container, element := getAssertion.UnsignedExtensionOutputs, extension.ExtensionIdentifier("vendor.example")
+		_, ok := container[element]
+		if !ok {
+			t.Fatalf("value does not contain %#v", element)
+		}
+	}
 	output, err := getAssertion.LargeBlobUnsignedExtensionOutput()
-	require.NoError(t, err)
-	require.NotNil(t, output)
-	require.NotNil(t, output.Written)
-	require.False(t, *output.Written)
-	require.NotNil(t, output.Blob)
-	require.Empty(t, output.Blob)
-	require.NotNil(t, output.OriginalSize)
-	require.Zero(t, *output.OriginalSize)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := output; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := output.Written; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := *output.Written; got {
+		t.Fatalf("got true, want false")
+	}
+	if got := output.Blob; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := output.Blob; len(got) != 0 {
+		t.Fatalf("got non-empty value %#v", got)
+	}
+	if got := output.OriginalSize; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := *output.OriginalSize; !(got == 0) {
+		t.Fatalf("got %#v, want zero value", got)
+	}
 }

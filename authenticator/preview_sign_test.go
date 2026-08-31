@@ -1,14 +1,15 @@
 package authenticator
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
+	"slices"
 	"testing"
 	"uuid"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/telesma-app/ctap/attestation"
 	"github.com/telesma-app/ctap/cose"
 	"github.com/telesma-app/ctap/credential"
@@ -133,30 +134,86 @@ func TestMakeCredentialPreviewSign(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, err)
-	require.NotNil(t, result.ExtensionOutputs.PreviewSignOutputs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := result.ExtensionOutputs.PreviewSignOutputs; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
 	generatedKey := result.ExtensionOutputs.PreviewSign.GeneratedKey
-	require.NotNil(t, generatedKey)
-	assert.Equal(t, signingKeyHandle, generatedKey.KeyHandle)
-	assert.Equal(t, algorithm, generatedKey.Algorithm)
+	if got := generatedKey; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	{
+		want, got := signingKeyHandle, generatedKey.KeyHandle
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := algorithm, generatedKey.Algorithm
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	encMode, err := cbor.CTAP2EncOptions().EncMode()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	wantPublicKey, err := encMode.Marshal(previewSignCredentialKey(3))
-	require.NoError(t, err)
-	assert.Equal(t, wantPublicKey, generatedKey.PublicKey)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := wantPublicKey, generatedKey.PublicKey
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	attestationObject, err := attestation.ParseObject(generatedKey.AttestationObject)
-	require.NoError(t, err)
-	assert.Equal(t, attestation.AttestationStatementFormatIdentifierNone, attestationObject.Format)
-	assert.Equal(t, innerAuthData, attestationObject.AuthData)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	{
+		want, got := attestation.AttestationStatementFormatIdentifierNone, attestationObject.Format
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := innerAuthData, attestationObject.AuthData
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	command, requestCBOR := fake.FirstCTAPPayload(t)
-	assert.Equal(t, protocol.AuthenticatorMakeCredential, command)
+	{
+		want, got := protocol.AuthenticatorMakeCredential, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	var request protocol.AuthenticatorMakeCredentialRequest
-	require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-	require.NotNil(t, request.Extensions.PreviewSign.Flags)
-	assert.Equal(t, protocol.AuthDataFlagUserPresent, *request.Extensions.PreviewSign.Flags)
-	assert.Equal(t, []cose.Algorithm{algorithm}, request.Extensions.PreviewSign.Algorithms)
+	if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := request.Extensions.PreviewSign.Flags; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	{
+		want, got := protocol.AuthDataFlagUserPresent, *request.Extensions.PreviewSign.Flags
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
+	{
+		want, got := []cose.Algorithm{algorithm}, request.Extensions.PreviewSign.Algorithms
+		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestGetAssertionPreviewSign(t *testing.T) {
@@ -211,19 +268,48 @@ func TestGetAssertionPreviewSign(t *testing.T) {
 	) {
 		result, gotErr = assertion, err
 	}
-	require.NoError(t, gotErr)
-	require.NotNil(t, result.ExtensionOutputs.PreviewSignOutputs)
-	assert.Equal(t, signature, result.ExtensionOutputs.PreviewSign.Signature)
+	if err := gotErr; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := result.ExtensionOutputs.PreviewSignOutputs; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	{
+		want, got := signature, result.ExtensionOutputs.PreviewSign.Signature
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 
 	command, requestCBOR := fake.FirstCTAPPayload(t)
-	assert.Equal(t, protocol.AuthenticatorGetAssertion, command)
+	{
+		want, got := protocol.AuthenticatorGetAssertion, command
+		if got != want {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 	var request protocol.AuthenticatorGetAssertionRequest
-	require.NoError(t, cbor.Unmarshal(requestCBOR, &request))
-	assert.NotNil(t, request.Extensions.PreviewSign.KeyHandle)
-	assert.NotNil(t, request.Extensions.PreviewSign.ToBeSigned)
-	assert.Empty(t, request.Extensions.PreviewSign.KeyHandle)
-	assert.Empty(t, request.Extensions.PreviewSign.ToBeSigned)
-	assert.Equal(t, additionalArguments, request.Extensions.PreviewSign.AdditionalArguments)
+	if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := request.Extensions.PreviewSign.KeyHandle; got == nil {
+		t.Errorf("got nil, want a non-nil value")
+	}
+	if got := request.Extensions.PreviewSign.ToBeSigned; got == nil {
+		t.Errorf("got nil, want a non-nil value")
+	}
+	if got := request.Extensions.PreviewSign.KeyHandle; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
+	if got := request.Extensions.PreviewSign.ToBeSigned; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
+	{
+		want, got := additionalArguments, request.Extensions.PreviewSign.AdditionalArguments
+		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
@@ -242,13 +328,18 @@ func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 			},
 			map[protocol.Option]bool{protocol.OptionUserVerification: true},
 		)
-		require.NoError(t, err)
-		require.NotNil(t, input.Flags)
-		assert.Equal(
-			t,
-			protocol.AuthDataFlagUserPresent|protocol.AuthDataFlagUserVerified,
-			*input.Flags,
-		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := input.Flags; got == nil {
+			t.Fatalf("got nil, want a non-nil value")
+		}
+		{
+			want, got := protocol.AuthDataFlagUserPresent|protocol.AuthDataFlagUserVerified, *input.Flags
+			if got != want {
+				t.Errorf("got %#v, want %#v", got, want)
+			}
+		}
 	})
 
 	t.Run("MakeCredential requires advertised support", func(t *testing.T) {
@@ -264,7 +355,12 @@ func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 				},
 			},
 		})
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 		assertNoAuthenticatorIO(t, fake)
 	})
 
@@ -291,8 +387,12 @@ func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 				PreviewSign: webauthn.AuthenticationExtensionsPreviewSignInputs{SignByCredential: inputs},
 			},
 		)
-		require.NoError(t, err)
-		assert.NotNil(t, input)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := input; got == nil {
+			t.Errorf("got nil, want a non-nil value")
+		}
 
 		secondID := base64.RawURLEncoding.EncodeToString(allowList[1].ID)
 		second := inputs[secondID]
@@ -305,7 +405,12 @@ func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 				PreviewSign: webauthn.AuthenticationExtensionsPreviewSignInputs{SignByCredential: inputs},
 			},
 		)
-		require.ErrorIs(t, err, ErrNotSupported)
+		{
+			err, target := err, ErrNotSupported
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 
 	t.Run("GetAssertion validates COSE signing arguments", func(t *testing.T) {
@@ -336,14 +441,36 @@ func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 			return err
 		}
 
-		require.NoError(t, validate(encodeCBOR(t, map[any]any{
+		if err := validate(encodeCBOR(t, map[any]any{
 			3:     cose.AlgorithmESP256SplitARKGPlaceholder,
 			"kid": []byte{1},
-		})))
-		require.ErrorIs(t, validate(encodeCBOR(t, map[string]any{"kid": []byte{1}})), SyntaxError)
-		require.ErrorIs(t, validate(encodeCBOR(t, map[int]any{3: true})), SyntaxError)
-		require.ErrorIs(t, validate(encodeCBOR(t, map[any]any{3: -1, true: 1})), SyntaxError)
-		require.ErrorIs(t, validate([]byte{0xa2, 0x03, 0x26, 0x03, 0x27}), SyntaxError)
+		})); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		{
+			err, target := validate(encodeCBOR(t, map[string]any{"kid": []byte{1}})), SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
+		{
+			err, target := validate(encodeCBOR(t, map[int]any{3: true})), SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
+		{
+			err, target := validate(encodeCBOR(t, map[any]any{3: -1, true: 1})), SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
+		{
+			err, target := validate([]byte{0xa2, 0x03, 0x26, 0x03, 0x27}), SyntaxError
+			if !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+			}
+		}
 	})
 }
 
@@ -402,7 +529,12 @@ func TestCreatePreviewSignOutputRejectsNonzeroSigningKeyCounter(t *testing.T) {
 	}
 
 	_, err := createPreviewSignOutput(request, response)
-	require.ErrorIs(t, err, ErrSpecViolation)
+	{
+		err, target := err, ErrSpecViolation
+		if !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
+		}
+	}
 }
 
 func TestGetPreviewSignOutputPreservesPresentEmptySignature(t *testing.T) {
@@ -420,8 +552,16 @@ func TestGetPreviewSignOutputPreservesPresentEmptySignature(t *testing.T) {
 			},
 		},
 	)
-	require.NoError(t, err)
-	require.NotNil(t, output)
-	assert.NotNil(t, output.PreviewSign.Signature)
-	assert.Empty(t, output.PreviewSign.Signature)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := output; got == nil {
+		t.Fatalf("got nil, want a non-nil value")
+	}
+	if got := output.PreviewSign.Signature; got == nil {
+		t.Errorf("got nil, want a non-nil value")
+	}
+	if got := output.PreviewSign.Signature; len(got) != 0 {
+		t.Errorf("got non-empty value %#v", got)
+	}
 }
