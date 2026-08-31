@@ -23,29 +23,17 @@ func TestMessagePayloadBoundaries(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			{
-				want, got := cid, message.CID()
-				if got != want {
-					t.Errorf("got %#v, want %#v", got, want)
-				}
+			if got, want := message.CID(), cid; got != want {
+				t.Errorf("got %#v, want %#v", got, want)
 			}
-			{
-				want, got := CTAPHID_PING, message.Command()
-				if got != want {
-					t.Errorf("got %#v, want %#v", got, want)
-				}
+			if got, want := message.Command(), CTAPHID_PING; got != want {
+				t.Errorf("got %#v, want %#v", got, want)
 			}
-			{
-				want, got := uint16(payloadLen), message.DeclaredLength()
-				if got != want {
-					t.Errorf("got %#v, want %#v", got, want)
-				}
+			if got, want := message.DeclaredLength(), uint16(payloadLen); got != want {
+				t.Errorf("got %#v, want %#v", got, want)
 			}
-			{
-				want, got := payload, message.Payload()
-				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-					t.Errorf("got %#v, want %#v", got, want)
-				}
+			if got, want := message.Payload(), payload; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Errorf("got %#v, want %#v", got, want)
 			}
 		})
 	}
@@ -65,13 +53,9 @@ func TestMessageOutputReportsCanBeModified(t *testing.T) {
 	reports := message.OutputReports()
 	reports[0][1] ^= 0xff
 	reports[0], reports[1] = reports[1], reports[0]
-	reports = reports[:1]
 
-	{
-		want, got := want, message.OutputReports()
-		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := message.OutputReports(), want; (got == nil) != (want == nil) || !slices.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 

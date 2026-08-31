@@ -28,28 +28,19 @@ func TestKDF(t *testing.T) {
 
 	// Create derived with a shared secret
 	key2 := KDF(sharedSecret)
-	{
-		want, got := wantSharedSecret, sharedSecret
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := sharedSecret, wantSharedSecret; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	// Ensure key1 and key2 are different
-	{
-		want, got := key1, key2
-		if (got == nil) == (want == nil) && bytes.Equal(got, want) {
-			t.Errorf("got %#v, want a value different from %#v", got, want)
-		}
+	if got, want := key2, key1; (got == nil) == (want == nil) && bytes.Equal(got, want) {
+		t.Errorf("got %#v, want a value different from %#v", got, want)
 	}
 
 	// Compare it with reference
 	savedKey, _ := base64.StdEncoding.DecodeString(derivedSecret)
-	{
-		want, got := key2, savedKey
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := savedKey, key2; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -84,11 +75,8 @@ func TestEncryptDecrypt(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		{
-			want, got := plaintext, decrypted
-			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := decrypted, plaintext; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	}
 
@@ -103,11 +91,8 @@ func TestEncryptDecrypt(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		{
-			want, got := longPlaintext, decrypted
-			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := decrypted, longPlaintext; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	}
 }
@@ -137,16 +122,10 @@ func TestAuthenticate(t *testing.T) {
 	message := []byte("hello world!")
 
 	mac := Authenticate(key, message)
-	{
-		want, got := 16, len(mac)
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := len(mac), 16; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := messageAuthenticationCode, base64.StdEncoding.EncodeToString(mac)
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := base64.StdEncoding.EncodeToString(mac), messageAuthenticationCode; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }

@@ -12,11 +12,8 @@ import (
 func TestVendorRejectsNonVendorCommand(t *testing.T) {
 	transport := ctaphid.NewTransport(testhid.New(t), ctaphid.ChannelID{})
 	_, err := transport.Vendor(context.Background(), ctaphid.CTAPHID_PING, nil)
-	{
-		err, target := err, ctaphid.ErrInvalidRequestMessage
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, ctaphid.ErrInvalidRequestMessage; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 }
 
@@ -33,11 +30,8 @@ func TestVendorReturnsCTAPHIDError(t *testing.T) {
 	if err := err; !errors.As(err, &response) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaphid.ERR_INVALID_CMD, response.ErrorCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := response.ErrorCode, ctaphid.ERR_INVALID_CMD; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	{
 		err, want := err, ctaphid.ERR_INVALID_CMD.String()

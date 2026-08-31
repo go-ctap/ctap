@@ -64,11 +64,8 @@ func TestDeriveP256DraftVectors(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			{
-				want, got := cose.AlgorithmESP256, algorithm
-				if got != want {
-					t.Fatalf("got %#v, want %#v", got, want)
-				}
+			if got, want := algorithm, cose.AlgorithmESP256; got != want {
+				t.Fatalf("got %#v, want %#v", got, want)
 			}
 			{
 				want, got := hexBytes(t, test.derivedX), derived[cose.EC2KeyParameterX]
@@ -86,11 +83,8 @@ func TestDeriveP256DraftVectors(t *testing.T) {
 					t.Fatalf("got %#v, want %#v", got, want)
 				}
 			}
-			{
-				want, got := hexBytes(t, test.keyHandle), keyHandle
-				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-					t.Fatalf("got %#v, want %#v", got, want)
-				}
+			if got, want := keyHandle, hexBytes(t, test.keyHandle); (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Fatalf("got %#v, want %#v", got, want)
 			}
 
 			kemKey, err := nestedKey(seed, -2, "KEM public key")
@@ -111,17 +105,11 @@ func TestDeriveP256DraftVectors(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			{
-				want, got := hexBytes(t, test.sharedSecret), sharedSecret
-				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-					t.Fatalf("got %#v, want %#v", got, want)
-				}
+			if got, want := sharedSecret, hexBytes(t, test.sharedSecret); (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Fatalf("got %#v, want %#v", got, want)
 			}
-			{
-				want, got := keyHandle, encapsulatedHandle
-				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-					t.Fatalf("got %#v, want %#v", got, want)
-				}
+			if got, want := encapsulatedHandle, keyHandle; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Fatalf("got %#v, want %#v", got, want)
 			}
 		})
 	}

@@ -48,11 +48,8 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 			t.Fatalf("got length %d, want %d", got, want)
 		}
 		command, _ := requests[0].CTAPPayload(t)
-		{
-			want, got := protocol.AuthenticatorMakeCredential, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := command, protocol.AuthenticatorMakeCredential; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	})
 
@@ -79,11 +76,8 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 			t.Fatalf("got length %d, want %d", got, want)
 		}
 		command, _ := requests[0].CTAPPayload(t)
-		{
-			want, got := protocol.AuthenticatorCredentialManagement, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := command, protocol.AuthenticatorCredentialManagement; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	})
 
@@ -111,11 +105,8 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 			t.Fatalf("got length %d, want %d", got, want)
 		}
 		command, _ := requests[0].CTAPPayload(t)
-		{
-			want, got := protocol.AuthenticatorCredentialManagement, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := command, protocol.AuthenticatorCredentialManagement; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	})
 }
@@ -151,22 +142,16 @@ func TestMakeCredentialDoesNotRequestGetInfoAfterSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := attestation.AttestationStatementFormatIdentifierPacked, result.Format
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := result.Format, attestation.AttestationStatementFormatIdentifierPacked; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	requests := fake.Requests(t)
 	if got, want := len(requests), 1; got != want {
 		t.Fatalf("got length %d, want %d", got, want)
 	}
 	command, _ := requests[0].CTAPPayload(t)
-	{
-		want, got := protocol.AuthenticatorMakeCredential, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorMakeCredential; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -189,11 +174,8 @@ func TestCredentialManagementUnsupportedIteratorsReturnBeforeCommand(t *testing.
 			}
 		}
 
-		{
-			want, got := 1, count
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := count, 1; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 		assertNoAuthenticatorIO(t, fake)
 	})
@@ -216,11 +198,8 @@ func TestCredentialManagementUnsupportedIteratorsReturnBeforeCommand(t *testing.
 			}
 		}
 
-		{
-			want, got := 1, count
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := count, 1; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 		assertNoAuthenticatorIO(t, fake)
 	})
@@ -248,10 +227,7 @@ func TestUpdateUserInformationUsesPreviewCommandForPreviewOnlyDevice(t *testing.
 	}
 
 	command, _ := fake.FirstCTAPPayload(t)
-	{
-		want, got := protocol.PrototypeAuthenticatorCredentialManagement, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.PrototypeAuthenticatorCredentialManagement; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }

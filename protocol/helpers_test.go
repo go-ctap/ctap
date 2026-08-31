@@ -75,11 +75,8 @@ func TestAuthenticatorGetInfoResponseOmitsAbsentOptionalScalarsJSON(t *testing.T
 		"maxPINLength",
 		"encCredStoreState",
 	} {
-		{
-			container, element := text, absentField
-			if strings.Contains(container, element) {
-				t.Fatalf("value unexpectedly contains %#v", element)
-			}
+		if container, element := text, absentField; strings.Contains(container, element) {
+			t.Fatalf("value unexpectedly contains %#v", element)
 		}
 	}
 
@@ -102,57 +99,36 @@ func TestAuthenticatorGetInfoResponseOmitsAbsentOptionalScalarsJSON(t *testing.T
 		`"longTouchForReset":false`,
 		`"pinComplexityPolicy":false`,
 	} {
-		{
-			container, element := text, presentValue
-			if !strings.Contains(container, element) {
-				t.Fatalf("value does not contain %#v", element)
-			}
+		if container, element := text, presentValue; !strings.Contains(container, element) {
+			t.Fatalf("value does not contain %#v", element)
 		}
 	}
 }
 
 func TestAuthenticatorGetInfoResponseEffectiveDefaults(t *testing.T) {
 	var resp AuthenticatorGetInfoResponse
-	{
-		want, got := DefaultMaxMsgSize, resp.EffectiveMaxMsgSize()
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.EffectiveMaxMsgSize(), DefaultMaxMsgSize; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := DefaultMinPINCodePoints, resp.EffectiveMinPINLength()
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.EffectiveMinPINLength(), DefaultMinPINCodePoints; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := DefaultMaxPINCodePoints, resp.EffectiveMaxPINLength()
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.EffectiveMaxPINLength(), DefaultMaxPINCodePoints; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 
 	resp.MaxMsgSize = 2048
 	resp.MinPINLength = 8
 	resp.MaxPINLength = 48
 
-	{
-		want, got := uint(2048), resp.EffectiveMaxMsgSize()
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.EffectiveMaxMsgSize(), uint(2048); got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := uint(8), resp.EffectiveMinPINLength()
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.EffectiveMinPINLength(), uint(8); got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := uint(48), resp.EffectiveMaxPINLength()
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.EffectiveMaxPINLength(), uint(48); got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -210,17 +186,11 @@ func TestAuthenticatorGetInfoResponseCTAP23TypedFields(t *testing.T) {
 			t.Fatalf("got %#v, want %#v", got, want)
 		}
 	}
-	{
-		want, got := policyURL, resp.PinComplexityPolicyURL
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.PinComplexityPolicyURL, policyURL; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := string(policyURL), resp.PinComplexityPolicyURLString()
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.PinComplexityPolicyURLString(), string(policyURL); got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -244,11 +214,8 @@ func TestAuthenticatorGetInfoResponseEncodesConfigCommandsAsArray(t *testing.T) 
 	if got := fields[31]; len(got) == 0 {
 		t.Fatalf("got empty value %#v, want non-empty", got)
 	}
-	{
-		want, got := byte(0x80), fields[31][0]&0xe0
-		if got != want {
-			t.Fatalf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("authenticatorConfigCommands must be a CBOR array"))
-		}
+	if got, want := fields[31][0]&0xe0, byte(0x80); got != want {
+		t.Fatalf("got %#v, want %#v; context: %s", got, want, "authenticatorConfigCommands must be a CBOR array")
 	}
 
 	var commands []uint64
@@ -322,11 +289,8 @@ func TestAuthenticatorGetInfoResponseDecodesFIDO20WithoutNewFields(t *testing.T)
 	if got := resp.PinComplexityPolicyURLString(); len(got) != 0 {
 		t.Fatalf("got non-empty value %#v", got)
 	}
-	{
-		want, got := DefaultMaxPINCodePoints, resp.EffectiveMaxPINLength()
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.EffectiveMaxPINLength(), DefaultMaxPINCodePoints; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -347,17 +311,11 @@ func TestCredentialManagementOptionalScalarsPreservePresence(t *testing.T) {
 	if err := cbor.Unmarshal(raw, &resp); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := uint(0), *resp.ExistingResidentCredentialsCount
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := *resp.ExistingResidentCredentialsCount, uint(0); got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := uint(0), *resp.MaxPossibleRemainingResidentCredentialsCount
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := *resp.MaxPossibleRemainingResidentCredentialsCount, uint(0); got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 	if got := resp.TotalRPs; !(got == 0) {
 		t.Fatalf("got %#v, want zero value", got)
@@ -381,12 +339,8 @@ func TestCredentialManagementOptionalScalarsPreservePresence(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, key := range []uint64{1, 2, 5, 9, 10, 12} {
-		{
-			container, element := fields, key
-			_, ok := container[element]
-			if ok {
-				t.Fatalf("value unexpectedly contains %#v", element)
-			}
+		if _, ok := fields[key]; ok {
+			t.Fatalf("value unexpectedly contains %#v", key)
 		}
 	}
 }
@@ -483,11 +437,8 @@ func TestAuthenticatorGetInfoResponseMaxCredBlobLengthPresence(t *testing.T) {
 	if got := ok; got {
 		t.Fatalf("got true, want false")
 	}
-	{
-		want, got := uint(0), value
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := value, uint(0); got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 
 	resp.MaxCredBlobLength = 32
@@ -495,11 +446,8 @@ func TestAuthenticatorGetInfoResponseMaxCredBlobLengthPresence(t *testing.T) {
 	if got := ok; !got {
 		t.Fatalf("got false, want true")
 	}
-	{
-		want, got := uint(32), value
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := value, uint(32); got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 }
 

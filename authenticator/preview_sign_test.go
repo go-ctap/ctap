@@ -144,17 +144,11 @@ func TestMakeCredentialPreviewSign(t *testing.T) {
 	if got := generatedKey; got == nil {
 		t.Fatalf("got nil, want a non-nil value")
 	}
-	{
-		want, got := signingKeyHandle, generatedKey.KeyHandle
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := generatedKey.KeyHandle, signingKeyHandle; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := algorithm, generatedKey.Algorithm
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := generatedKey.Algorithm, algorithm; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	encMode, err := cbor.CTAP2EncOptions().EncMode()
@@ -165,35 +159,23 @@ func TestMakeCredentialPreviewSign(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := wantPublicKey, generatedKey.PublicKey
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := generatedKey.PublicKey, wantPublicKey; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	attestationObject, err := attestation.ParseObject(generatedKey.AttestationObject)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := attestation.AttestationStatementFormatIdentifierNone, attestationObject.Format
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := attestationObject.Format, attestation.AttestationStatementFormatIdentifierNone; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := innerAuthData, attestationObject.AuthData
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := attestationObject.AuthData, innerAuthData; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	command, requestCBOR := fake.FirstCTAPPayload(t)
-	{
-		want, got := protocol.AuthenticatorMakeCredential, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorMakeCredential; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	var request protocol.AuthenticatorMakeCredentialRequest
 	if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
@@ -202,11 +184,8 @@ func TestMakeCredentialPreviewSign(t *testing.T) {
 	if got := request.Extensions.PreviewSign.Flags; got == nil {
 		t.Fatalf("got nil, want a non-nil value")
 	}
-	{
-		want, got := protocol.AuthDataFlagUserPresent, *request.Extensions.PreviewSign.Flags
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := *request.Extensions.PreviewSign.Flags, protocol.AuthDataFlagUserPresent; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	{
 		want, got := []cose.Algorithm{algorithm}, request.Extensions.PreviewSign.Algorithms
@@ -274,19 +253,13 @@ func TestGetAssertionPreviewSign(t *testing.T) {
 	if got := result.ExtensionOutputs.PreviewSignOutputs; got == nil {
 		t.Fatalf("got nil, want a non-nil value")
 	}
-	{
-		want, got := signature, result.ExtensionOutputs.PreviewSign.Signature
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := result.ExtensionOutputs.PreviewSign.Signature, signature; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	command, requestCBOR := fake.FirstCTAPPayload(t)
-	{
-		want, got := protocol.AuthenticatorGetAssertion, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorGetAssertion; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	var request protocol.AuthenticatorGetAssertionRequest
 	if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
@@ -304,11 +277,8 @@ func TestGetAssertionPreviewSign(t *testing.T) {
 	if got := request.Extensions.PreviewSign.ToBeSigned; len(got) != 0 {
 		t.Errorf("got non-empty value %#v", got)
 	}
-	{
-		want, got := additionalArguments, request.Extensions.PreviewSign.AdditionalArguments
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := request.Extensions.PreviewSign.AdditionalArguments, additionalArguments; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -334,11 +304,8 @@ func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 		if got := input.Flags; got == nil {
 			t.Fatalf("got nil, want a non-nil value")
 		}
-		{
-			want, got := protocol.AuthDataFlagUserPresent|protocol.AuthDataFlagUserVerified, *input.Flags
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := *input.Flags, protocol.AuthDataFlagUserPresent|protocol.AuthDataFlagUserVerified; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	})
 
@@ -355,11 +322,8 @@ func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 				},
 			},
 		})
-		{
-			err, target := err, ErrNotSupported
-			if !errors.Is(err, target) {
-				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-			}
+		if err, target := err, ErrNotSupported; !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 		}
 		assertNoAuthenticatorIO(t, fake)
 	})
@@ -405,11 +369,8 @@ func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 				PreviewSign: webauthn.AuthenticationExtensionsPreviewSignInputs{SignByCredential: inputs},
 			},
 		)
-		{
-			err, target := err, ErrNotSupported
-			if !errors.Is(err, target) {
-				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-			}
+		if err, target := err, ErrNotSupported; !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 		}
 	})
 
@@ -529,11 +490,8 @@ func TestCreatePreviewSignOutputRejectsNonzeroSigningKeyCounter(t *testing.T) {
 	}
 
 	_, err := createPreviewSignOutput(request, response)
-	{
-		err, target := err, ErrSpecViolation
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, ErrSpecViolation; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 }
 

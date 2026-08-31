@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"bytes"
-	"fmt"
 	"slices"
 	"testing"
 
@@ -77,12 +76,8 @@ func TestPreviewSignExtensionWireTypes(t *testing.T) {
 	if err := cbor.Unmarshal(createEncoded, &create); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := create, "previewSign"
-		_, ok := container[element]
-		if !ok {
-			t.Fatalf("value does not contain %#v", element)
-		}
+	if _, ok := create["previewSign"]; !ok {
+		t.Fatalf("value does not contain %#v", "previewSign")
 	}
 	var algorithms []cose.Algorithm
 	if err := cbor.Unmarshal(create["previewSign"][3], &algorithms); err != nil {
@@ -98,11 +93,8 @@ func TestPreviewSignExtensionWireTypes(t *testing.T) {
 	if err := cbor.Unmarshal(create["previewSign"][4], &gotFlags); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := flags, gotFlags
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := gotFlags, flags; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	unattended := AuthDataFlag(0)
@@ -121,12 +113,8 @@ func TestPreviewSignExtensionWireTypes(t *testing.T) {
 	if err := cbor.Unmarshal(unattendedEncoded, &create); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := create["previewSign"], uint64(4)
-		_, ok := container[element]
-		if !ok {
-			t.Errorf("value does not contain %#v; context: %s", element, fmt.Sprint("explicit unattended flags must not be omitted"))
-		}
+	if _, ok := create["previewSign"][uint64(4)]; !ok {
+		t.Errorf("value does not contain %#v; context: %s", uint64(4), "explicit unattended flags must not be omitted")
 	}
 	if err := cbor.Unmarshal(create["previewSign"][4], &gotFlags); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -147,12 +135,8 @@ func TestPreviewSignExtensionWireTypes(t *testing.T) {
 	if err := cbor.Unmarshal(outputEncoded, &output); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := output["previewSign"], uint64(4)
-		_, ok := container[element]
-		if !ok {
-			t.Fatalf("value does not contain %#v", element)
-		}
+	if _, ok := output["previewSign"][uint64(4)]; !ok {
+		t.Fatalf("value does not contain %#v", uint64(4))
 	}
 	if err := cbor.Unmarshal(output["previewSign"][4], &gotFlags); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -173,12 +157,8 @@ func TestPreviewSignExtensionWireTypes(t *testing.T) {
 	if err := cbor.Unmarshal(outputEncoded, &output); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := output["previewSign"], uint64(6)
-		_, ok := container[element]
-		if !ok {
-			t.Errorf("value does not contain %#v; context: %s", element, fmt.Sprint("present empty signature must not be omitted"))
-		}
+	if _, ok := output["previewSign"][uint64(6)]; !ok {
+		t.Errorf("value does not contain %#v; context: %s", uint64(6), "present empty signature must not be omitted")
 	}
 
 	additionalArguments := []byte{0xa1, 0x03, 0x26}
@@ -198,20 +178,12 @@ func TestPreviewSignExtensionWireTypes(t *testing.T) {
 	if err := cbor.Unmarshal(getEncoded, &get); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := get, "previewSign"
-		_, ok := container[element]
-		if !ok {
-			t.Fatalf("value does not contain %#v", element)
-		}
+	if _, ok := get["previewSign"]; !ok {
+		t.Fatalf("value does not contain %#v", "previewSign")
 	}
 	for _, key := range []uint64{2, 6, 7} {
-		{
-			container, element := get["previewSign"], key
-			_, ok := container[element]
-			if !ok {
-				t.Errorf("value does not contain %#v", element)
-			}
+		if _, ok := get["previewSign"][key]; !ok {
+			t.Errorf("value does not contain %#v", key)
 		}
 	}
 	var keyHandle, toBeSigned, gotAdditionalArguments []byte
@@ -230,11 +202,8 @@ func TestPreviewSignExtensionWireTypes(t *testing.T) {
 	if got := toBeSigned; len(got) != 0 {
 		t.Errorf("got non-empty value %#v", got)
 	}
-	{
-		want, got := additionalArguments, gotAdditionalArguments
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := gotAdditionalArguments, additionalArguments; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -260,54 +229,35 @@ func TestPreviewSignAttestationIsNestedInUnsignedExtensionOutputs(t *testing.T) 
 	if err := cbor.Unmarshal(encoded, &response); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := response, uint64(6)
-		_, ok := container[element]
-		if !ok {
-			t.Fatalf("value does not contain %#v", element)
-		}
+	if _, ok := response[uint64(6)]; !ok {
+		t.Fatalf("value does not contain %#v", uint64(6))
 	}
-	{
-		container, element := response, uint64(7)
-		_, ok := container[element]
-		if ok {
-			t.Errorf("value unexpectedly contains %#v", element)
-		}
+	if _, ok := response[uint64(7)]; ok {
+		t.Errorf("value unexpectedly contains %#v", uint64(7))
 	}
 
 	var unsignedOutputs map[string]cbor.RawMessage
 	if err := cbor.Unmarshal(response[6], &unsignedOutputs); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := unsignedOutputs, "previewSign"
-		_, ok := container[element]
-		if !ok {
-			t.Fatalf("value does not contain %#v", element)
-		}
+	if _, ok := unsignedOutputs["previewSign"]; !ok {
+		t.Fatalf("value does not contain %#v", "previewSign")
 	}
 
 	var previewSign map[uint64]cbor.RawMessage
 	if err := cbor.Unmarshal(unsignedOutputs["previewSign"], &previewSign); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := previewSign, uint64(7)
-		_, ok := container[element]
-		if !ok {
-			t.Fatalf("value does not contain %#v", element)
-		}
+	if _, ok := previewSign[uint64(7)]; !ok {
+		t.Fatalf("value does not contain %#v", uint64(7))
 	}
 
 	var gotAttestationObject []byte
 	if err := cbor.Unmarshal(previewSign[7], &gotAttestationObject); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := attestationObject, gotAttestationObject
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := gotAttestationObject, attestationObject; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -402,12 +352,8 @@ func TestDirectLargeBlobExtensionWireTypes(t *testing.T) {
 	if err := cbor.Unmarshal(getEncoded, &get); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := get["largeBlob"], "write"
-		_, ok := container[element]
-		if !ok {
-			t.Fatalf("value does not contain %#v", element)
-		}
+	if _, ok := get["largeBlob"]["write"]; !ok {
+		t.Fatalf("value does not contain %#v", "write")
 	}
 	write, ok := get["largeBlob"]["write"].([]byte)
 	if !ok {
@@ -445,19 +391,11 @@ func TestDirectLargeBlobExtensionWireTypes(t *testing.T) {
 			t.Errorf("got %#v, want %#v", got, want)
 		}
 	}
-	{
-		container, element := get["largeBlob"], "write"
-		_, ok := container[element]
-		if ok {
-			t.Errorf("value unexpectedly contains %#v", element)
-		}
+	if _, ok := get["largeBlob"]["write"]; ok {
+		t.Errorf("value unexpectedly contains %#v", "write")
 	}
-	{
-		container, element := get["largeBlob"], "originalSize"
-		_, ok := container[element]
-		if ok {
-			t.Errorf("value unexpectedly contains %#v", element)
-		}
+	if _, ok := get["largeBlob"]["originalSize"]; ok {
+		t.Errorf("value unexpectedly contains %#v", "originalSize")
 	}
 
 	outputEncoded, err := encMode.Marshal(GetLargeBlobOutput{Blob: []byte{}})
@@ -468,12 +406,8 @@ func TestDirectLargeBlobExtensionWireTypes(t *testing.T) {
 	if err := cbor.Unmarshal(outputEncoded, &output); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := output, "blob"
-		_, ok := container[element]
-		if !ok {
-			t.Fatalf("value does not contain %#v", element)
-		}
+	if _, ok := output["blob"]; !ok {
+		t.Fatalf("value does not contain %#v", "blob")
 	}
 	blob, ok := output["blob"].([]byte)
 	if !ok {
@@ -491,12 +425,8 @@ func TestDirectLargeBlobExtensionWireTypes(t *testing.T) {
 	if err := cbor.Unmarshal(outputEncoded, &output); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := output, "blob"
-		_, ok := container[element]
-		if ok {
-			t.Errorf("value unexpectedly contains %#v", element)
-		}
+	if _, ok := output["blob"]; ok {
+		t.Errorf("value unexpectedly contains %#v", "blob")
 	}
 }
 
@@ -518,12 +448,8 @@ func TestLargeBlobUnsignedOutputsPreserveUnknownExtensionsAndProvideTypedAccesso
 	if got := makeCredential.UnsignedExtensionOutputs; got == nil {
 		t.Fatalf("got nil, want a non-nil value")
 	}
-	{
-		container, element := makeCredential.UnsignedExtensionOutputs, extension.ExtensionIdentifier("vendor.example")
-		_, ok := container[element]
-		if !ok {
-			t.Fatalf("value does not contain %#v", element)
-		}
+	if _, ok := makeCredential.UnsignedExtensionOutputs[extension.ExtensionIdentifier("vendor.example")]; !ok {
+		t.Fatalf("value does not contain %#v", extension.ExtensionIdentifier("vendor.example"))
 	}
 	makeCredentialOutput, err := makeCredential.LargeBlobUnsignedExtensionOutput()
 	if err != nil {
@@ -554,12 +480,8 @@ func TestLargeBlobUnsignedOutputsPreserveUnknownExtensionsAndProvideTypedAccesso
 	if err := cbor.Unmarshal(raw, &getAssertion); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		container, element := getAssertion.UnsignedExtensionOutputs, extension.ExtensionIdentifier("vendor.example")
-		_, ok := container[element]
-		if !ok {
-			t.Fatalf("value does not contain %#v", element)
-		}
+	if _, ok := getAssertion.UnsignedExtensionOutputs[extension.ExtensionIdentifier("vendor.example")]; !ok {
+		t.Fatalf("value does not contain %#v", extension.ExtensionIdentifier("vendor.example"))
 	}
 	output, err := getAssertion.LargeBlobUnsignedExtensionOutput()
 	if err != nil {

@@ -47,11 +47,8 @@ func TestNormalizeAndValidate(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected an error")
 		}
-		{
-			container, element := err.Error(), "at least 6"
-			if !strings.Contains(container, element) {
-				t.Errorf("value does not contain %#v", element)
-			}
+		if container, element := err.Error(), "at least 6"; !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
 		}
 	})
 
@@ -60,11 +57,8 @@ func TestNormalizeAndValidate(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected an error")
 		}
-		{
-			container, element := err.Error(), "63 UTF-8 bytes"
-			if !strings.Contains(container, element) {
-				t.Errorf("value does not contain %#v", element)
-			}
+		if container, element := err.Error(), "63 UTF-8 bytes"; !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
 		}
 	})
 
@@ -73,11 +67,8 @@ func TestNormalizeAndValidate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		{
-			want, got := "Caf\u00e9123", value
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := value, "Caf\u00e9123"; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	})
 
@@ -86,11 +77,8 @@ func TestNormalizeAndValidate(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected an error")
 		}
-		{
-			container, element := err.Error(), "0x00"
-			if !strings.Contains(container, element) {
-				t.Errorf("value does not contain %#v", element)
-			}
+		if container, element := err.Error(), "0x00"; !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
 		}
 	})
 }

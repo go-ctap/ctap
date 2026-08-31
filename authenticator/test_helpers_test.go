@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ecdh"
 	"crypto/rand"
-	"fmt"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -109,6 +108,6 @@ func credentialManagementResponseIsZero(response protocol.AuthenticatorCredentia
 func assertNoAuthenticatorIO(t testing.TB, fake *testhid.Device) {
 	t.Helper()
 	if got := fake.Writes(); len(got) != 0 {
-		t.Errorf("got non-empty value %#v; context: %s", got, fmt.Sprint("validation must fail before transport I/O"))
+		t.Errorf("got non-empty value %#v; context: %s", got, "validation must fail before transport I/O")
 	}
 }

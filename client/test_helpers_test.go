@@ -38,11 +38,8 @@ type fakeCBORTransport struct {
 
 func (f *fakeCBORTransport) CBOR(_ context.Context, data []byte) (ctaptransport.CBORResponse, error) {
 	f.t.Helper()
-	{
-		want, got := f.request, data
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			f.t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := data, f.request; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		f.t.Errorf("got %#v, want %#v", got, want)
 	}
 	return ctaptransport.ValidateCBORResponse(protocol.Command(data[0]), ctaptransport.CBORResponse{
 		StatusCode: f.status,
@@ -90,6 +87,15 @@ func requestBytes(t testing.TB, request map[uint64]any, key uint64) []byte {
 	return value
 }
 
+func requestString(t testing.TB, request map[uint64]any, key uint64) string {
+	t.Helper()
+	value, ok := request[key].(string)
+	if !ok {
+		t.Fatalf("request field %d has type %T, want string", key, request[key])
+	}
+	return value
+}
+
 func assertionResponseIsZero(response protocol.AuthenticatorGetAssertionResponse) bool {
 	return response.Credential.Type == "" &&
 		response.Credential.ID == nil &&
@@ -115,11 +121,8 @@ func assertCTAPRequest(t testing.TB, device *testhid.Device, want expectedCTAPRe
 	t.Helper()
 
 	command, request := device.FirstCTAPRequestMap(t)
-	{
-		want, got := want.command, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, want.command; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	assertRequestKeys(t, request, want.keys...)
 	for key, wantValue := range want.fields {

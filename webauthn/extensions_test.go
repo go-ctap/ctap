@@ -87,12 +87,8 @@ func TestLargeBlobOutputsPreservePresentEmptyBlob(t *testing.T) {
 					t.Fatalf("unexpected error: %v", err)
 				}
 			}
-			{
-				container, element := present, "blob"
-				_, ok := container[element]
-				if !ok {
-					t.Fatalf("value does not contain %#v", element)
-				}
+			if _, ok := present["blob"]; !ok {
+				t.Fatalf("value does not contain %#v", "blob")
 			}
 
 			encoded, err = encode(AuthenticationExtensionsLargeBlobOutputs{})
@@ -109,12 +105,8 @@ func TestLargeBlobOutputsPreservePresentEmptyBlob(t *testing.T) {
 					t.Fatalf("unexpected error: %v", err)
 				}
 			}
-			{
-				container, element := absent, "blob"
-				_, ok := container[element]
-				if ok {
-					t.Fatalf("value unexpectedly contains %#v", element)
-				}
+			if _, ok := absent["blob"]; ok {
+				t.Fatalf("value unexpectedly contains %#v", "blob")
 			}
 		})
 	}
@@ -141,12 +133,8 @@ func TestLargeBlobInputsPreservePresentEmptyWrite(t *testing.T) {
 					t.Fatalf("unexpected error: %v", err)
 				}
 			}
-			{
-				container, element := present, "write"
-				_, ok := container[element]
-				if !ok {
-					t.Fatalf("value does not contain %#v", element)
-				}
+			if _, ok := present["write"]; !ok {
+				t.Fatalf("value does not contain %#v", "write")
 			}
 
 			encoded, err = encode(AuthenticationExtensionsLargeBlobInputs{})
@@ -163,12 +151,8 @@ func TestLargeBlobInputsPreservePresentEmptyWrite(t *testing.T) {
 					t.Fatalf("unexpected error: %v", err)
 				}
 			}
-			{
-				container, element := absent, "write"
-				_, ok := container[element]
-				if ok {
-					t.Fatalf("value unexpectedly contains %#v", element)
-				}
+			if _, ok := absent["write"]; ok {
+				t.Fatalf("value unexpectedly contains %#v", "write")
 			}
 		})
 	}
@@ -196,12 +180,8 @@ func TestLargeBlobInputsPreservePresentFalseRead(t *testing.T) {
 					t.Fatalf("unexpected error: %v", err)
 				}
 			}
-			{
-				container, element := fields, "read"
-				_, ok := container[element]
-				if !ok {
-					t.Fatalf("value does not contain %#v", element)
-				}
+			if _, ok := fields["read"]; !ok {
+				t.Fatalf("value does not contain %#v", "read")
 			}
 			{
 				want, got := false, fields["read"]

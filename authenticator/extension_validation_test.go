@@ -93,11 +93,8 @@ func TestMakeCredentialVerifiesEnforcedCredentialProtectionOutput(t *testing.T) 
 				},
 			})
 			if tt.wantErr != nil {
-				{
-					err, target := err, tt.wantErr
-					if !errors.Is(err, target) {
-						t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-					}
+				if err, target := err, tt.wantErr; !errors.Is(err, target) {
+					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 				}
 			} else {
 				if err != nil {
@@ -138,11 +135,8 @@ func TestMakeCredentialIgnoresOversizedCredentialBlob(t *testing.T) {
 	}
 
 	command, requestCBOR := fake.FirstCTAPPayload(t)
-	{
-		want, got := protocol.AuthenticatorMakeCredential, command
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorMakeCredential; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 	var request protocol.AuthenticatorMakeCredentialRequest
 	if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
@@ -225,11 +219,8 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		}
-		{
-			want, got := 1, count
-			if got != want {
-				t.Fatalf("got %#v, want %#v", got, want)
-			}
+		if got, want := count, 1; got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
 		}
 
 		_, requestCBOR := fake.FirstCTAPPayload(t)
@@ -270,11 +261,8 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 		}
 
 		command, requestCBOR := fake.FirstCTAPPayload(t)
-		{
-			want, got := protocol.AuthenticatorMakeCredential, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := command, protocol.AuthenticatorMakeCredential; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 		var request protocol.AuthenticatorMakeCredentialRequest
 		if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
@@ -327,11 +315,8 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 		}
 
 		command, requestCBOR := fake.FirstCTAPPayload(t)
-		{
-			want, got := protocol.AuthenticatorGetAssertion, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := command, protocol.AuthenticatorGetAssertion; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 		var request protocol.AuthenticatorGetAssertionRequest
 		if err := cbor.Unmarshal(requestCBOR, &request); err != nil {
@@ -355,11 +340,8 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 				Payment: webauthn.AuthenticationExtensionsPaymentInputs{IsPayment: true},
 			},
 		})
-		{
-			err, target := err, ErrNotSupported
-			if !errors.Is(err, target) {
-				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-			}
+		if err, target := err, ErrNotSupported; !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 		}
 		assertNoAuthenticatorIO(t, fake)
 	})
@@ -416,11 +398,8 @@ func TestCompositeExtensionCapabilitiesAreValidatedBeforeCommand(t *testing.T) {
 			d := newTestDevice(t, fake, tt.info)
 
 			_, err := makeCredentialWithExtensions(d, tt.extInputs)
-			{
-				err, target := err, ErrSpecViolation
-				if !errors.Is(err, target) {
-					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-				}
+			if err, target := err, ErrSpecViolation; !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 			}
 			assertNoAuthenticatorIO(t, fake)
 		})
@@ -450,11 +429,8 @@ func TestGetAssertionRejectsHMACSecretWhenUserPresenceIsDisabledBeforeCommand(t 
 		gotErr = err
 	}
 
-	{
-		err, target := gotErr, ErrNotSupported
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := gotErr, ErrNotSupported; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	assertNoAuthenticatorIO(t, fake)
 }
@@ -475,11 +451,8 @@ func TestUnsolicitedExtensionOutputsAreRejectedWithoutPanic(t *testing.T) {
 		})
 
 		_, err := makeCredentialWithExtensions(d, nil)
-		{
-			err, target := err, ErrSpecViolation
-			if !errors.Is(err, target) {
-				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-			}
+		if err, target := err, ErrSpecViolation; !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 		}
 	})
 
@@ -505,11 +478,8 @@ func TestUnsolicitedExtensionOutputsAreRejectedWithoutPanic(t *testing.T) {
 		) {
 			gotErr = err
 		}
-		{
-			err, target := gotErr, ErrSpecViolation
-			if !errors.Is(err, target) {
-				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-			}
+		if err, target := gotErr, ErrSpecViolation; !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 		}
 	})
 }
@@ -532,11 +502,8 @@ func TestSetLargeBlobsValidatesAndCanonicalizesArray(t *testing.T) {
 			d := newTestDevice(t, fake, info)
 
 			err := d.SetLargeBlobs(testContext, nil, []protocol.LargeBlob{blob})
-			{
-				err, target := err, SyntaxError
-				if !errors.Is(err, target) {
-					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-				}
+			if err, target := err, SyntaxError; !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 			}
 			assertNoAuthenticatorIO(t, fake)
 		}
@@ -558,18 +525,12 @@ func TestSetLargeBlobsValidatesAndCanonicalizesArray(t *testing.T) {
 		if got, want := len(request.Set), 17; got != want {
 			t.Fatalf("got length %d, want %d", got, want)
 		}
-		{
-			want, got := byte(0x80), request.Set[0]
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := request.Set[0], byte(0x80); got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 		hash := sha256.Sum256(request.Set[:1])
-		{
-			want, got := hash[:16], request.Set[1:]
-			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := request.Set[1:], hash[:16]; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	})
 }
@@ -582,11 +543,8 @@ func TestValidateMakeCredentialExtensionOutputsRejectsUnsolicitedValues(t *testi
 			CreateCredBlobOutput: &protocol.CreateCredBlobOutput{CredBlob: true},
 		},
 	)
-	{
-		err, target := err, ErrSpecViolation
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, ErrSpecViolation; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 }
 
@@ -622,11 +580,8 @@ func TestGetAssertionValidatesHMACSecretSalts(t *testing.T) {
 		}
 	}
 
-	{
-		want, got := 1, count
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := count, 1; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	assertNoAuthenticatorIO(t, fake)
 }
@@ -787,11 +742,8 @@ func TestMakeCredentialRequiresMaxCredBlobLengthWhenCredBlobExtensionReported(t 
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "maxCredBlobLength"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "maxCredBlobLength"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 	assertNoAuthenticatorIO(t, fake)
 }
@@ -819,20 +771,12 @@ func TestHMACSecretPinUvAuthProtocolWirePresence(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if tt.wantMember {
-				{
-					container, element := fields, uint64(4)
-					_, ok := container[element]
-					if !ok {
-						t.Fatalf("value does not contain %#v", element)
-					}
+				if _, ok := fields[uint64(4)]; !ok {
+					t.Fatalf("value does not contain %#v", uint64(4))
 				}
 			} else {
-				{
-					container, element := fields, uint64(4)
-					_, ok := container[element]
-					if ok {
-						t.Fatalf("value unexpectedly contains %#v", element)
-					}
+				if _, ok := fields[uint64(4)]; ok {
+					t.Fatalf("value unexpectedly contains %#v", uint64(4))
 				}
 			}
 		})

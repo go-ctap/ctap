@@ -20,11 +20,8 @@ func TestSelectReturnsOnlyDeviceWithoutSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := transport, selected.transport
-		if got != want {
-			t.Errorf("got pointer %p, want %p", got, want)
-		}
+	if got, want := selected.transport, transport; got != want {
+		t.Errorf("got pointer %p, want %p", got, want)
 	}
 	if got := transport.selectionCalled.Load(); got {
 		t.Errorf("got true, want false")
@@ -56,11 +53,8 @@ func TestSelectReturnsConfirmedDeviceAndClosesOthers(t *testing.T) {
 	if err := selected.err; err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := second, selected.device.transport
-		if got != want {
-			t.Errorf("got pointer %p, want %p", got, want)
-		}
+	if got, want := selected.device.transport, second; got != want {
+		t.Errorf("got pointer %p, want %p", got, want)
 	}
 	if got := first.closed.Load(); !got {
 		t.Errorf("got false, want true")
@@ -85,11 +79,8 @@ func TestSelectContinuesAfterCandidateError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := transport, selected.transport
-		if got != want {
-			t.Errorf("got pointer %p, want %p", got, want)
-		}
+	if got, want := selected.transport, transport; got != want {
+		t.Errorf("got pointer %p, want %p", got, want)
 	}
 }
 
@@ -103,11 +94,8 @@ func TestSelectClosesTransportRejectedByAuthenticator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := accepted, selected.transport
-		if got != want {
-			t.Errorf("got pointer %p, want %p", got, want)
-		}
+	if got, want := selected.transport, accepted; got != want {
+		t.Errorf("got pointer %p, want %p", got, want)
 	}
 	if got := rejected.closed.Load(); !got {
 		t.Errorf("got false, want true")

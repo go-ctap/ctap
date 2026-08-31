@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"sync"
 	"testing"
@@ -27,11 +26,8 @@ func TestOpenAllocatesChannelAndTransfersDevice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := transportTestCID, transport.cid
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := transport.cid, transportTestCID; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	if err := transport.Close(); err != nil {
@@ -49,11 +45,8 @@ func TestOpenCanceledLeavesDeviceOpen(t *testing.T) {
 
 	_, err := Open(ctx, dev)
 
-	{
-		err, target := err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.Canceled; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	if got := dev.closed; got {
 		t.Errorf("got true, want false")
@@ -65,21 +58,15 @@ func TestOpenInitFailureLeavesDeviceOpen(t *testing.T) {
 
 	_, err := Open(t.Context(), dev)
 
-	{
-		err, target := err, io.ErrUnexpectedEOF
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, io.ErrUnexpectedEOF; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	var deviceErr *ctaptransport.IOError
 	if err := err; !errors.As(err, &deviceErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaptransport.IORead, deviceErr.Operation
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := deviceErr.Operation, ctaptransport.IORead; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; got {
@@ -95,21 +82,15 @@ func TestOpenInitWriteFailureReturnsTypedIOError(t *testing.T) {
 
 	_, err := Open(t.Context(), dev)
 
-	{
-		err, target := err, io.ErrClosedPipe
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, io.ErrClosedPipe; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	var ioErr *ctaptransport.IOError
 	if err := err; !errors.As(err, &ioErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaptransport.IOWrite, ioErr.Operation
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ioErr.Operation, ctaptransport.IOWrite; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; got {
@@ -127,11 +108,8 @@ func TestTransportCBORPreCanceledWritesNothing(t *testing.T) {
 	cancel()
 
 	_, err := transport.CBOR(ctx, []byte{byte(protocol.AuthenticatorSelection)})
-	{
-		err, target := err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.Canceled; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	if got := dev.writes; len(got) != 0 {
 		t.Errorf("got non-empty value %#v", got)
@@ -176,31 +154,22 @@ func TestTransportCommandsCloseDeviceAfterWriteFailure(t *testing.T) {
 
 			err := test.call(transport)
 
-			{
-				err, target := err, io.ErrClosedPipe
-				if !errors.Is(err, target) {
-					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-				}
+			if err, target := err, io.ErrClosedPipe; !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 			}
 			var ioErr *ctaptransport.IOError
 			if err := err; !errors.As(err, &ioErr) {
 				t.Fatalf("error %v does not match requested type", err)
 			}
-			{
-				want, got := ctaptransport.IOWrite, ioErr.Operation
-				if got != want {
-					t.Errorf("got %#v, want %#v", got, want)
-				}
+			if got, want := ioErr.Operation, ctaptransport.IOWrite; got != want {
+				t.Errorf("got %#v, want %#v", got, want)
 			}
 			invalidatedErr, ok := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 			if got := ok; !got {
 				t.Fatalf("got false, want true")
 			}
-			{
-				want, got := ioErr, invalidatedErr.Err
-				if got != want {
-					t.Errorf("got pointer %p, want %p", got, want)
-				}
+			if got, want := invalidatedErr.Err, ioErr; got != want {
+				t.Errorf("got pointer %p, want %p", got, want)
 			}
 			if got := dev.closed; !got {
 				t.Errorf("got false, want true")
@@ -253,11 +222,8 @@ func TestTransportCBORKeepsDeviceOpenAfterResponseError(t *testing.T) {
 			_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
 
 			if test.wantError != nil {
-				{
-					err, target := err, test.wantError
-					if !errors.Is(err, target) {
-						t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-					}
+				if err, target := err, test.wantError; !errors.Is(err, target) {
+					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 				}
 			} else if test.wantCode != 0 {
 				requireCTAPHIDError(t, err, test.wantCode)
@@ -293,11 +259,8 @@ func TestTransportCBORContinuesOnSameChannelAfterUnexpectedCommand(t *testing.T)
 	})
 
 	_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
-	{
-		err, target := err, ErrUnexpectedCommand
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, ErrUnexpectedCommand; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	if got := dev.isClosed(); got {
 		t.Errorf("got true, want false")
@@ -307,11 +270,8 @@ func TestTransportCBORContinuesOnSameChannelAfterUnexpectedCommand(t *testing.T)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := ctaptransport.CTAP2_OK, response.StatusCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := response.StatusCode, ctaptransport.CTAP2_OK; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got := dev.isClosed(); got {
 		t.Errorf("got true, want false")
@@ -335,22 +295,16 @@ func TestOpenDrainsReportsForOtherChannelsBeforeAllocation(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
-	{
-		want, got := dev.cid, transport.cid
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := transport.cid, dev.cid; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	response, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorGetInfo)})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := ctaptransport.CTAP2_OK, response.StatusCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := response.StatusCode, ctaptransport.CTAP2_OK; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -368,17 +322,11 @@ func TestRetryChannelBusyRetriesAfterShortDelay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := "ok", result
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := result, "ok"; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := 2, attempts
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := attempts, 2; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -392,17 +340,11 @@ func TestRetryChannelBusyStopsWhenContextExpires(t *testing.T) {
 		return struct{}{}, &ErrorResponse{ErrorCode: ERR_CHANNEL_BUSY}
 	})
 
-	{
-		err, target := err, context.DeadlineExceeded
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.DeadlineExceeded; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
-	{
-		want, got := 1, attempts
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := attempts, 1; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -440,11 +382,8 @@ func TestTransportPreCanceledContextTakesPriorityOverValidation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			transport := NewTransport(&failedOpenDevice{}, transportTestCID)
 
-			{
-				err, target := test.call(transport), context.Canceled
-				if !errors.Is(err, target) {
-					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-				}
+			if err, target := test.call(transport), context.Canceled; !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 			}
 		})
 	}
@@ -462,11 +401,8 @@ func TestTransportCBORWritesSelectionBeforeCancel(t *testing.T) {
 	}()
 
 	request := receive(t, dev.writes, "Selection request was not written")
-	{
-		want, got := byte(CTAPHID_CBOR)|INIT_PACKET_BIT, request[5]
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := request[5], byte(CTAPHID_CBOR)|INIT_PACKET_BIT; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	cancel()
 
@@ -478,19 +414,13 @@ func TestTransportCBORWritesSelectionBeforeCancel(t *testing.T) {
 
 	close(dev.releaseRequest)
 	cancelRequest := receive(t, dev.writes, "CANCEL was not written")
-	{
-		want, got := byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5]
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := cancelRequest[5], byte(CTAPHID_CANCEL)|INIT_PACKET_BIT; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	err := receive(t, resultc, "Selection cancellation did not complete")
-	{
-		err, target := err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.Canceled; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; got {
@@ -501,11 +431,8 @@ func TestTransportCBORWritesSelectionBeforeCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := ctaptransport.CTAP2_OK, response.StatusCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := response.StatusCode, ctaptransport.CTAP2_OK; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -521,38 +448,26 @@ func TestTransportCBORReportsInvalidationWhenCanceledResponseCannotBeDrained(t *
 	}()
 
 	request := receive(t, dev.writes, "Selection request was not written")
-	{
-		want, got := byte(CTAPHID_CBOR)|INIT_PACKET_BIT, request[5]
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := request[5], byte(CTAPHID_CBOR)|INIT_PACKET_BIT; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	cancel()
 
 	cancelRequest := receive(t, dev.writes, "CANCEL was not written")
-	{
-		want, got := byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5]
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := cancelRequest[5], byte(CTAPHID_CANCEL)|INIT_PACKET_BIT; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	err := receive(t, resultc, "Selection cancellation did not complete")
-	{
-		err, target := err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.Canceled; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	invalidatedErr, ok := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := ok; !got {
 		t.Fatalf("got false, want true")
 	}
-	{
-		err, target := invalidatedErr.Err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := invalidatedErr.Err, context.Canceled; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	if got := dev.isClosed(); !got {
 		t.Errorf("got false, want true")
@@ -565,27 +480,18 @@ func TestTransportCBORPreservesReadError(t *testing.T) {
 
 	_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorSelection)})
 
-	{
-		err, target := err, io.ErrUnexpectedEOF
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, io.ErrUnexpectedEOF; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
-	{
-		err, target := err, context.Canceled
-		if errors.Is(err, target) {
-			t.Fatalf("got error %v, unexpectedly matches %#v", err, target)
-		}
+	if err, target := err, context.Canceled; errors.Is(err, target) {
+		t.Fatalf("got error %v, unexpectedly matches %#v", err, target)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; !got {
 		t.Fatalf("got false, want true")
 	}
-	{
-		want, got := 1, dev.writes
-		if got != want {
-			t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("an unrelated read error must not trigger CTAPHID_CANCEL"))
-		}
+	if got, want := dev.writes, 1; got != want {
+		t.Errorf("got %#v, want %#v; context: %s", got, want, "an unrelated read error must not trigger CTAPHID_CANCEL")
 	}
 	if got := dev.closed; !got {
 		t.Errorf("got false, want true")
@@ -600,21 +506,15 @@ func TestTransportCBORDoesNotCancelForContextErrorFromActiveContext(t *testing.T
 
 			_, err := transport.CBOR(t.Context(), []byte{byte(protocol.AuthenticatorSelection)})
 
-			{
-				err, target := err, readErr
-				if !errors.Is(err, target) {
-					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-				}
+			if err, target := err, readErr; !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 			}
 			_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 			if got := invalidated; !got {
 				t.Fatalf("got false, want true")
 			}
-			{
-				want, got := 1, dev.writes
-				if got != want {
-					t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("an error unrelated to the active context must not trigger CTAPHID_CANCEL"))
-				}
+			if got, want := dev.writes, 1; got != want {
+				t.Errorf("got %#v, want %#v; context: %s", got, want, "an error unrelated to the active context must not trigger CTAPHID_CANCEL")
 			}
 			if got := dev.closed; !got {
 				t.Errorf("got false, want true")
@@ -637,28 +537,19 @@ func TestTransportCloseCancelsAndInterruptsBlockedCBOR(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	cancelRequest := receive(t, dev.writes, "CANCEL was not written before Close")
-	{
-		want, got := byte(CTAPHID_CANCEL)|INIT_PACKET_BIT, cancelRequest[5]
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := cancelRequest[5], byte(CTAPHID_CANCEL)|INIT_PACKET_BIT; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	err := receive(t, resultc, "Close did not interrupt Selection")
-	{
-		err, target := err, io.ErrClosedPipe
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, io.ErrClosedPipe; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	var deviceErr *ctaptransport.IOError
 	if err := err; !errors.As(err, &deviceErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaptransport.IORead, deviceErr.Operation
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := deviceErr.Operation, ctaptransport.IORead; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; !got {
@@ -672,21 +563,15 @@ func TestTransportCloseReturnsTypedIOError(t *testing.T) {
 
 	err := transport.Close()
 
-	{
-		err, target := err, io.ErrClosedPipe
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, io.ErrClosedPipe; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	var ioErr *ctaptransport.IOError
 	if err := err; !errors.As(err, &ioErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaptransport.IOClose, ioErr.Operation
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ioErr.Operation, ctaptransport.IOClose; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; got {
@@ -987,11 +872,8 @@ func (d *initOpenDevice) Write(_ context.Context, p []byte) (int, error) {
 	if got, want := len(p), hidReportPacketSize; got != want {
 		d.t.Fatalf("got length %d, want %d", got, want)
 	}
-	{
-		want, got := byte(CTAPHID_INIT)|INIT_PACKET_BIT, p[5]
-		if got != want {
-			d.t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := p[5], byte(CTAPHID_INIT)|INIT_PACKET_BIT; got != want {
+		d.t.Errorf("got %#v, want %#v", got, want)
 	}
 	nonce := bytes.Clone(p[8:16])
 	response := append(bytes.Clone(nonce), d.cid[:]...)

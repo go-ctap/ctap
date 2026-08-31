@@ -25,17 +25,11 @@ func TestCBORSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := ctaptransport.CTAP2_OK, resp.StatusCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.StatusCode, ctaptransport.CTAP2_OK; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := response[1:], resp.Data
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.Data, response[1:]; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CBOR, request)
 }
@@ -55,11 +49,8 @@ func TestCBORSkipsResponseForAnotherChannel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := response[1:], resp.Data
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.Data, response[1:]; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -80,23 +71,14 @@ func TestCBORReturnsTypedCTAPError(t *testing.T) {
 	if got := errors.As(err, &ctapErr); !got {
 		t.Fatalf("got false, want true")
 	}
-	{
-		want, got := protocol.AuthenticatorGetInfo, ctapErr.Command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ctapErr.Command, protocol.AuthenticatorGetInfo; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := ctaptransport.CTAP2_ERR_INVALID_CBOR, ctapErr.StatusCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ctapErr.StatusCode, ctaptransport.CTAP2_ERR_INVALID_CBOR; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		container, element := err.Error(), "AuthenticatorGetInfo failed"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "AuthenticatorGetInfo failed"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_CBOR, request)
 }
@@ -223,41 +205,23 @@ func TestInitAcceptsExtendedSuccessResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := nonce, resp.Nonce
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.Nonce, nonce; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := allocatedCID, resp.CID
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.CID, allocatedCID; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := byte(2), resp.CTAPHIDProtocolVersionIdentifier
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.CTAPHIDProtocolVersionIdentifier, byte(2); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := byte(3), resp.MajorDeviceVersion
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.MajorDeviceVersion, byte(3); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := byte(4), resp.MinorDeviceVersion
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.MinorDeviceVersion, byte(4); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := byte(5), resp.BuildDeviceVersion
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.BuildDeviceVersion, byte(5); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got := resp.ImplementsWink(); !got {
 		t.Errorf("got false, want true")
@@ -324,11 +288,8 @@ func TestPingSkipsKeepaliveBeforeSuccessResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := data, resp.Bytes
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := resp.Bytes, data; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	assertSingleReportRequest(t, dev.writes.Bytes(), cid, CTAPHID_PING, data)
 }

@@ -40,11 +40,8 @@ func TestP256PublicKeyCOSECBORRoundTrip(t *testing.T) {
 			"225820"+
 			"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
 	)
-	{
-		want, got := want, encoded
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := encoded, want; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	var decoded Key
@@ -55,11 +52,8 @@ func TestP256PublicKeyCOSECBORRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := privateKey.PublicKey().Bytes(), publicKey.Bytes()
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := publicKey.Bytes(), privateKey.PublicKey().Bytes(); (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 

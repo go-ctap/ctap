@@ -31,17 +31,11 @@ func TestDeviceReadAssemblesFragmentedReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := inputReportSize, n
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := n, inputReportSize; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := want, got
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := got, want; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -66,17 +60,11 @@ func TestDeviceWriteStripsReportID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := outputReportSize, n
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := n, outputReportSize; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := report[1:], <-got
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := <-got, report[1:]; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -127,17 +115,11 @@ func TestDeviceReadReportsShortInput(t *testing.T) {
 	}()
 
 	n, err := device.Read(context.Background(), make([]byte, inputReportSize))
-	{
-		want, got := inputReportSize-1, n
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := n, inputReportSize-1; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		err, target := err, io.ErrUnexpectedEOF
-		if !errors.Is(err, target) {
-			t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, io.ErrUnexpectedEOF; !errors.Is(err, target) {
+		t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 }
 
@@ -153,11 +135,8 @@ func TestDeviceReadCancellationLeavesConnectionReusable(t *testing.T) {
 	if got := n; !(got == 0) {
 		t.Errorf("got %#v, want zero value", got)
 	}
-	{
-		err, target := err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.Canceled; !errors.Is(err, target) {
+		t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 
 	want := bytes.Repeat([]byte{0x5a}, inputReportSize)
@@ -167,17 +146,11 @@ func TestDeviceReadCancellationLeavesConnectionReusable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := inputReportSize, n
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := n, inputReportSize; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := want, got
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := got, want; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -193,11 +166,8 @@ func TestDeviceReadCancellationInterruptsBlockedRead(t *testing.T) {
 	if got := n; !(got == 0) {
 		t.Errorf("got %#v, want zero value", got)
 	}
-	{
-		err, target := err, context.DeadlineExceeded
-		if !errors.Is(err, target) {
-			t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.DeadlineExceeded; !errors.Is(err, target) {
+		t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 }
 
@@ -211,11 +181,8 @@ func TestDeviceWriteCancellationLeavesConnectionReusable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	_, err := device.Write(ctx, report)
-	{
-		err, target := err, context.DeadlineExceeded
-		if !errors.Is(err, target) {
-			t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.DeadlineExceeded; !errors.Is(err, target) {
+		t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 
 	readDone := make(chan error, 1)
@@ -228,11 +195,8 @@ func TestDeviceWriteCancellationLeavesConnectionReusable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := outputReportSize, n
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := n, outputReportSize; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if err := <-readDone; err != nil {
 		t.Fatalf("unexpected error: %v", err)

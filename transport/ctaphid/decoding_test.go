@@ -41,11 +41,8 @@ func TestMessage_ReadFrom(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	{
-		want, got := int64(len(resp)), n
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := n, int64(len(resp)); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -97,11 +94,8 @@ func TestCBORSkipsUnexpectedResponseCID(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		err, target := err, io.EOF
-		if !errors.Is(err, target) {
-			t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, io.EOF; !errors.Is(err, target) {
+		t.Errorf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	var ioErr *ctaptransport.IOError
 	if got := errors.As(err, &ioErr); !got {

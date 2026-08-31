@@ -42,11 +42,8 @@ func TestGetUVRetriesIncludesPinUvAuthProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := uint(5), retries
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := retries, uint(5); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	assertCTAPRequest(t, fake, expectedCTAPRequest{
@@ -124,11 +121,8 @@ func TestClientGetInfoRemainsCompatibleWithFIDO20Response(t *testing.T) {
 			t.Errorf("got %#v, want %#v", got, want)
 		}
 	}
-	{
-		want, got := protocol.DefaultMaxPINCodePoints, response.EffectiveMaxPINLength()
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := response.EffectiveMaxPINLength(), protocol.DefaultMaxPINCodePoints; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got := response.AuthenticatorConfigCommands; got != nil {
 		t.Errorf("got %#v, want nil", got)
@@ -181,21 +175,15 @@ func TestClientUsesConfiguredDecMode(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "invalid UTF-8"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "invalid UTF-8"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 }
 
 func TestClientRequiresTransport(t *testing.T) {
 	_, err := NewClient()
-	{
-		err, target := err, ErrTransportNotConfigured
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, ErrTransportNotConfigured; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 }
 
@@ -215,17 +203,11 @@ func TestClientReturnsConfiguredTransportCTAPStatus(t *testing.T) {
 	if err := err; !errors.As(err, &ctapErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := protocol.AuthenticatorGetInfo, ctapErr.Command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ctapErr.Command, protocol.AuthenticatorGetInfo; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := ctaptransport.CTAP2_ERR_INVALID_CBOR, ctapErr.StatusCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ctapErr.StatusCode, ctaptransport.CTAP2_ERR_INVALID_CBOR; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -257,38 +239,16 @@ func TestMakeCredentialRequestShapeAndPINAuthParam(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorMakeCredential, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorMakeCredential,
+		keys:    []uint64{1, 2, 3, 4, 8, 9},
+		fields:  map[uint64]uint64{9: uint64(protocol.PinUvAuthProtocolOne)},
+	})
+	if got, want := requestBytes(t, request, uint64(1)), clientDataHash; got == nil != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	assertRequestKeys(t, request, 1, 2, 3, 4, 8, 9)
-
-	{
-		want, got := clientDataHash, request[uint64(1)]
-		gotValue, ok := got.([]byte)
-
-		if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, clientDataHash), request[uint64(8)]
-		gotValue, ok := got.([]byte)
-
-		if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(9)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := requestBytes(t, request, uint64(8)), crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, clientDataHash); got == nil != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -323,14 +283,10 @@ func TestMakeCredentialMinimalRequestOmitsEmptyExcludeList(t *testing.T) {
 		t.Fatalf("got nil, want a non-nil value")
 	}
 
-	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorMakeCredential, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	assertRequestKeys(t, request, 1, 2, 3, 4)
+	assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorMakeCredential,
+		keys:    []uint64{1, 2, 3, 4},
+	})
 }
 
 func TestMakeCredentialFullRequestShape(t *testing.T) {
@@ -377,37 +333,16 @@ func TestMakeCredentialFullRequestShape(t *testing.T) {
 		t.Fatalf("got nil, want a non-nil value")
 	}
 
-	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorMakeCredential, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	assertRequestKeys(t, request, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
-	{
-		want, got := crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, clientDataHash), request[uint64(8)]
-		gotValue, ok := got.([]byte)
-
-		if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(9)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(1), request[uint64(10)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorMakeCredential,
+		keys:    []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+		fields: map[uint64]uint64{
+			9:  uint64(protocol.PinUvAuthProtocolOne),
+			10: 1,
+		},
+	})
+	if got, want := requestBytes(t, request, uint64(8)), crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, clientDataHash); got == nil != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	extensions, ok := request[uint64(6)].(map[any]any)
 	if got := ok; !got {
@@ -533,53 +468,23 @@ func TestGetAssertionRequestShapeAndPINAuthParam(t *testing.T) {
 		}
 		assertions++
 	}
-	{
-		want, got := 1, assertions
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := assertions, 1; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 
-	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorGetAssertion, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorGetAssertion,
+		keys:    []uint64{1, 2, 6, 7},
+		fields:  map[uint64]uint64{7: uint64(protocol.PinUvAuthProtocolOne)},
+	})
+	if got, want := requestString(t, request, uint64(1)), "example.com"; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	assertRequestKeys(t, request, 1, 2, 6, 7)
-
-	{
-		want, got := "example.com", request[uint64(1)]
-		gotValue, ok := got.(string)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := requestBytes(t, request, uint64(2)), clientDataHash; got == nil != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := clientDataHash, request[uint64(2)]
-		gotValue, ok := got.([]byte)
-
-		if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, clientDataHash), request[uint64(6)]
-		gotValue, ok := got.([]byte)
-
-		if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(7)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := requestBytes(t, request, uint64(6)), crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, clientDataHash); got == nil != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -609,19 +514,13 @@ func TestGetAssertionMinimalRequestOmitsEmptyAllowList(t *testing.T) {
 		}
 		assertions++
 	}
-	{
-		want, got := 1, assertions
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := assertions, 1; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 
 	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorGetAssertion, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorGetAssertion; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	assertRequestKeys(t, request, 1, 2)
 }
@@ -662,36 +561,17 @@ func TestGetAssertionFullRequestShape(t *testing.T) {
 		}
 		assertions++
 	}
-	{
-		want, got := 1, assertions
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := assertions, 1; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 
-	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorGetAssertion, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	assertRequestKeys(t, request, 1, 2, 3, 4, 5, 6, 7)
-	{
-		want, got := crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, clientDataHash), request[uint64(6)]
-		gotValue, ok := got.([]byte)
-
-		if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(7)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorGetAssertion,
+		keys:    []uint64{1, 2, 3, 4, 5, 6, 7},
+		fields:  map[uint64]uint64{7: uint64(protocol.PinUvAuthProtocolOne)},
+	})
+	if got, want := requestBytes(t, request, uint64(6)), crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, clientDataHash); got == nil != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	extensions, ok := request[uint64(4)].(map[any]any)
 	if got := ok; !got {
@@ -729,11 +609,8 @@ func TestGetAssertionRejectsInvalidClientDataHashBeforeCommand(t *testing.T) {
 			t.Fatalf("expected an error")
 		}
 	}
-	{
-		want, got := 1, yielded
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := yielded, 1; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 	if got := fake.Writes(); len(got) != 0 {
 		t.Errorf("got non-empty value %#v", got)
@@ -787,19 +664,13 @@ func TestGetAssertionFetchesNextAssertions(t *testing.T) {
 	}
 
 	command, _ := requests[0].CTAPPayload(t)
-	{
-		want, got := protocol.AuthenticatorGetAssertion, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorGetAssertion; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	for _, request := range requests[1:] {
 		command, body := request.CTAPPayload(t)
-		{
-			want, got := protocol.AuthenticatorGetNextAssertion, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := command, protocol.AuthenticatorGetNextAssertion; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 		if got := body; len(got) != 0 {
 			t.Errorf("got non-empty value %#v", got)
@@ -839,11 +710,8 @@ func TestGetAssertionStopsBeforeGetNextAssertionWhenIteratorStops(t *testing.T) 
 		break
 	}
 
-	{
-		want, got := 1, assertions
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := assertions, 1; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 	if got, want := len(fake.Requests(t)), 1; got != want {
 		t.Fatalf("got length %d, want %d", got, want)
@@ -873,11 +741,8 @@ func TestGetAssertionReturnsResponseDecodeErrors(t *testing.T) {
 				t.Fatalf("expected an error")
 			}
 		}
-		{
-			want, got := 1, yielded
-			if got != want {
-				t.Fatalf("got %#v, want %#v", got, want)
-			}
+		if got, want := yielded, 1; got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
 		}
 	})
 
@@ -906,11 +771,8 @@ func TestGetAssertionReturnsResponseDecodeErrors(t *testing.T) {
 				t.Fatalf("expected an error")
 			}
 		}
-		{
-			want, got := 1, yielded
-			if got != want {
-				t.Fatalf("got %#v, want %#v", got, want)
-			}
+		if got, want := yielded, 1; got != want {
+			t.Fatalf("got %#v, want %#v", got, want)
 		}
 	})
 }
@@ -923,30 +785,14 @@ func TestClientPINRequestShapes(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		command, request := fake.FirstCTAPRequestMap(t)
-		{
-			want, got := protocol.AuthenticatorClientPIN, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		assertRequestKeys(t, request, 1, 2, 3, 4, 5)
-		{
-			want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)]
-			gotValue, ok := got.(uint64)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		{
-			want, got := uint64(protocol.ClientPINSubCommandSetPIN), request[uint64(2)]
-			gotValue, ok := got.(uint64)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
+		request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+			command: protocol.AuthenticatorClientPIN,
+			keys:    []uint64{1, 2, 3, 4, 5},
+			fields: map[uint64]uint64{
+				1: uint64(protocol.PinUvAuthProtocolOne),
+				2: uint64(protocol.ClientPINSubCommandSetPIN),
+			},
+		})
 		if got, want := len(requestBytes(t, request, 4)), 16; got != want {
 			t.Errorf("got length %d, want %d", got, want)
 		}
@@ -962,30 +808,14 @@ func TestClientPINRequestShapes(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		command, request := fake.FirstCTAPRequestMap(t)
-		{
-			want, got := protocol.AuthenticatorClientPIN, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		assertRequestKeys(t, request, 1, 2, 3, 4, 5, 6)
-		{
-			want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)]
-			gotValue, ok := got.(uint64)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		{
-			want, got := uint64(protocol.ClientPINSubCommandChangePIN), request[uint64(2)]
-			gotValue, ok := got.(uint64)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
+		request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+			command: protocol.AuthenticatorClientPIN,
+			keys:    []uint64{1, 2, 3, 4, 5, 6},
+			fields: map[uint64]uint64{
+				1: uint64(protocol.PinUvAuthProtocolOne),
+				2: uint64(protocol.ClientPINSubCommandChangePIN),
+			},
+		})
 		if got, want := len(requestBytes(t, request, 4)), 16; got != want {
 			t.Errorf("got length %d, want %d", got, want)
 		}
@@ -1108,11 +938,8 @@ func TestClientPINRequestShapes(t *testing.T) {
 					if got := request; len(got) == 0 {
 						t.Fatalf("got empty value %#v, want non-empty", got)
 					}
-					{
-						want, got := protocol.AuthenticatorClientPIN, protocol.Command(request[0])
-						if got != want {
-							t.Fatalf("got %#v, want %#v", got, want)
-						}
+					if got, want := protocol.Command(request[0]), protocol.AuthenticatorClientPIN; got != want {
+						t.Fatalf("got %#v, want %#v", got, want)
 					}
 
 					var clientPIN protocol.AuthenticatorClientPINRequest
@@ -1151,11 +978,8 @@ func TestClientPINRequestShapes(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				{
-					want, got := wantToken, token
-					if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-						t.Errorf("got %#v, want %#v", got, want)
-					}
+				if got, want := token, wantToken; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+					t.Errorf("got %#v, want %#v", got, want)
 				}
 				{
 					want, got := wantKeyAgreementX, keyAgreement[cose.EC2KeyParameterX]
@@ -1207,30 +1031,14 @@ func TestClientPINRequestShapes(t *testing.T) {
 			t.Errorf("got length %d, want %d", got, want)
 		}
 
-		command, request := fake.FirstCTAPRequestMap(t)
-		{
-			want, got := protocol.AuthenticatorClientPIN, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		assertRequestKeys(t, request, 1, 2, 3)
-		{
-			want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)]
-			gotValue, ok := got.(uint64)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		{
-			want, got := uint64(protocol.ClientPINSubCommandGetPinUvAuthTokenUsingUvWithPermissions), request[uint64(2)]
-			gotValue, ok := got.(uint64)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
+		assertCTAPRequest(t, fake, expectedCTAPRequest{
+			command: protocol.AuthenticatorClientPIN,
+			keys:    []uint64{1, 2, 3},
+			fields: map[uint64]uint64{
+				1: uint64(protocol.PinUvAuthProtocolOne),
+				2: uint64(protocol.ClientPINSubCommandGetPinUvAuthTokenUsingUvWithPermissions),
+			},
+		})
 	})
 
 	t.Run("get permissioned UV token includes permissions and RP ID", func(t *testing.T) {
@@ -1252,29 +1060,13 @@ func TestClientPINRequestShapes(t *testing.T) {
 			t.Errorf("got length %d, want %d", got, want)
 		}
 
-		command, request := fake.FirstCTAPRequestMap(t)
-		{
-			want, got := protocol.AuthenticatorClientPIN, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		assertRequestKeys(t, request, 1, 2, 3, 9, 10)
-		{
-			want, got := uint64(protocol.PermissionGetAssertion), request[uint64(9)]
-			gotValue, ok := got.(uint64)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		{
-			want, got := "example.com", request[uint64(10)]
-			gotValue, ok := got.(string)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+			command: protocol.AuthenticatorClientPIN,
+			keys:    []uint64{1, 2, 3, 9, 10},
+			fields:  map[uint64]uint64{9: uint64(protocol.PermissionGetAssertion)},
+		})
+		if got, want := requestString(t, request, uint64(10)), "example.com"; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	})
 }
@@ -1288,30 +1080,14 @@ func TestBioEnrollmentRequestShapeAndPINAuthParam(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorBioEnrollment, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	assertRequestKeys(t, request, 1, 2, 3, 4, 5)
-	{
-		want, got := uint64(protocol.BioModalityFingerprint), request[uint64(1)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(protocol.BioEnrollmentSubCommandEnrollBegin), request[uint64(2)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
+	request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorBioEnrollment,
+		keys:    []uint64{1, 2, 3, 4, 5},
+		fields: map[uint64]uint64{
+			1: uint64(protocol.BioModalityFingerprint),
+			2: uint64(protocol.BioEnrollmentSubCommandEnrollBegin),
+		},
+	})
 
 	params := protocol.BioEnrollmentSubCommandParams{TimeoutMilliseconds: timeoutMilliseconds}
 	paramsCBOR := encodeCBOR(t, params)
@@ -1320,13 +1096,9 @@ func TestBioEnrollmentRequestShapeAndPINAuthParam(t *testing.T) {
 		token,
 		slices.Concat([]byte{byte(protocol.BioModalityFingerprint), byte(protocol.BioEnrollmentSubCommandEnrollBegin)}, paramsCBOR),
 	)
-	{
-		want, got := expectedParam, request[uint64(5)]
-		gotValue, ok := got.([]byte)
 
-		if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := requestBytes(t, request, uint64(5)), expectedParam; got == nil != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -1338,30 +1110,14 @@ func TestCredentialManagementRequestShapeAndPINAuthParam(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorCredentialManagement, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	assertRequestKeys(t, request, 1, 3, 4)
-	{
-		want, got := uint64(protocol.CredentialManagementSubCommandGetCredsMetadata), request[uint64(1)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(3)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
+	request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorCredentialManagement,
+		keys:    []uint64{1, 3, 4},
+		fields: map[uint64]uint64{
+			1: uint64(protocol.CredentialManagementSubCommandGetCredsMetadata),
+			3: uint64(protocol.PinUvAuthProtocolOne),
+		},
+	})
 	{
 		want, got := crypto.Authenticate(protocol.PinUvAuthProtocolOne, token, []byte{byte(protocol.CredentialManagementSubCommandGetCredsMetadata)}), request[uint64(4)]
 		gotValue, ok := got.([]byte)
@@ -1431,17 +1187,11 @@ func TestCredentialEnumerationRejectsMissingOrZeroTotals(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected an error")
 			}
-			{
-				container, element := err.Error(), "spec violation"
-				if !strings.Contains(container, element) {
-					t.Errorf("value does not contain %#v", element)
-				}
+			if container, element := err.Error(), "spec violation"; !strings.Contains(container, element) {
+				t.Errorf("value does not contain %#v", element)
 			}
-			{
-				container, element := err.Error(), tc.field
-				if !strings.Contains(container, element) {
-					t.Errorf("value does not contain %#v", element)
-				}
+			if container, element := err.Error(), tc.field; !strings.Contains(container, element) {
+				t.Errorf("value does not contain %#v", element)
 			}
 		})
 	}
@@ -1462,11 +1212,8 @@ func TestNormalizeSelectionError(t *testing.T) {
 	t.Run("cancel write error is preserved", func(t *testing.T) {
 		cancelWriteErr := errors.New("cancel write failed")
 		err := normalizeSelectionError(cancelWriteErr)
-		{
-			err, target := err, cancelWriteErr
-			if !errors.Is(err, target) {
-				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-			}
+		if err, target := err, cancelWriteErr; !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 		}
 	})
 
@@ -1476,11 +1223,8 @@ func TestNormalizeSelectionError(t *testing.T) {
 			StatusCode: ctaptransport.CTAP1_ERR_INVALID_COMMAND,
 		}
 		err := normalizeSelectionError(want)
-		{
-			err, target := err, want
-			if !errors.Is(err, target) {
-				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-			}
+		if err, target := err, want; !errors.Is(err, target) {
+			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 		}
 	})
 }
@@ -1500,37 +1244,17 @@ func TestLargeBlobsRequestShapeAndPINAuthParam(t *testing.T) {
 		t.Fatalf("got non-empty value %#v", got)
 	}
 
-	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorLargeBlobs, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	assertRequestKeys(t, request, 2, 3, 4, 5, 6)
-	{
-		want, got := set, request[uint64(2)]
-		gotValue, ok := got.([]byte)
-
-		if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(offset), request[uint64(3)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(length), request[uint64(4)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorLargeBlobs,
+		keys:    []uint64{2, 3, 4, 5, 6},
+		fields: map[uint64]uint64{
+			3: uint64(offset),
+			4: uint64(length),
+			6: uint64(protocol.PinUvAuthProtocolOne),
+		},
+	})
+	if got, want := requestBytes(t, request, uint64(2)), set; got == nil != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	padding := bytes.Repeat([]byte{0xff}, 32)
@@ -1542,21 +1266,9 @@ func TestLargeBlobsRequestShapeAndPINAuthParam(t *testing.T) {
 		token,
 		slices.Concat(padding, []byte{0x0c, 0x00}, offsetBin, hash[:]),
 	)
-	{
-		want, got := expectedParam, request[uint64(5)]
-		gotValue, ok := got.([]byte)
 
-		if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(6)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := requestBytes(t, request, uint64(5)), expectedParam; got == nil != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -1575,22 +1287,11 @@ func TestLargeBlobsPreservesZeroLengthReadAndWritePresence(t *testing.T) {
 			t.Fatalf("got non-empty value %#v", got)
 		}
 
-		command, request := fake.FirstCTAPRequestMap(t)
-		{
-			want, got := protocol.AuthenticatorLargeBlobs, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		assertRequestKeys(t, request, 1, 3)
-		{
-			want, got := uint64(0), request[uint64(1)]
-			gotValue, ok := got.(uint64)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
+		assertCTAPRequest(t, fake, expectedCTAPRequest{
+			command: protocol.AuthenticatorLargeBlobs,
+			keys:    []uint64{1, 3},
+			fields:  map[uint64]uint64{1: 0},
+		})
 	})
 
 	t.Run("set empty", func(t *testing.T) {
@@ -1602,11 +1303,8 @@ func TestLargeBlobsPreservesZeroLengthReadAndWritePresence(t *testing.T) {
 		}
 
 		command, request := fake.FirstCTAPRequestMap(t)
-		{
-			want, got := protocol.AuthenticatorLargeBlobs, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := command, protocol.AuthenticatorLargeBlobs; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 		assertRequestKeys(t, request, 2, 3, 4)
 		if got := requestBytes(t, request, 2); len(got) != 0 {
@@ -1630,30 +1328,14 @@ func TestConfigRequestShapeAndPINAuthParam(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorConfig, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	assertRequestKeys(t, request, 1, 2, 3, 4)
-	{
-		want, got := uint64(protocol.ConfigSubCommandSetMinPINLength), request[uint64(1)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
-	{
-		want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(3)]
-		gotValue, ok := got.(uint64)
-
-		if !ok || gotValue != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
-	}
+	request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+		command: protocol.AuthenticatorConfig,
+		keys:    []uint64{1, 2, 3, 4},
+		fields: map[uint64]uint64{
+			1: uint64(protocol.ConfigSubCommandSetMinPINLength),
+			3: uint64(protocol.PinUvAuthProtocolOne),
+		},
+	})
 
 	paramsCBOR := encodeCBOR(t, params)
 	expectedParam := crypto.Authenticate(
@@ -1661,13 +1343,9 @@ func TestConfigRequestShapeAndPINAuthParam(t *testing.T) {
 		token,
 		slices.Concat(bytes.Repeat([]byte{0xff}, 32), []byte{0x0d, byte(protocol.ConfigSubCommandSetMinPINLength)}, paramsCBOR),
 	)
-	{
-		want, got := expectedParam, request[uint64(4)]
-		gotValue, ok := got.([]byte)
 
-		if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := requestBytes(t, request, uint64(4)), expectedParam; got == nil != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -1681,11 +1359,8 @@ func TestConfigRequestWithoutTokenOmitsAuthorization(t *testing.T) {
 	}
 
 	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorConfig, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorConfig; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	assertRequestKeys(t, request, 1, 2)
 	params, ok := request[uint64(2)].(map[any]any)
@@ -1711,11 +1386,8 @@ func TestSetMinPINLengthPreservesZeroMinimumAndOmitsEquivalentZeroValues(t *test
 	}
 
 	command, request := fake.FirstCTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorConfig, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorConfig; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	assertRequestKeys(t, request, 1, 2)
 
@@ -1737,22 +1409,11 @@ func TestEnableLongTouchForResetRequestShape(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		command, request := fake.FirstCTAPRequestMap(t)
-		{
-			want, got := protocol.AuthenticatorConfig, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		assertRequestKeys(t, request, 1)
-		{
-			want, got := uint64(protocol.ConfigSubCommandEnableLongTouchForReset), request[uint64(1)]
-			gotValue, ok := got.(uint64)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
+		assertCTAPRequest(t, fake, expectedCTAPRequest{
+			command: protocol.AuthenticatorConfig,
+			keys:    []uint64{1},
+			fields:  map[uint64]uint64{1: uint64(protocol.ConfigSubCommandEnableLongTouchForReset)},
+		})
 	})
 
 	t.Run("with authorization", func(t *testing.T) {
@@ -1768,22 +1429,11 @@ func TestEnableLongTouchForResetRequestShape(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		command, request := fake.FirstCTAPRequestMap(t)
-		{
-			want, got := protocol.AuthenticatorConfig, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-		assertRequestKeys(t, request, 1, 3, 4)
-		{
-			want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(3)]
-			gotValue, ok := got.(uint64)
-
-			if !ok || gotValue != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
+		request := assertCTAPRequest(t, fake, expectedCTAPRequest{
+			command: protocol.AuthenticatorConfig,
+			keys:    []uint64{1, 3, 4},
+			fields:  map[uint64]uint64{3: uint64(protocol.PinUvAuthProtocolOne)},
+		})
 		expectedParam := crypto.Authenticate(
 			protocol.PinUvAuthProtocolOne,
 			token,
@@ -1792,13 +1442,9 @@ func TestEnableLongTouchForResetRequestShape(t *testing.T) {
 				[]byte{0x0d, byte(protocol.ConfigSubCommandEnableLongTouchForReset)},
 			),
 		)
-		{
-			want, got := expectedParam, request[uint64(4)]
-			gotValue, ok := got.([]byte)
 
-			if !ok || ((gotValue == nil) != (want == nil) || !bytes.Equal(gotValue, want)) {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := requestBytes(t, request, uint64(4)), expectedParam; got == nil != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	})
 }

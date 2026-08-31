@@ -116,32 +116,23 @@ func TestGetInfoAlwaysRequestsCurrentDeviceInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := first.Versions, got.Versions
-		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := got.Versions, first.Versions; (got == nil) != (want == nil) || !slices.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	got, err = d.GetInfo(testContext)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := second.Versions, got.Versions
-		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := got.Versions, second.Versions; (got == nil) != (want == nil) || !slices.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	selected, err := d.requirePinUvAuthProtocol()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := protocol.PinUvAuthProtocolOne, selected
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := selected, protocol.PinUvAuthProtocolOne; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	requests := fake.Requests(t)
@@ -150,11 +141,8 @@ func TestGetInfoAlwaysRequestsCurrentDeviceInfo(t *testing.T) {
 	}
 	for _, request := range requests {
 		command, _ := request.CTAPPayload(t)
-		{
-			want, got := protocol.AuthenticatorGetInfo, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := command, protocol.AuthenticatorGetInfo; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	}
 }
@@ -173,11 +161,8 @@ func TestGetInfoCachedReportsValidityWithoutRequestingDeviceInfo(t *testing.T) {
 	if got := valid; !got {
 		t.Errorf("got false, want true")
 	}
-	{
-		want, got := initial.Versions, got.Versions
-		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := got.Versions, initial.Versions; (got == nil) != (want == nil) || !slices.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got := fake.Requests(t); len(got) != 0 {
 		t.Errorf("got non-empty value %#v", got)
@@ -188,11 +173,8 @@ func TestGetInfoCachedReportsValidityWithoutRequestingDeviceInfo(t *testing.T) {
 	if got := valid; got {
 		t.Errorf("got true, want false")
 	}
-	{
-		want, got := initial.Versions, got.Versions
-		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := got.Versions, initial.Versions; (got == nil) != (want == nil) || !slices.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got := fake.Requests(t); len(got) != 0 {
 		t.Errorf("got non-empty value %#v", got)
@@ -202,33 +184,24 @@ func TestGetInfoCachedReportsValidityWithoutRequestingDeviceInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := current.Versions, got.Versions
-		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := got.Versions, current.Versions; (got == nil) != (want == nil) || !slices.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	got, valid = d.GetInfoCached()
 	if got := valid; !got {
 		t.Errorf("got false, want true")
 	}
-	{
-		want, got := current.Versions, got.Versions
-		if (got == nil) != (want == nil) || !slices.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := got.Versions, current.Versions; (got == nil) != (want == nil) || !slices.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	requests := fake.Requests(t)
 	if got, want := len(requests), 1; got != want {
 		t.Fatalf("got length %d, want %d", got, want)
 	}
 	command, _ := requests[0].CTAPPayload(t)
-	{
-		want, got := protocol.AuthenticatorGetInfo, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorGetInfo; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -288,11 +261,8 @@ func TestRequirePinUvAuthProtocolSelectsFirstSupported(t *testing.T) {
 			d := &Device{info: protocol.AuthenticatorGetInfoResponse{PinUvAuthProtocols: tt.advertised}}
 			got, err := d.requirePinUvAuthProtocol()
 			if tt.want == 0 {
-				{
-					err, target := err, ErrNotSupported
-					if !errors.Is(err, target) {
-						t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-					}
+				if err, target := err, ErrNotSupported; !errors.Is(err, target) {
+					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 				}
 				return
 			}
@@ -300,11 +270,8 @@ func TestRequirePinUvAuthProtocolSelectsFirstSupported(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			{
-				want, got := tt.want, got
-				if got != want {
-					t.Errorf("got %#v, want %#v", got, want)
-				}
+			if got, want := got, tt.want; got != want {
+				t.Errorf("got %#v, want %#v", got, want)
 			}
 		})
 	}
@@ -338,42 +305,27 @@ func TestHIDCapabilitiesPreserveDeviceCommands(t *testing.T) {
 	if got := transport.winked; !got {
 		t.Errorf("got false, want true")
 	}
-	{
-		want, got := uint8(7), transport.lockSeconds
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := transport.lockSeconds, uint8(7); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	transport.pingResponse = []byte("different")
-	{
-		err, target := d.Ping(testContext, []byte("hello")), ErrPingPongMismatch
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := d.Ping(testContext, []byte("hello")), ErrPingPongMismatch; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 }
 
 func TestUnsupportedTransportRejectsHIDCommands(t *testing.T) {
 	d := &Device{transport: &optionTransport{}}
 
-	{
-		err, target := d.Ping(testContext, nil), ErrNotSupported
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := d.Ping(testContext, nil), ErrNotSupported; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
-	{
-		err, target := d.Wink(testContext), ErrNotSupported
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := d.Wink(testContext), ErrNotSupported; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
-	{
-		err, target := d.Lock(testContext, 1), ErrNotSupported
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := d.Lock(testContext, 1), ErrNotSupported; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 }
 

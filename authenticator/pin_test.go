@@ -38,11 +38,8 @@ func TestGetPinUvAuthTokenUsingPINValidatesPINBeforeCommand(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "0x00"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "0x00"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 	assertNoAuthenticatorIO(t, fake)
 }
@@ -60,17 +57,11 @@ func TestGetPinUvAuthTokenUsingPINRequiresPINChangeBeforeCommand(t *testing.T) {
 		protocol.PermissionCredentialManagement,
 		"",
 	)
-	{
-		err, target := err, ErrPinChangeRequired
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, ErrPinChangeRequired; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
-	{
-		container, element := err.Error(), "https://example.com/pin-policy"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "https://example.com/pin-policy"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 	assertNoAuthenticatorIO(t, fake)
 }
@@ -110,11 +101,8 @@ func TestGetPinUvAuthTokenUsingUVUsesPreviewRequestShape(t *testing.T) {
 	}
 
 	command, request := requests[0].CTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorClientPIN, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorClientPIN; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got, want := len(request), 2; got != want {
 		t.Errorf("got length %d, want %d", got, want)
@@ -137,11 +125,8 @@ func TestGetPinUvAuthTokenUsingUVUsesPreviewRequestShape(t *testing.T) {
 	}
 
 	command, request = requests[1].CTAPRequestMap(t)
-	{
-		want, got := protocol.AuthenticatorClientPIN, command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := command, protocol.AuthenticatorClientPIN; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got, want := len(request), 3; got != want {
 		t.Errorf("got length %d, want %d", got, want)
@@ -162,26 +147,14 @@ func TestGetPinUvAuthTokenUsingUVUsesPreviewRequestShape(t *testing.T) {
 			t.Errorf("got %#v, want %#v", got, want)
 		}
 	}
-	{
-		container, element := request, uint64(3)
-		_, ok := container[element]
-		if !ok {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if _, ok := request[uint64(3)]; !ok {
+		t.Errorf("value does not contain %#v", uint64(3))
 	}
-	{
-		container, element := request, uint64(9)
-		_, ok := container[element]
-		if ok {
-			t.Errorf("value unexpectedly contains %#v", element)
-		}
+	if _, ok := request[uint64(9)]; ok {
+		t.Errorf("value unexpectedly contains %#v", uint64(9))
 	}
-	{
-		container, element := request, uint64(10)
-		_, ok := container[element]
-		if ok {
-			t.Errorf("value unexpectedly contains %#v", element)
-		}
+	if _, ok := request[uint64(10)]; ok {
+		t.Errorf("value unexpectedly contains %#v", uint64(10))
 	}
 }
 
@@ -197,11 +170,8 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected an error")
 		}
-		{
-			container, element := err.Error(), "at least 4"
-			if !strings.Contains(container, element) {
-				t.Errorf("value does not contain %#v", element)
-			}
+		if container, element := err.Error(), "at least 4"; !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
 		}
 		assertNoAuthenticatorIO(t, fake)
 	})
@@ -218,11 +188,8 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected an error")
 		}
-		{
-			container, element := err.Error(), "at least 8"
-			if !strings.Contains(container, element) {
-				t.Errorf("value does not contain %#v", element)
-			}
+		if container, element := err.Error(), "at least 8"; !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
 		}
 		assertNoAuthenticatorIO(t, fake)
 	})
@@ -239,11 +206,8 @@ func TestSetPINValidatesPINBeforeCommand(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected an error")
 		}
-		{
-			container, element := err.Error(), "at most 8"
-			if !strings.Contains(container, element) {
-				t.Errorf("value does not contain %#v", element)
-			}
+		if container, element := err.Error(), "at most 8"; !strings.Contains(container, element) {
+			t.Errorf("value does not contain %#v", element)
 		}
 		assertNoAuthenticatorIO(t, fake)
 	})
@@ -258,22 +222,16 @@ func TestNormalizeAndValidateNewPINAppliesMaximumAfterNFCNormalization(t *testin
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := "\u00e9123", pin
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := pin, "\u00e9123"; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	_, err = d.normalizeAndValidateNewPIN("12345")
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "at most 4"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "at most 4"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 }
 
@@ -296,21 +254,15 @@ func TestSetPINAddsPINPolicyURLToAuthenticatorError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "https://example.com/pin-policy"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "https://example.com/pin-policy"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 	var ctapErr *ctaptransport.CTAPError
 	if err := err; !errors.As(err, &ctapErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaptransport.CTAP2_ERR_PIN_POLICY_VIOLATION, ctapErr.StatusCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ctapErr.StatusCode, ctaptransport.CTAP2_ERR_PIN_POLICY_VIOLATION; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -338,11 +290,8 @@ func TestSetPINDoesNotRequestGetInfo(t *testing.T) {
 	}
 	for _, request := range requests {
 		command, _ := request.CTAPPayload(t)
-		{
-			want, got := protocol.AuthenticatorClientPIN, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := command, protocol.AuthenticatorClientPIN; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	}
 }
@@ -403,11 +352,8 @@ func TestChangePINValidatesNewPINBeforeCommand(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "at least 8"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "at least 8"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 	assertNoAuthenticatorIO(t, fake)
 }
@@ -432,11 +378,8 @@ func TestChangePINRemainsAvailableWhenPINChangeIsRequired(t *testing.T) {
 	}
 	for _, request := range requests {
 		command, _ := request.CTAPPayload(t)
-		{
-			want, got := protocol.AuthenticatorClientPIN, command
-			if got != want {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := command, protocol.AuthenticatorClientPIN; got != want {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	}
 }

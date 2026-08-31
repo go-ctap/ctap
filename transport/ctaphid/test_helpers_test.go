@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 )
@@ -19,17 +18,11 @@ func requireCTAPHIDError(t testing.TB, err error, want Error) {
 	if err := err; !errors.As(err, &response) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := want, response.ErrorCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := response.ErrorCode, want; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := byte(want), byte(response.ErrorCode)
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := byte(response.ErrorCode), byte(want); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	{
 		err, want := err, want.String()
@@ -63,49 +56,31 @@ func assertSingleReportRequest(t testing.TB, written []byte, cid ChannelID, cmd 
 	if got, want := len(written), hidReportPacketSize; got != want {
 		t.Fatalf("got length %d, want %d", got, want)
 	}
-	{
-		want, got := byte(0), written[0]
-		if got != want {
-			t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("report ID"))
-		}
+	if got, want := written[0], byte(0); got != want {
+		t.Errorf("got %#v, want %#v; context: %s", got, want, "report ID")
 	}
 
 	raw := written[1:]
-	{
-		want, got := cid[:], raw[:4]
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("CID"))
-		}
+	if got, want := raw[:4], cid[:]; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v; context: %s", got, want, "CID")
 	}
-	{
-		want, got := byte(cmd)|INIT_PACKET_BIT, raw[4]
-		if got != want {
-			t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("command"))
-		}
+	if got, want := raw[4], byte(cmd)|INIT_PACKET_BIT; got != want {
+		t.Errorf("got %#v, want %#v; context: %s", got, want, "command")
 	}
-	{
-		want, got := uint16(len(data)), binary.BigEndian.Uint16(raw[5:7])
-		if got != want {
-			t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("BCNT"))
-		}
+	if got, want := binary.BigEndian.Uint16(raw[5:7]), uint16(len(data)); got != want {
+		t.Errorf("got %#v, want %#v; context: %s", got, want, "BCNT")
 	}
 	if len(data) == 0 {
 		if got := raw[initPacketHeaderSize : initPacketHeaderSize+len(data)]; len(got) != 0 {
 			t.Errorf("got non-empty value %#v", got)
 		}
 	} else {
-		{
-			want, got := data, raw[initPacketHeaderSize:initPacketHeaderSize+len(data)]
-			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
-		}
-	}
-	{
-		want, got := make([]byte, initPacketDataSize-len(data)), raw[initPacketHeaderSize+len(data):]
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		if got, want := raw[initPacketHeaderSize:initPacketHeaderSize+len(data)], data; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
 			t.Errorf("got %#v, want %#v", got, want)
 		}
+	}
+	if got, want := raw[initPacketHeaderSize+len(data):], make([]byte, initPacketDataSize-len(data)); (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 

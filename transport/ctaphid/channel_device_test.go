@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"sync"
 	"testing"
@@ -40,11 +39,8 @@ func TestChannelDeviceFiltersReports(t *testing.T) {
 
 	want := rawResponseReport(cid, CTAPHID_CBOR, []byte{byte(ctaptransport.CTAP2_OK)})
 	dev.reads <- want
-	{
-		want, got := want, readChannelReport(t, channel)
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := readChannelReport(t, channel), want; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -69,7 +65,7 @@ func TestChannelDeviceSwitchesCID(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := report; got != nil {
-		t.Errorf("got %#v, want nil; context: %s", got, fmt.Sprint("reports queued for the previous CID must be discarded"))
+		t.Errorf("got %#v, want nil; context: %s", got, "reports queued for the previous CID must be discarded")
 	}
 	if got := channel.enqueue(broadcast); got {
 		t.Errorf("got true, want false")
@@ -83,11 +79,8 @@ func TestChannelDeviceSwitchesCID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := allocated, report
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := report, allocated; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -105,11 +98,8 @@ func TestChannelDeviceReadsReportInParts(t *testing.T) {
 	dev.reads <- bytes.Clone(want[:17])
 	dev.reads <- bytes.Clone(want[17:])
 
-	{
-		want, got := want, readChannelReport(t, channel)
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := readChannelReport(t, channel), want; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -130,17 +120,11 @@ func TestChannelDeviceStopLeavesDeviceOpen(t *testing.T) {
 	default:
 	}
 	_, err := channel.nextReport()
-	{
-		err, target := err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.Canceled; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
-	{
-		err, target := err, io.ErrClosedPipe
-		if errors.Is(err, target) {
-			t.Fatalf("got error %v, unexpectedly matches %#v", err, target)
-		}
+	if err, target := err, io.ErrClosedPipe; errors.Is(err, target) {
+		t.Fatalf("got error %v, unexpectedly matches %#v", err, target)
 	}
 	if err := dev.Close(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -166,21 +150,15 @@ func TestChannelDeviceCloseCancelsReaderBeforeWaiting(t *testing.T) {
 		t.Fatal("Close did not close the underlying device")
 	}
 	_, err := channel.nextReport()
-	{
-		err, target := err, io.ErrClosedPipe
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, io.ErrClosedPipe; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	var readErr *ctaptransport.IOError
 	if err := err; !errors.As(err, &readErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaptransport.IORead, readErr.Operation
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := readErr.Operation, ctaptransport.IORead; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -195,11 +173,8 @@ func readChannelReport(t *testing.T, channel *channelDevice) []byte {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := hidPacketSize, n
-		if got != want {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
+	if got, want := n, hidPacketSize; got != want {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 	return report
 }

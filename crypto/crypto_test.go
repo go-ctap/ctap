@@ -28,11 +28,8 @@ func TestCompressDecompress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := origDataForCompress, decompressed
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := decompressed, origDataForCompress; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -46,22 +43,16 @@ func TestCompressDecompressLargeBlobData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := origDataForCompress, decompressed
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := decompressed, origDataForCompress; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	_, err = DecompressLargeBlobData(compressed, uint(len(origDataForCompress)-1))
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "orig size mismatch"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "orig size mismatch"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 }
 
@@ -89,11 +80,8 @@ func TestEncryptDecryptLargeBlob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := uint(len(origData)), encryptedBlob.OrigSize
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := encryptedBlob.OrigSize, uint(len(origData)); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got, want := len(encryptedBlob.Nonce), 12; got != want {
 		t.Errorf("got length %d, want %d", got, want)
@@ -107,11 +95,8 @@ func TestEncryptDecryptLargeBlob(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	{
-		want, got := decryptedOrigData, origData
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := origData, decryptedOrigData; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	compressed, err := OpenLargeBlob(encKey, encryptedBlob)
@@ -122,11 +107,8 @@ func TestEncryptDecryptLargeBlob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := origData, openedOrigData
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := openedOrigData, origData; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -172,22 +154,16 @@ func TestLargeBlobRejectsInvalidKeyLength(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "large blob key length"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "large blob key length"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 
 	_, err = DecryptLargeBlob(shortKey, protocol.LargeBlob{})
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "large blob key length"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "large blob key length"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 }
 
@@ -203,11 +179,8 @@ func TestDecryptLargeBlobRejectsInvalidNonceLength(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "nonce length"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "nonce length"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 }
 
@@ -219,11 +192,8 @@ func TestDecryptLargeBlobRejectsMismatchedDecompressedSize(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "orig size mismatch"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "orig size mismatch"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 }
 
@@ -266,11 +236,8 @@ func TestPinUvAuthProtocolEncapsulateAndEncryptDecrypt(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			{
-				want, got := sharedSecret, authenticatorSharedSecret
-				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-					t.Errorf("got %#v, want %#v", got, want)
-				}
+			if got, want := authenticatorSharedSecret, sharedSecret; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Errorf("got %#v, want %#v", got, want)
 			}
 
 			plaintext := []byte("16-byte block...")
@@ -286,11 +253,8 @@ func TestPinUvAuthProtocolEncapsulateAndEncryptDecrypt(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			{
-				want, got := plaintext, decrypted
-				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-					t.Errorf("got %#v, want %#v", got, want)
-				}
+			if got, want := decrypted, plaintext; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Errorf("got %#v, want %#v", got, want)
 			}
 		})
 	}
@@ -338,11 +302,8 @@ func TestAuthenticateDispatchesByProtocol(t *testing.T) {
 	if got, want := len(protocolTwoMAC), 32; got != want {
 		t.Errorf("got length %d, want %d", got, want)
 	}
-	{
-		want, got := Authenticate(protocol.PinUvAuthProtocolTwo, sharedSecret32, message), protocolTwoMAC
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := protocolTwoMAC, Authenticate(protocol.PinUvAuthProtocolTwo, sharedSecret32, message); (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 

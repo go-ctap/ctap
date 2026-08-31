@@ -66,11 +66,8 @@ func TestDecryptDeviceIdentifierAndCredentialStoreState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := deviceIdentifier, gotDeviceIdentifier[:]
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := gotDeviceIdentifier[:], deviceIdentifier; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	gotCredentialStoreState, err := DecryptCredentialStoreState(
@@ -80,22 +77,16 @@ func TestDecryptDeviceIdentifierAndCredentialStoreState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := credentialStoreState, gotCredentialStoreState[:]
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := gotCredentialStoreState[:], credentialStoreState; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	wrongLabel, err := DecryptCredentialStoreState(persistentPinUvAuthToken, encIdentifier)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := deviceIdentifier, wrongLabel[:]
-		if (got == nil) == (want == nil) && bytes.Equal(got, want) {
-			t.Errorf("got %#v, want a value different from %#v", got, want)
-		}
+	if got, want := wrongLabel[:], deviceIdentifier; (got == nil) == (want == nil) && bytes.Equal(got, want) {
+		t.Errorf("got %#v, want a value different from %#v", got, want)
 	}
 }
 
@@ -130,11 +121,8 @@ func TestDecryptCredentialStoreStateAcceptsRegeneratedIV(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	{
-		want, got := first, second
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := second, first; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -143,32 +131,23 @@ func TestDecryptGetInfoMembersValidateInput(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "persistentPinUvAuthToken must not be empty"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "persistentPinUvAuthToken must not be empty"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 
 	_, err = DecryptDeviceIdentifier(make([]byte, 32), make([]byte, 31))
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "encIdentifier must be exactly 32 bytes"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "encIdentifier must be exactly 32 bytes"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 
 	_, err = DecryptCredentialStoreState(make([]byte, 32), make([]byte, 31))
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	{
-		container, element := err.Error(), "encCredStoreState must be exactly 32 bytes"
-		if !strings.Contains(container, element) {
-			t.Errorf("value does not contain %#v", element)
-		}
+	if container, element := err.Error(), "encCredStoreState must be exactly 32 bytes"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
 	}
 }

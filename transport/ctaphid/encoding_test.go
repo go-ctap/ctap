@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"testing"
 )
 
@@ -53,17 +52,11 @@ func TestNewMessage(t *testing.T) {
 
 		for i, expectedPacket := range responsePackets {
 			chunk := writtenBytes[i*hidReportPacketSize : (i+1)*hidReportPacketSize]
-			{
-				want, got := byte(0), chunk[0]
-				if got != want {
-					t.Errorf("got %#v, want %#v", got, want)
-				}
+			if got, want := chunk[0], byte(0); got != want {
+				t.Errorf("got %#v, want %#v", got, want)
 			}
-			{
-				want, got := expectedPacket, chunk[1:]
-				if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-					t.Errorf("got %#v, want %#v", got, want)
-				}
+			if got, want := chunk[1:], expectedPacket; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+				t.Errorf("got %#v, want %#v", got, want)
 			}
 		}
 	}
@@ -99,11 +92,8 @@ func TestNewMessageFramesSpecPayloadBoundaries(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			{
-				want, got := int64(tc.packetCount*hidReportPacketSize), n
-				if got != want {
-					t.Fatalf("got %#v, want %#v", got, want)
-				}
+			if got, want := n, int64(tc.packetCount*hidReportPacketSize); got != want {
+				t.Fatalf("got %#v, want %#v", got, want)
 			}
 
 			written := buf.Bytes()
@@ -113,72 +103,45 @@ func TestNewMessageFramesSpecPayloadBoundaries(t *testing.T) {
 
 			for packetIndex := range tc.packetCount {
 				chunk := written[packetIndex*hidReportPacketSize : (packetIndex+1)*hidReportPacketSize]
-				{
-					want, got := byte(0), chunk[0]
-					if got != want {
-						t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("report ID"))
-					}
+				if got, want := chunk[0], byte(0); got != want {
+					t.Errorf("got %#v, want %#v; context: %s", got, want, "report ID")
 				}
 
 				raw := chunk[1:]
-				{
-					want, got := cid[:], raw[:4]
-					if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-						t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("CID"))
-					}
+				if got, want := raw[:4], cid[:]; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+					t.Errorf("got %#v, want %#v; context: %s", got, want, "CID")
 				}
 
 				if packetIndex == 0 {
-					{
-						want, got := byte(CTAPHID_PING)|INIT_PACKET_BIT, raw[4]
-						if got != want {
-							t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("init command byte"))
-						}
+					if got, want := raw[4], byte(CTAPHID_PING)|INIT_PACKET_BIT; got != want {
+						t.Errorf("got %#v, want %#v; context: %s", got, want, "init command byte")
 					}
-					{
-						want, got := uint16(tc.payloadLen), binary.BigEndian.Uint16(raw[5:7])
-						if got != want {
-							t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("BCNT"))
-						}
+					if got, want := binary.BigEndian.Uint16(raw[5:7]), uint16(tc.payloadLen); got != want {
+						t.Errorf("got %#v, want %#v; context: %s", got, want, "BCNT")
 					}
 
 					dataLen := min(tc.payloadLen, initPacketDataSize)
-					{
-						want, got := payload[:dataLen], raw[initPacketHeaderSize:initPacketHeaderSize+dataLen]
-						if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-							t.Errorf("got %#v, want %#v", got, want)
-						}
+					if got, want := raw[initPacketHeaderSize:initPacketHeaderSize+dataLen], payload[:dataLen]; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+						t.Errorf("got %#v, want %#v", got, want)
 					}
-					{
-						want, got := make([]byte, initPacketDataSize-dataLen), raw[initPacketHeaderSize+dataLen:]
-						if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-							t.Errorf("got %#v, want %#v", got, want)
-						}
+					if got, want := raw[initPacketHeaderSize+dataLen:], make([]byte, initPacketDataSize-dataLen); (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+						t.Errorf("got %#v, want %#v", got, want)
 					}
 					continue
 				}
 
 				sequence := packetIndex - 1
-				{
-					want, got := byte(sequence), raw[4]
-					if got != want {
-						t.Errorf("got %#v, want %#v; context: %s", got, want, fmt.Sprint("continuation sequence"))
-					}
+				if got, want := raw[4], byte(sequence); got != want {
+					t.Errorf("got %#v, want %#v; context: %s", got, want, "continuation sequence")
 				}
 
 				offset := initPacketDataSize + sequence*continuationPacketDataSize
 				dataLen := min(tc.payloadLen-offset, continuationPacketDataSize)
-				{
-					want, got := payload[offset:offset+dataLen], raw[continuationPacketHeaderSize:continuationPacketHeaderSize+dataLen]
-					if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-						t.Errorf("got %#v, want %#v", got, want)
-					}
+				if got, want := raw[continuationPacketHeaderSize:continuationPacketHeaderSize+dataLen], payload[offset:offset+dataLen]; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+					t.Errorf("got %#v, want %#v", got, want)
 				}
-				{
-					want, got := make([]byte, continuationPacketDataSize-dataLen), raw[continuationPacketHeaderSize+dataLen:]
-					if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-						t.Errorf("got %#v, want %#v", got, want)
-					}
+				if got, want := raw[continuationPacketHeaderSize+dataLen:], make([]byte, continuationPacketDataSize-dataLen); (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+					t.Errorf("got %#v, want %#v", got, want)
 				}
 			}
 		})

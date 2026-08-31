@@ -39,11 +39,8 @@ func (c *fakeCard) Transmit(ctx context.Context, apdu []byte) ([]byte, error) {
 	}
 	next := c.exchanges[0]
 	c.exchanges = c.exchanges[1:]
-	{
-		want, got := next.request, apdu
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			c.t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := apdu, next.request; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		c.t.Errorf("got %#v, want %#v", got, want)
 	}
 	response := bytes.Clone(next.response)
 	if next.after != nil {
@@ -148,14 +145,11 @@ func TestNewRejectsUnsupportedSelectionVersion(t *testing.T) {
 
 	_, err := New(context.Background(), card)
 
-	{
-		err, target := err, ErrUnsupportedVersion
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, ErrUnsupportedVersion; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	if got := card.closed; got {
-		t.Errorf("got true, want false; context: %s", fmt.Sprint("the caller retains ownership when initialization fails"))
+		t.Errorf("got true, want false; context: %s", "the caller retains ownership when initialization fails")
 	}
 }
 
@@ -209,11 +203,8 @@ func TestCBORUsesShortCommandChaining(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := ctaptransport.CTAP2_OK, response.StatusCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := response.StatusCode, ctaptransport.CTAP2_OK; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got := card.exchanges; len(got) != 0 {
 		t.Fatalf("got non-empty value %#v", got)
@@ -306,11 +297,8 @@ func TestCBORCancelsStatusPollingWithContext(t *testing.T) {
 
 	_, err := transport.CBOR(ctx, []byte{0x04})
 
-	{
-		err, target := err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.Canceled; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	if got := card.closed; got {
 		t.Errorf("got true, want false")
@@ -336,11 +324,8 @@ func TestCBORInvalidatesTransportWhenStatusCancellationIsRejected(t *testing.T) 
 
 	_, err := transport.CBOR(ctx, []byte{0x04})
 
-	{
-		err, target := err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.Canceled; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; !got {
@@ -349,11 +334,8 @@ func TestCBORInvalidatesTransportWhenStatusCancellationIsRejected(t *testing.T) 
 	if got := card.closed; !got {
 		t.Errorf("got false, want true")
 	}
-	{
-		want, got := 1, card.closeCalls
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := card.closeCalls, 1; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got := card.exchanges; len(got) != 0 {
 		t.Fatalf("got non-empty value %#v", got)
@@ -373,11 +355,8 @@ func TestCBORPreservesFinalResponseWhenContextIsCanceledConcurrently(t *testing.
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := ctaptransport.CTAP2_OK, response.StatusCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := response.StatusCode, ctaptransport.CTAP2_OK; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	{
 		want, got := []byte{0xa0}, response.Data
@@ -402,17 +381,11 @@ func TestCBORReturnsTypedCTAPError(t *testing.T) {
 	if err := err; !errors.As(err, &ctapErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := protocol.AuthenticatorGetInfo, ctapErr.Command
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ctapErr.Command, protocol.AuthenticatorGetInfo; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := ctaptransport.CTAP2_ERR_INVALID_CBOR, ctapErr.StatusCode
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ctapErr.StatusCode, ctaptransport.CTAP2_ERR_INVALID_CBOR; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -428,17 +401,11 @@ func TestCBORReturnsTypedAPDUError(t *testing.T) {
 	if err := err; !errors.As(err, &apduErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := byte(0x6a), apduErr.SW1
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := apduErr.SW1, byte(0x6a); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := byte(0x82), apduErr.SW2
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := apduErr.SW2, byte(0x82); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -462,11 +429,8 @@ func TestCBORRejectsMalformedResponses(t *testing.T) {
 
 			_, err := transport.CBOR(context.Background(), []byte{0x04})
 
-			{
-				err, target := err, baseiso7816.ErrInvalidResponse
-				if !errors.Is(err, target) {
-					t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-				}
+			if err, target := err, baseiso7816.ErrInvalidResponse; !errors.Is(err, target) {
+				t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 			}
 		})
 	}
@@ -484,11 +448,8 @@ func TestCBORRejectsUnexpectedIntermediateData(t *testing.T) {
 
 	_, err := transport.CBOR(context.Background(), command)
 
-	{
-		err, target := err, baseiso7816.ErrInvalidResponse
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, baseiso7816.ErrInvalidResponse; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 }
 
@@ -507,11 +468,8 @@ func TestCBORValidatesCommandBeforeIO(t *testing.T) {
 			t.Fatalf("got error %v, want %q", err, want)
 		}
 	}
-	{
-		err, target := largeErr, ErrCommandTooLarge
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := largeErr, ErrCommandTooLarge; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	if got := card.exchanges; len(got) != 0 {
 		t.Fatalf("got non-empty value %#v", got)
@@ -527,28 +485,22 @@ func TestNewPropagatesTransmitError(t *testing.T) {
 
 	_, err := New(context.Background(), card)
 
-	{
-		err, target := err, wantErr
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, wantErr; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	var ioErr *ctaptransport.IOError
 	if err := err; !errors.As(err, &ioErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaptransport.IOTransmit, ioErr.Operation
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ioErr.Operation, ctaptransport.IOTransmit; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; got {
 		t.Errorf("got true, want false")
 	}
 	if got := card.closed; got {
-		t.Errorf("got true, want false; context: %s", fmt.Sprint("the caller retains ownership when initialization fails"))
+		t.Errorf("got true, want false; context: %s", "the caller retains ownership when initialization fails")
 	}
 }
 
@@ -572,21 +524,15 @@ func TestCBORClosesCardAfterTransmitFailure(t *testing.T) {
 
 	_, err := transport.CBOR(context.Background(), []byte{0x04})
 
-	{
-		err, target := err, wantErr
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, wantErr; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	var ioErr *ctaptransport.IOError
 	if err := err; !errors.As(err, &ioErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaptransport.IOTransmit, ioErr.Operation
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ioErr.Operation, ctaptransport.IOTransmit; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; !got {
@@ -595,11 +541,8 @@ func TestCBORClosesCardAfterTransmitFailure(t *testing.T) {
 	if got := card.closed; !got {
 		t.Errorf("got false, want true")
 	}
-	{
-		want, got := 1, card.closeCalls
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := card.closeCalls, 1; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -613,11 +556,8 @@ func TestCBORDoesNotCloseCardForOwnContextCancellation(t *testing.T) {
 
 	_, err := transport.CBOR(ctx, []byte{0x04})
 
-	{
-		err, target := err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.Canceled; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; got {
@@ -635,11 +575,8 @@ func TestNewPreCanceledDoesNotTransmit(t *testing.T) {
 
 	_, err := New(ctx, card)
 
-	{
-		err, target := err, context.Canceled
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, context.Canceled; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	if got := card.exchanges; len(got) != 0 {
 		t.Fatalf("got non-empty value %#v", got)
@@ -662,11 +599,8 @@ func TestCloseEndsSessionAndClosesCardOnce(t *testing.T) {
 	if got := card.closed; !got {
 		t.Errorf("got false, want true")
 	}
-	{
-		want, got := 1, card.closeCalls
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := card.closeCalls, 1; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got := card.exchanges; len(got) != 0 {
 		t.Fatalf("got non-empty value %#v", got)
@@ -683,21 +617,15 @@ func TestCloseReturnsTypedIOError(t *testing.T) {
 
 	err := transport.Close()
 
-	{
-		err, target := err, wantErr
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, wantErr; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	var ioErr *ctaptransport.IOError
 	if err := err; !errors.As(err, &ioErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaptransport.IOClose, ioErr.Operation
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ioErr.Operation, ctaptransport.IOClose; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
 
@@ -713,26 +641,17 @@ func TestCloseClosesCardWhenEndSessionIsRejected(t *testing.T) {
 	if err := err; !errors.As(err, &apduErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := byte(0x6a), apduErr.SW1
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := apduErr.SW1, byte(0x6a); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := byte(0x86), apduErr.SW2
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := apduErr.SW2, byte(0x86); got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got := card.closed; !got {
 		t.Errorf("got false, want true")
 	}
-	{
-		want, got := 1, card.closeCalls
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := card.closeCalls, 1; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	if got := card.exchanges; len(got) != 0 {
 		t.Fatalf("got non-empty value %#v", got)
@@ -754,21 +673,15 @@ func TestCloseInterruptsBlockedTransmit(t *testing.T) {
 	}
 	err := receive(t, resultc, "blocked transmit did not stop after close")
 
-	{
-		err, target := err, io.ErrClosedPipe
-		if !errors.Is(err, target) {
-			t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
-		}
+	if err, target := err, io.ErrClosedPipe; !errors.Is(err, target) {
+		t.Fatalf("got error %v, want errors.Is(error, %#v)", err, target)
 	}
 	var ioErr *ctaptransport.IOError
 	if err := err; !errors.As(err, &ioErr) {
 		t.Fatalf("error %v does not match requested type", err)
 	}
-	{
-		want, got := ctaptransport.IOTransmit, ioErr.Operation
-		if got != want {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := ioErr.Operation, ctaptransport.IOTransmit; got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 	_, invalidated := errors.AsType[*ctaptransport.DeviceInvalidatedError](err)
 	if got := invalidated; !got {

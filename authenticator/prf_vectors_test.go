@@ -33,23 +33,14 @@ func TestWebAuthnPRFReferenceVectors(t *testing.T) {
 		First:  firstInput,
 		Second: secondInput,
 	})
-	{
-		want, got := slices.Concat(firstSalt, secondSalt), salts
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := salts, slices.Concat(firstSalt, secondSalt); (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := firstOutput, hmacSHA256(credentialRandom, firstSalt)
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := hmacSHA256(credentialRandom, firstSalt), firstOutput; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
-	{
-		want, got := secondOutput, hmacSHA256(credentialRandom, secondSalt)
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := hmacSHA256(credentialRandom, secondSalt), secondOutput; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 
 	curve := ecdh.P256()
@@ -72,11 +63,8 @@ func TestWebAuthnPRFReferenceVectors(t *testing.T) {
 
 	t.Run("PIN UV protocol one", func(t *testing.T) {
 		sharedSecret := protocolone.KDF(ecdhSecret)
-		{
-			want, got := decodePRFVector(t, "23e5ed7157c25892b77732fb9c8a107e3518800db2af4142f9f4adfacb771d39"), sharedSecret
-			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := sharedSecret, decodePRFVector(t, "23e5ed7157c25892b77732fb9c8a107e3518800db2af4142f9f4adfacb771d39"); (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 
 		saltEnc := decodePRFVector(t, "ab8c878bb05d04700f077ed91845ec9c503c925cb12b327ddbeb4243c397f913")
@@ -88,11 +76,8 @@ func TestWebAuthnPRFReferenceVectors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		{
-			want, got := saltEnc, gotSaltEnc
-			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := gotSaltEnc, saltEnc; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 	})
 
@@ -101,11 +86,8 @@ func TestWebAuthnPRFReferenceVectors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		{
-			want, got := decodePRFVector(t, "0c63083de8170101d38bcf8bd72309568ddb4550867e23404b35d85712f7c20d8bc911ee23c06034cbc14290b9669bec07739053c5a416e313ef905c79955876"), sharedSecret
-			if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-				t.Errorf("got %#v, want %#v", got, want)
-			}
+		if got, want := sharedSecret, decodePRFVector(t, "0c63083de8170101d38bcf8bd72309568ddb4550867e23404b35d85712f7c20d8bc911ee23c06034cbc14290b9669bec07739053c5a416e313ef905c79955876"); (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
 		}
 
 		assertPRFVectorDecryption(
@@ -168,10 +150,7 @@ func assertPRFVectorDecryption(
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	{
-		want, got := want, got
-		if (got == nil) != (want == nil) || !bytes.Equal(got, want) {
-			t.Errorf("got %#v, want %#v", got, want)
-		}
+	if got, want := got, want; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
