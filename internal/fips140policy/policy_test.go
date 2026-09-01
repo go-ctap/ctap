@@ -1,6 +1,7 @@
 package fips140policy
 
 import (
+	cryptofips140 "crypto/fips140"
 	"errors"
 	"slices"
 	"testing"
@@ -21,7 +22,7 @@ func TestFilterCredentialParametersPassesEmptyInputThrough(t *testing.T) {
 }
 
 func TestFilterCredentialParameters(t *testing.T) {
-	if !ctapfips140.Required() {
+	if !cryptofips140.Enabled() {
 		t.Skip("requires Go FIPS 140-3 mode")
 	}
 
@@ -79,7 +80,7 @@ func TestFilterCredentialParameters(t *testing.T) {
 }
 
 func TestFilterPreviewSignAlgorithms(t *testing.T) {
-	if !ctapfips140.Required() {
+	if !cryptofips140.Enabled() {
 		t.Skip("requires Go FIPS 140-3 mode")
 	}
 

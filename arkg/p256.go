@@ -3,6 +3,7 @@ package arkg
 import (
 	"crypto"
 	"crypto/ecdh"
+	cryptofips140 "crypto/fips140"
 	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -28,11 +29,11 @@ var p256ScalarOrder = new(big.Int).SetBytes([]byte{
 
 // DeriveP256 derives a P-256 public key and its key handle from an ARKG-P256
 // public seed. inputKeyMaterial should contain at least 256 bits of entropy.
-// It returns [fips140.ErrNotAllowed] when FIPS 140-3 mode is required because
+// It returns [fips140.ErrNotAllowed] when FIPS 140-3 mode is enabled because
 // the implementation uses cryptography outside the Go Cryptographic Module.
 func DeriveP256(publicSeed cose.Key, inputKeyMaterial, context []byte) (cose.Key, []byte, error) {
-	if fips140.Required() {
-		return nil, nil, &fips140.NotAllowedError{Operation: "ARKG-P256"}
+	if cryptofips140.Enabled() {
+		return nil, nil, &fips140.PolicyError{Operation: "ARKG-P256"}
 	}
 
 	// Validate the ARKG-P256 inputs and COSE binding.

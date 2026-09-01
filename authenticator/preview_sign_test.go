@@ -2,6 +2,7 @@ package authenticator
 
 import (
 	"bytes"
+	"crypto/fips140"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -14,7 +15,6 @@ import (
 	"github.com/telesma-app/ctap/cose"
 	"github.com/telesma-app/ctap/credential"
 	"github.com/telesma-app/ctap/extension"
-	"github.com/telesma-app/ctap/fips140"
 	"github.com/telesma-app/ctap/internal/testhid"
 	"github.com/telesma-app/ctap/protocol"
 	"github.com/telesma-app/ctap/webauthn"
@@ -73,7 +73,7 @@ func previewSignAuthDataWithSignCount(
 func TestMakeCredentialPreviewSign(t *testing.T) {
 	algorithm := cose.AlgorithmESP256SplitARKGPlaceholder
 	requestedAlgorithms := []cose.Algorithm{algorithm}
-	if fips140.Required() {
+	if fips140.Enabled() {
 		algorithm = cose.AlgorithmES256
 		requestedAlgorithms = []cose.Algorithm{
 			cose.AlgorithmES256K,
@@ -295,7 +295,7 @@ func TestGetAssertionPreviewSign(t *testing.T) {
 func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 	t.Run("MakeCredential maps user verification to signing flags", func(t *testing.T) {
 		algorithm := cose.AlgorithmESP256SplitARKGPlaceholder
-		if fips140.Required() {
+		if fips140.Enabled() {
 			algorithm = cose.AlgorithmES256
 		}
 		input, err := validateCreatePreviewSign(

@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	cryptofips140 "crypto/fips140"
 	"errors"
 	"slices"
 	"testing"
@@ -434,7 +435,7 @@ func TestFIPS140GetPINRetriesAllowsOmittedProtocol(t *testing.T) {
 
 func requireFIPS140(t testing.TB) {
 	t.Helper()
-	if !ctapfips140.Required() {
+	if !cryptofips140.Enabled() {
 		t.Skip("requires Go FIPS 140-3 mode")
 	}
 }

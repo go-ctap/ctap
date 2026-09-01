@@ -3,6 +3,7 @@ package arkg
 import (
 	"bytes"
 	"crypto/ecdh"
+	cryptofips140 "crypto/fips140"
 	"encoding/hex"
 	"errors"
 	"strings"
@@ -287,7 +288,7 @@ func TestDeriveP256RejectsLongContext(t *testing.T) {
 }
 
 func TestDeriveP256RejectsFIPS140Mode(t *testing.T) {
-	if !fips140.Required() {
+	if !cryptofips140.Enabled() {
 		t.Skip("FIPS 140-3 mode is not enabled")
 	}
 
@@ -295,9 +296,9 @@ func TestDeriveP256RejectsFIPS140Mode(t *testing.T) {
 	if !errors.Is(err, fips140.ErrNotAllowed) {
 		t.Fatalf("got error %v, want %v", err, fips140.ErrNotAllowed)
 	}
-	var notAllowed *fips140.NotAllowedError
+	var notAllowed *fips140.PolicyError
 	if !errors.As(err, &notAllowed) {
-		t.Fatalf("got error type %T, want *fips140.NotAllowedError", err)
+		t.Fatalf("got error type %T, want *fips140.PolicyError", err)
 	}
 	if got, want := notAllowed.Operation, "ARKG-P256"; got != want {
 		t.Fatalf("got operation %q, want %q", got, want)
@@ -311,7 +312,7 @@ func TestDeriveP256RejectsFIPS140Mode(t *testing.T) {
 }
 
 func FuzzDeriveP256(f *testing.F) {
-	if fips140.Required() {
+	if cryptofips140.Enabled() {
 		f.Skip("FIPS 140-3 mode is enabled")
 	}
 
@@ -333,7 +334,7 @@ func FuzzDeriveP256(f *testing.F) {
 
 func skipWhenFIPS140Required(t *testing.T) {
 	t.Helper()
-	if fips140.Required() {
+	if cryptofips140.Enabled() {
 		t.Skip("FIPS 140-3 mode is enabled")
 	}
 }

@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/fips140"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -15,7 +16,6 @@ import (
 	"github.com/telesma-app/ctap/credential"
 	"github.com/telesma-app/ctap/crypto"
 	"github.com/telesma-app/ctap/diagnostic"
-	ctapfips140 "github.com/telesma-app/ctap/fips140"
 	"github.com/telesma-app/ctap/internal/fips140policy"
 	pinvalidation "github.com/telesma-app/ctap/internal/pin"
 	"github.com/telesma-app/ctap/options"
@@ -87,7 +87,7 @@ func (cl *Client) MakeCredential(
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
 	requestExtensions.CreatePreviewSignInput.PreviewSign.Algorithms = previewSignAlgorithms
-	if ctapfips140.Required() {
+	if fips140.Enabled() {
 		if err := validateFIPS140HMACSecret(requestExtensions.CreateHMACSecretMCInput.HMACSecret); err != nil {
 			return protocol.AuthenticatorMakeCredentialResponse{}, err
 		}
@@ -163,7 +163,7 @@ func (cl *Client) GetAssertion(
 			yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 			return
 		}
-		if ctapfips140.Required() && extensions != nil {
+		if fips140.Enabled() && extensions != nil {
 			if err := validateFIPS140HMACSecret(extensions.GetHMACSecretInput.HMACSecret); err != nil {
 				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 				return

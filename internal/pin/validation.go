@@ -1,6 +1,7 @@
 package pin
 
 import (
+	cryptofips140 "crypto/fips140"
 	"fmt"
 	"unicode/utf8"
 
@@ -17,11 +18,11 @@ const maxUTF8Bytes = 63
 // SHA-256 rather than an approved KDF, and encrypts with unauthenticated
 // AES-CBC under a fixed zero IV. Protocol 2 replaces both.
 func ValidateFIPS140UvAuthProtocol(pinUvAuthProtocol protocol.PinUvAuthProtocol) error {
-	if !ctapfips140.Required() || pinUvAuthProtocol == protocol.PinUvAuthProtocolTwo {
+	if !cryptofips140.Enabled() || pinUvAuthProtocol == protocol.PinUvAuthProtocolTwo {
 		return nil
 	}
 
-	return &ctapfips140.NotAllowedError{
+	return &ctapfips140.PolicyError{
 		Operation: fmt.Sprintf("PIN/UV auth protocol %d", pinUvAuthProtocol),
 	}
 }

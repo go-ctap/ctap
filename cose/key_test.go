@@ -3,11 +3,11 @@ package cose
 import (
 	"bytes"
 	"crypto/ecdh"
+	"crypto/fips140"
 	"encoding/hex"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/telesma-app/ctap/fips140"
 )
 
 func TestP256PublicKeyCOSECBORRoundTrip(t *testing.T) {
@@ -63,7 +63,7 @@ func TestKeyFromP256PublicKeyRejectsUnsupportedKeys(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error")
 	}
-	if fips140.Required() {
+	if fips140.Enabled() {
 		return
 	}
 

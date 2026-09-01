@@ -3,6 +3,7 @@
 package fips140policy
 
 import (
+	cryptofips140 "crypto/fips140"
 	"fmt"
 	"slices"
 
@@ -16,7 +17,7 @@ import (
 func FilterCredentialParameters(
 	parameters []credential.PublicKeyCredentialParameters,
 ) ([]credential.PublicKeyCredentialParameters, error) {
-	if !ctapfips140.Required() || len(parameters) == 0 {
+	if !cryptofips140.Enabled() || len(parameters) == 0 {
 		return parameters, nil
 	}
 
@@ -24,7 +25,7 @@ func FilterCredentialParameters(
 		return !parameter.Algorithm.FIPS140Approved()
 	})
 	if len(parameters) == 0 {
-		return nil, &ctapfips140.NotAllowedError{
+		return nil, &ctapfips140.PolicyError{
 			Operation: "MakeCredential without an approved credential algorithm",
 		}
 	}
@@ -35,7 +36,7 @@ func FilterCredentialParameters(
 // FilterPreviewSignAlgorithms removes algorithms that cannot be requested for
 // previewSign key generation under the active FIPS 140-3 policy.
 func FilterPreviewSignAlgorithms(algorithms []cose.Algorithm) ([]cose.Algorithm, error) {
-	if !ctapfips140.Required() || len(algorithms) == 0 {
+	if !cryptofips140.Enabled() || len(algorithms) == 0 {
 		return algorithms, nil
 	}
 
@@ -43,7 +44,7 @@ func FilterPreviewSignAlgorithms(algorithms []cose.Algorithm) ([]cose.Algorithm,
 		return !algorithm.FIPS140Approved()
 	})
 	if len(algorithms) == 0 {
-		return nil, &ctapfips140.NotAllowedError{
+		return nil, &ctapfips140.PolicyError{
 			Operation: "previewSign credential generation without an approved algorithm",
 		}
 	}
@@ -55,7 +56,7 @@ func FilterPreviewSignAlgorithms(algorithms []cose.Algorithm) ([]cose.Algorithm,
 // outside the active FIPS 140-3 policy, which an authenticator can return by
 // ignoring the algorithms [FilterCredentialParameters] left in the request.
 func ValidateCredentialKey(key cose.Key) error {
-	if !ctapfips140.Required() {
+	if !cryptofips140.Enabled() {
 		return nil
 	}
 
@@ -64,7 +65,7 @@ func ValidateCredentialKey(key cose.Key) error {
 		return err
 	}
 	if !algorithm.FIPS140Approved() {
-		return &ctapfips140.NotAllowedError{
+		return &ctapfips140.PolicyError{
 			Operation: fmt.Sprintf("credential algorithm %d returned by MakeCredential", algorithm),
 		}
 	}

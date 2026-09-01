@@ -1,6 +1,7 @@
 package authenticator
 
 import (
+	cryptofips140 "crypto/fips140"
 	"errors"
 	"testing"
 
@@ -119,14 +120,14 @@ func TestFIPS140AuthenticatorRejectsBeforeIO(t *testing.T) {
 
 func requireAuthenticatorFIPS140(t testing.TB) {
 	t.Helper()
-	if !ctapfips140.Required() {
+	if !cryptofips140.Enabled() {
 		t.Skip("requires Go FIPS 140-3 mode")
 	}
 }
 
 func skipAuthenticatorFIPS140(t testing.TB) {
 	t.Helper()
-	if ctapfips140.Required() {
+	if cryptofips140.Enabled() {
 		t.Skip("legacy behavior is not available in Go FIPS 140-3 mode")
 	}
 }

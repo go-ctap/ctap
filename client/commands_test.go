@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdh"
+	"crypto/fips140"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -19,7 +20,6 @@ import (
 	"github.com/telesma-app/ctap/crypto"
 	"github.com/telesma-app/ctap/crypto/protocolone"
 	"github.com/telesma-app/ctap/crypto/protocoltwo"
-	ctapfips140 "github.com/telesma-app/ctap/fips140"
 	"github.com/telesma-app/ctap/internal/testhid"
 	"github.com/telesma-app/ctap/options"
 	"github.com/telesma-app/ctap/protocol"
@@ -925,7 +925,7 @@ func TestClientPINRequestShapes(t *testing.T) {
 			},
 		} {
 			t.Run(testCase.name, func(t *testing.T) {
-				if ctapfips140.Required() && testCase.pinUvAuthProtocol == protocol.PinUvAuthProtocolOne {
+				if fips140.Enabled() && testCase.pinUvAuthProtocol == protocol.PinUvAuthProtocolOne {
 					t.Skip("legacy preview UV requires PIN/UV auth protocol 1")
 				}
 
@@ -1052,7 +1052,7 @@ func TestClientPINRequestShapes(t *testing.T) {
 	})
 
 	t.Run("get preview UV token omits permissions and RP ID", func(t *testing.T) {
-		if ctapfips140.Required() {
+		if fips140.Enabled() {
 			t.Skip("legacy preview UV requires PIN/UV auth protocol 1")
 		}
 

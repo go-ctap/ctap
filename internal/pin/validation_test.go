@@ -1,6 +1,7 @@
 package pin
 
 import (
+	cryptofips140 "crypto/fips140"
 	"errors"
 	"strings"
 	"testing"
@@ -29,7 +30,7 @@ func TestValidateUvAuthToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateUvAuthToken(tt.protocol, make([]byte, tt.length))
-			fipsRejected := ctapfips140.Required() && tt.protocol != protocol.PinUvAuthProtocolTwo
+			fipsRejected := cryptofips140.Enabled() && tt.protocol != protocol.PinUvAuthProtocolTwo
 			if tt.wantErr || fipsRejected {
 				if err == nil {
 					t.Fatalf("expected an error")
@@ -48,7 +49,7 @@ func TestValidateUvAuthToken(t *testing.T) {
 }
 
 func TestValidateFIPS140UvAuthProtocol(t *testing.T) {
-	if !ctapfips140.Required() {
+	if !cryptofips140.Enabled() {
 		t.Skip("requires Go FIPS 140-3 mode")
 	}
 

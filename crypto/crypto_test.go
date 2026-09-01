@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	cryptofips140 "crypto/fips140"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -237,7 +238,7 @@ func TestPinUvAuthProtocolEncapsulateAndEncryptDecrypt(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			platform, err := NewPinUvAuthProtocol(tc.protocol)
-			if ctapfips140.Required() && tc.protocol == protocol.PinUvAuthProtocolOne {
+			if cryptofips140.Enabled() && tc.protocol == protocol.PinUvAuthProtocolOne {
 				if !errors.Is(err, ctapfips140.ErrNotAllowed) {
 					t.Fatalf("error = %v, want errors.Is(error, %v)", err, ctapfips140.ErrNotAllowed)
 				}
@@ -295,7 +296,7 @@ func TestPinUvAuthProtocolEncapsulateAndEncryptDecrypt(t *testing.T) {
 }
 
 func TestNewPinUvAuthProtocolFIPS140Policy(t *testing.T) {
-	if !ctapfips140.Required() {
+	if !cryptofips140.Enabled() {
 		t.Skip("requires Go FIPS 140-3 mode")
 	}
 

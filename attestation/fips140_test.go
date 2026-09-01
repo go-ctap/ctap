@@ -1,6 +1,7 @@
 package attestation
 
 import (
+	cryptofips140 "crypto/fips140"
 	"crypto/rsa"
 	"errors"
 	"testing"
@@ -10,7 +11,7 @@ import (
 )
 
 func TestFIPS140SignatureRejectionIsReportedAsUnsupported(t *testing.T) {
-	if !ctapfips140.Required() {
+	if !cryptofips140.Enabled() {
 		t.Skip("requires Go FIPS 140-3 mode")
 	}
 

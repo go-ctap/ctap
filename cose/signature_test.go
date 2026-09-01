@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/fips140"
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
@@ -15,7 +16,6 @@ import (
 	"github.com/cloudflare/circl/sign/ed448"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	secp256k1ecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
-	"github.com/telesma-app/ctap/fips140"
 )
 
 func TestCredentialKeyAndSignatureAlgorithms(t *testing.T) {
@@ -34,7 +34,7 @@ func TestCredentialKeyAndSignatureAlgorithms(t *testing.T) {
 		ed448Key     ed448.PrivateKey
 		secp256k1Key *secp256k1.PrivateKey
 	)
-	if !fips140.Required() {
+	if !fips140.Enabled() {
 		_, ed448Key, err = ed448.GenerateKey(rand.Reader)
 		if err != nil {
 			t.Fatalf("generate Ed448 key: %v", err)
@@ -72,7 +72,7 @@ func TestCredentialKeyAndSignatureAlgorithms(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if fips140.Required() && test.fipsBlock {
+			if fips140.Enabled() && test.fipsBlock {
 				t.Skip("algorithm is intentionally unavailable in FIPS 140-3 mode")
 			}
 			message := []byte("credential signature message")

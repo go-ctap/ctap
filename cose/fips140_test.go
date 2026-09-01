@@ -2,6 +2,7 @@ package cose
 
 import (
 	"crypto/ed25519"
+	cryptofips140 "crypto/fips140"
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
@@ -15,7 +16,7 @@ import (
 )
 
 func TestFIPS140SignatureGate(t *testing.T) {
-	if !ctapfips140.Required() {
+	if !cryptofips140.Enabled() {
 		t.Skip("requires Go FIPS 140-3 mode")
 	}
 
@@ -163,9 +164,9 @@ func assertFIPS140NotAllowed(t testing.TB, err error) {
 	if !errors.Is(err, ctapfips140.ErrNotAllowed) {
 		t.Fatalf("error = %v, want errors.Is(error, %v)", err, ctapfips140.ErrNotAllowed)
 	}
-	var notAllowed *ctapfips140.NotAllowedError
+	var notAllowed *ctapfips140.PolicyError
 	if !errors.As(err, &notAllowed) {
-		t.Fatalf("error type = %T, want *fips140.NotAllowedError", err)
+		t.Fatalf("error type = %T, want *fips140.PolicyError", err)
 	}
 }
 

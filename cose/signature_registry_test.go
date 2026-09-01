@@ -3,6 +3,7 @@ package cose
 import (
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/fips140"
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
@@ -11,7 +12,6 @@ import (
 	"github.com/cloudflare/circl/sign/ed448"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/telesma-app/ctap/fips140"
 )
 
 func TestRegistryIdentifiers(t *testing.T) {
@@ -36,7 +36,7 @@ func TestRegistryIdentifiers(t *testing.T) {
 }
 
 func TestRegistryCredentialKeysCBORRoundTrip(t *testing.T) {
-	if fips140.Required() {
+	if fips140.Enabled() {
 		t.Skip("registry algorithms in this test are intentionally unavailable in FIPS 140-3 mode")
 	}
 
@@ -90,7 +90,7 @@ func TestRegistryCredentialKeysCBORRoundTrip(t *testing.T) {
 }
 
 func TestRegistryCredentialKeyAlgorithmMismatch(t *testing.T) {
-	if fips140.Required() {
+	if fips140.Enabled() {
 		t.Skip("blocked algorithms take precedence over mismatch validation in FIPS 140-3 mode")
 	}
 
@@ -148,7 +148,7 @@ func TestRegistryCredentialKeyAlgorithmMismatch(t *testing.T) {
 }
 
 func TestRegistryCredentialPublicKeyValidation(t *testing.T) {
-	if fips140.Required() {
+	if fips140.Enabled() {
 		t.Skip("registry algorithms in this test are intentionally unavailable in FIPS 140-3 mode")
 	}
 
@@ -207,7 +207,7 @@ func TestRegistryCredentialPublicKeyValidation(t *testing.T) {
 }
 
 func TestRegistryVerifySignatureRejectsMalformedSignatures(t *testing.T) {
-	if fips140.Required() {
+	if fips140.Enabled() {
 		t.Skip("blocked algorithms take precedence over signature validation in FIPS 140-3 mode")
 	}
 

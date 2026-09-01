@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	cryptofips140 "crypto/fips140"
 	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -181,38 +182,38 @@ func enforceFIPS140SignaturePolicy(
 	algorithm Algorithm,
 	spec signatureAlgorithm,
 ) error {
-	if !ctapfips140.Required() {
+	if !cryptofips140.Enabled() {
 		return nil
 	}
 	switch spec.fips {
 	case fips140Approved:
 	case fips140VerifyOnly:
 		if algorithm != AlgorithmEdDSA {
-			return &ctapfips140.NotAllowedError{
+			return &ctapfips140.PolicyError{
 				Operation: fmt.Sprintf("COSE signature algorithm %d", algorithm),
 			}
 		}
 		if _, ok := publicKey.(ed25519.PublicKey); !ok {
-			return &ctapfips140.NotAllowedError{
+			return &ctapfips140.PolicyError{
 				Operation: fmt.Sprintf("COSE signature algorithm %d with a non-Ed25519 key", algorithm),
 			}
 		}
 	default:
-		return &ctapfips140.NotAllowedError{
+		return &ctapfips140.PolicyError{
 			Operation: fmt.Sprintf("COSE signature algorithm %d", algorithm),
 		}
 	}
 	if spec.kind == signatureRSA || spec.kind == signatureRSAPSS {
 		if key, ok := publicKey.(*rsa.PublicKey); ok {
 			if key == nil || key.N == nil {
-				return &ctapfips140.NotAllowedError{
+				return &ctapfips140.PolicyError{
 					Operation: fmt.Sprintf("COSE RSA public key parameters for algorithm %d", algorithm),
 				}
 			}
 			bits := key.N.BitLen()
 			if key.N.Sign() <= 0 || key.N.Bit(0) != 1 || bits < 2048 || bits%2 != 0 ||
 				key.E <= 1<<16 || key.E > math.MaxInt32 || key.E&1 != 1 {
-				return &ctapfips140.NotAllowedError{
+				return &ctapfips140.PolicyError{
 					Operation: fmt.Sprintf("COSE RSA public key parameters for algorithm %d", algorithm),
 				}
 			}
@@ -333,8 +334,8 @@ func (k Key) okpPublicKey() (crypto.PublicKey, error) {
 
 		return ed25519.PublicKey(append([]byte(nil), x...)), nil
 	case EllipticCurveEd448:
-		if ctapfips140.Required() {
-			return nil, &ctapfips140.NotAllowedError{Operation: "COSE Ed448 public key"}
+		if cryptofips140.Enabled() {
+			return nil, &ctapfips140.PolicyError{Operation: "COSE Ed448 public key"}
 		}
 		if len(x) != ed448.PublicKeySize {
 			return nil, fmt.Errorf("cose: invalid Ed448 public key length %d", len(x))
@@ -366,8 +367,8 @@ func (k Key) ec2PublicKey() (crypto.PublicKey, error) {
 	case EllipticCurveP521:
 		curve = elliptic.P521()
 	case EllipticCurveSecp256k1:
-		if ctapfips140.Required() {
-			return nil, &ctapfips140.NotAllowedError{Operation: "COSE secp256k1 public key"}
+		if cryptofips140.Enabled() {
+			return nil, &ctapfips140.PolicyError{Operation: "COSE secp256k1 public key"}
 		}
 		size = 32
 	default:
