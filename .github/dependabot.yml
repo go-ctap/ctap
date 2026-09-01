@@ -1,13 +1,44 @@
 version: 2
+
 updates:
   - package-ecosystem: "gomod"
-    directory: "/"
+    directories:
+      - "/"
+      - "/examples/*"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    groups:
+      go-modules:
+        patterns:
+          - "*"
+        group-by: "dependency-name"
+    ignore:
+      - dependency-name: "github.com/telesma-app/ctap"
+    commit-message:
+      prefix: "chore(deps)"
     open-pull-requests-limit: 10
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
     open-pull-requests-limit: 10
