@@ -147,55 +147,32 @@ operations may work without a token on an authenticator that has no PIN or UV pr
 
 ## FIPS 140-3 mode
 
-The `fips140` package connects CTAP policy to Go's process-wide FIPS 140-3 mode. When
-`crypto/fips140.Enabled()` reports that the mode is enabled, the library:
+The `fips140` package follows Go's process-wide `crypto/fips140.Enabled()` state. When enabled, the library:
 
-- makes `client` and `authenticator` filter MakeCredential and `previewSign` key-generation parameters to approved
-  algorithms while preserving their order and reject only when none remain;
-- makes `client` and `authenticator` reject a MakeCredential response whose credential key falls outside that
-  allowlist, which an authenticator can return by ignoring the filtered request;
-- requires PIN/UV auth protocol 2 at the `client`, `authenticator`, and high-level `crypto` operation boundaries;
-- makes `cose` reject local Ed448, secp256k1, and RS1 paths;
-- makes `arkg` reject ARKG-P256 derivation; and
-- keeps large-blob encryption inside the Go Cryptographic Module.
+- filters `MakeCredential` and `previewSign` key-generation algorithms, rejecting a request only when none remain;
+- accepts ES256/384/512, ESP256/384/512, Ed25519, RS256/384/512, and PS256/384/512 for key generation;
+- requires PIN/UV auth protocol 2; `Device` rejects authenticators that offer only protocol 1;
+- rejects local Ed448, secp256k1, RS1, and ARKG-P256 operations; and
+- performs large-blob encryption in the Go Cryptographic Module.
 
-The two layers differ on purpose. `client` takes the protocol number from the caller and polices only what it is
-given, so subcommands that allow omitting it still work with the member absent. `Device` selects the protocol itself
-and rejects a device that offers no approved one, including for commands that carry no keying material.
+Signature verification also accepts generic EdDSA with an Ed25519 key. RSA public keys used locally must meet the
+FIPS 186-5 modulus and public-exponent requirements.
 
-The credential-creation allowlist is ES256/384/512, ESP256/384/512, explicit Ed25519, RS256/384/512, and
-PS256/384/512. Signature verification additionally accepts generic EdDSA, and only when the concrete key is Ed25519:
-COSE algorithm -8 does not name a curve, so credential creation cannot rule out Ed448, while verification resolves the
-curve from the key in hand. RSA keys must also satisfy the FIPS 186-5 modulus-size and public-exponent requirements.
+The policy controls key-generation algorithms requested by this library and cryptography performed locally. For a
+`MakeCredential` response it checks only the declared COSE algorithm, not how the external authenticator generated the
+key. Concrete key parameters are checked when the library converts or verifies that key locally.
 
-Both rules come from one classification per algorithm in `cose`, so the creation and verification policies cannot drift
-apart.
-
-Build the consuming application with Go's latest validated module selection and run the policy gate by default:
+Build and test with the certified module selection:
 
 ```sh
 GOFIPS140=certified go build ./...
-```
-
-The policy follows the process-wide mode and has no override, so exercise your own FIPS branches the same way:
-
-```sh
 GOFIPS140=certified go test ./...
+GOFIPS140=certified GODEBUG=fips140=only go test ./...
 ```
 
-Use strict mode as a test and audit safety net:
-
-```sh
-GODEBUG=fips140=only go test ./...
-```
-
-Strict mode is not intended as the production switch. The CTAP gate is also not a certification boundary by itself:
-it does not certify the consuming application, operating environment, transport, or external authenticator, and it
-does not establish a NIST authenticator assurance level. Those properties must be evaluated for the complete deployed
-system. The low-level `crypto/protocolone` package and the policy-free `crypto.Authenticate` helper remain available for
-wire compatibility and test-vector work; callers using them directly are responsible for keeping those paths outside a
-FIPS operation. The `client`, `authenticator`, and `crypto.NewPinUvAuthProtocol` APIs enforce the protocol policy before
-starting an operation.
+Strict mode is a test aid, not the production switch. This policy does not certify the application, environment,
+transport, or authenticator. The low-level `crypto/protocolone` package and `crypto.Authenticate` remain policy-free for
+wire compatibility and test vectors; callers must keep their direct use outside FIPS operations.
 
 ## Usage notes
 
