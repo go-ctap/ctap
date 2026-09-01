@@ -38,11 +38,11 @@ Contributors adding or changing tests should follow the [testing guide](TESTING.
 
 Automated tests cover the implemented protocol, validation, and state changes. Physical testing covers:
 
-| Authenticator | Firmware | Tested connection and protocol |
-|---|---:|---|
-| YubiKey 5 Series, FIPS and non-FIPS | 5.7.4 | USB HID and the advertised CTAP 2.1 features |
-| YubiKey 5 Series RC | 5.8 RC | USB HID and a `previewSign` create/sign round trip |
-| Token2 PIN+ Dual | R3.3 | USB HID, CTAP over APDU, and the advertised CTAP 2.1 features |
+| Authenticator                       | Firmware | Tested connection and protocol                                |
+|-------------------------------------|---------:|---------------------------------------------------------------|
+| YubiKey 5 Series, FIPS and non-FIPS |    5.7.4 | USB HID and the advertised CTAP 2.1 features                  |
+| YubiKey 5 Series RC                 |   5.8 RC | USB HID and a `previewSign` create/sign round trip            |
+| Token2 PIN+ Dual                    |     R3.3 | USB HID, CTAP over APDU, and the advertised CTAP 2.1 features |
 
 CTAP 2.2 and 2.3 features not named in the table are based on the specification and automated tests. A feature listed
 above may still be unavailable on a specific device.
@@ -56,7 +56,7 @@ above may still be unavailable on a specific device.
 | Windows named pipe    | Connects to a running [`telesma-app/windows-proxy`](https://github.com/telesma-app/windows-proxy); see [`examples/namedpipe`](examples/namedpipe)    |
 | ISO 7816 / NFC        | Wraps an exclusive raw APDU connection such as [`telesma-app/pcsc`](https://github.com/telesma-app/pcsc); see [`examples/iso7816`](examples/iso7816) |
 | Token2 CTAP over APDU | Requires a PC/SC implementation such as [`telesma-app/pcsc`](https://github.com/telesma-app/pcsc); see [`examples/token2`](examples/token2)          |
-| Bluetooth LE          | Experimental cgo-free CoreBluetooth backend for FIDO authenticators on macOS amd64/arm64; see [`examples/ble`](examples/ble)                       |
+| Bluetooth LE          | Experimental cgo-free CoreBluetooth backend for FIDO authenticators on macOS amd64/arm64; see [`examples/ble`](examples/ble)                         |
 
 Hybrid and digital-credential transports are not supported. BLE and Token2 support are experimental; the Token2 protocol
 is not publicly documented by the vendor.
@@ -111,14 +111,15 @@ PC/SC, and Token2 expose the same enumerator contract.
 
 ## API levels
 
-| Package                                                                            | Use it for                                                                          |
-|------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
-| `authenticator`                                                                    | Stateful workflows, capability checks, PIN/UV handling, and user-presence selection |
-| `client`                                                                           | Sending individual CTAP commands and managing state yourself                        |
+| Package                                                                                           | Use it for                                                                          |
+|---------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| `authenticator`                                                                                   | Stateful workflows, capability checks, PIN/UV handling, and user-presence selection |
+| `client`                                                                                          | Sending individual CTAP commands and managing state yourself                        |
 | `backend/ble`, `backend/hid`, `backend/hidproxy`, `backend/pcsc`, `backend/tcp`, `backend/token2` | Finding and opening local authenticator endpoints                                   |
 | `transport`, `transport/ctapble`, `transport/ctaphid`, `transport/iso7816`, `transport/token2`    | CTAP message boundaries and transport framing                                       |
-| `protocol`, `credential`, `attestation`, `extension`, `webauthn`                   | CTAP constants and data types                                                       |
-| `crypto`                                                                           | Cryptographic helpers                                                               |
+| `protocol`, `credential`, `attestation`, `extension`, `webauthn`                                  | CTAP constants and data types                                                       |
+| `crypto`                                                                                          | Cryptographic helpers                                                               |
+| `fips140`                                                                                         | Querying the CTAP FIPS 140-3 policy and matching policy rejections                  |
 
 For a custom transport, implement `transport.Device` and pass it to `authenticator.New`.
 Yubico-specific device information and identity operations live in
@@ -143,6 +144,58 @@ token, err := device.GetPinUvAuthTokenUsingPIN(
 
 PIN/UV tokens are secrets. Do not log or store them, and discard them after use. Some configuration and large-blob
 operations may work without a token on an authenticator that has no PIN or UV protection.
+
+## FIPS 140-3 mode
+
+The `fips140` package connects CTAP policy to Go's process-wide FIPS 140-3 mode. When
+`crypto/fips140.Enabled()` reports that the mode is enabled, the library:
+
+- makes `client` and `authenticator` filter MakeCredential and `previewSign` key-generation parameters to approved
+  algorithms while preserving their order and reject only when none remain;
+- makes `client` and `authenticator` reject a MakeCredential response whose credential key falls outside that
+  allowlist, which an authenticator can return by ignoring the filtered request;
+- requires PIN/UV auth protocol 2 at the `client`, `authenticator`, and high-level `crypto` operation boundaries;
+- makes `cose` reject local Ed448, secp256k1, and RS1 paths;
+- makes `arkg` reject ARKG-P256 derivation; and
+- keeps large-blob encryption inside the Go Cryptographic Module.
+
+The two layers differ on purpose. `client` takes the protocol number from the caller and polices only what it is
+given, so subcommands that allow omitting it still work with the member absent. `Device` selects the protocol itself
+and rejects a device that offers no approved one, including for commands that carry no keying material.
+
+The credential-creation allowlist is ES256/384/512, ESP256/384/512, explicit Ed25519, RS256/384/512, and
+PS256/384/512. Signature verification additionally accepts generic EdDSA, and only when the concrete key is Ed25519:
+COSE algorithm -8 does not name a curve, so credential creation cannot rule out Ed448, while verification resolves the
+curve from the key in hand. RSA keys must also satisfy the FIPS 186-5 modulus-size and public-exponent requirements.
+
+Both rules come from one classification per algorithm in `cose`, so the creation and verification policies cannot drift
+apart.
+
+Build the consuming application with Go's latest validated module selection and run the policy gate by default:
+
+```sh
+GOFIPS140=certified go build ./...
+```
+
+The policy follows the process-wide mode and has no override, so exercise your own FIPS branches the same way:
+
+```sh
+GOFIPS140=certified go test ./...
+```
+
+Use strict mode as a test and audit safety net:
+
+```sh
+GODEBUG=fips140=only go test ./...
+```
+
+Strict mode is not intended as the production switch. The CTAP gate is also not a certification boundary by itself:
+it does not certify the consuming application, operating environment, transport, or external authenticator, and it
+does not establish a NIST authenticator assurance level. Those properties must be evaluated for the complete deployed
+system. The low-level `crypto/protocolone` package and the policy-free `crypto.Authenticate` helper remain available for
+wire compatibility and test-vector work; callers using them directly are responsible for keeping those paths outside a
+FIPS operation. The `client`, `authenticator`, and `crypto.NewPinUvAuthProtocol` APIs enforce the protocol policy before
+starting an operation.
 
 ## Usage notes
 
@@ -182,15 +235,15 @@ so their normalized values are included unredacted.
 
 Each example is a separate Go module.
 
-| Example | Purpose | Configuration |
-|---|---|---|
-| [`examples/pin`](examples/pin) | List credentials with a PIN | `FIDO2_PIN` |
-| [`examples/uv`](examples/uv) | List biometric enrollments and credentials with built-in UV | None |
-| [`examples/iso7816`](examples/iso7816) | Read authenticator information from a standard FIDO smart card | Optional `PCSC_READER` |
-| [`examples/token2`](examples/token2) | List credentials through Token2 and PC/SC | `FIDO2_PIN`, optional `PCSC_READER` |
-| [`examples/namedpipe`](examples/namedpipe) | Ping and list credentials through the Windows proxy | `FIDO2_PIN`, running proxy |
-| [`examples/transports`](examples/transports) | Print `authenticatorGetInfo` for every transport | Optional Windows proxy and PC/SC service |
-| [`examples/ble`](examples/ble) | Scan BLE authenticators and print `authenticatorGetInfo` | Optional `-scan` and `-id` flags |
+| Example                                        | Purpose                                                            | Configuration                                   |
+|------------------------------------------------|--------------------------------------------------------------------|-------------------------------------------------|
+| [`examples/pin`](examples/pin)                 | List credentials with a PIN                                        | `FIDO2_PIN`                                     |
+| [`examples/uv`](examples/uv)                   | List biometric enrollments and credentials with built-in UV        | None                                            |
+| [`examples/iso7816`](examples/iso7816)         | Read authenticator information from a standard FIDO smart card     | Optional `PCSC_READER`                          |
+| [`examples/token2`](examples/token2)           | List credentials through Token2 and PC/SC                          | `FIDO2_PIN`, optional `PCSC_READER`             |
+| [`examples/namedpipe`](examples/namedpipe)     | Ping and list credentials through the Windows proxy                | `FIDO2_PIN`, running proxy                      |
+| [`examples/transports`](examples/transports)   | Print `authenticatorGetInfo` for every transport                   | Optional Windows proxy and PC/SC service        |
+| [`examples/ble`](examples/ble)                 | Scan BLE authenticators and print `authenticatorGetInfo`           | Optional `-scan` and `-id` flags                |
 | [`examples/previewsign`](examples/previewsign) | Create a previewSign key, sign a message, and verify the signature | Optional `FIDO2_PIN`, previewSign authenticator |
 
 Run an example from its directory:

@@ -14,8 +14,8 @@ const (
 )
 
 func TestKDF(t *testing.T) {
-	// Create derived with zero material
-	key1, err := KDF(nil)
+	// Create a derived key from 32 bytes of zero-valued material.
+	key1, err := KDF(make([]byte, 32))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -47,6 +47,14 @@ func TestKDF(t *testing.T) {
 	savedKey, _ := base64.StdEncoding.DecodeString(derivedSecret)
 	if got, want := savedKey, key2; (got == nil) != (want == nil) || !bytes.Equal(got, want) {
 		t.Errorf("got %#v, want %#v", got, want)
+	}
+}
+
+func TestKDFRejectsInvalidSharedSecretLength(t *testing.T) {
+	for _, length := range []int{0, 16, 31, 33} {
+		if _, err := KDF(make([]byte, length)); err == nil {
+			t.Errorf("KDF accepted %d-byte shared secret", length)
+		}
 	}
 }
 

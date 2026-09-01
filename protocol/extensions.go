@@ -89,6 +89,14 @@ type HMACSecret struct {
 	PinUvAuthProtocol PinUvAuthProtocol `cbor:"4,keyasint,omitempty"`
 }
 
+// IsZero drives the omitzero tag.
+func (s HMACSecret) IsZero() bool {
+	return s.KeyAgreement == nil &&
+		s.SaltEnc == nil &&
+		s.SaltAuth == nil &&
+		s.PinUvAuthProtocol == 0
+}
+
 type CreateHMACSecretInput struct {
 	HMACSecret bool `cbor:"hmac-secret,omitzero"`
 }
@@ -130,6 +138,11 @@ type PreviewSignGenerateKeyInput struct {
 	Flags      *AuthDataFlag    `cbor:"4,keyasint,omitempty"`
 }
 
+// IsZero drives the omitzero tag.
+func (i PreviewSignGenerateKeyInput) IsZero() bool {
+	return i.Algorithms == nil && i.Flags == nil
+}
+
 type CreatePreviewSignInput struct {
 	PreviewSign PreviewSignGenerateKeyInput `cbor:"previewSign,omitzero"`
 }
@@ -138,6 +151,11 @@ type PreviewSignSignInput struct {
 	KeyHandle           []byte `cbor:"2,keyasint" ctapdiag:"kh"`
 	ToBeSigned          []byte `cbor:"6,keyasint" ctapdiag:"tbs,redact"`
 	AdditionalArguments []byte `cbor:"7,keyasint,omitzero" ctapdiag:"args"`
+}
+
+// IsZero drives the omitzero tag.
+func (i PreviewSignSignInput) IsZero() bool {
+	return i.KeyHandle == nil && i.ToBeSigned == nil && i.AdditionalArguments == nil
 }
 
 type GetPreviewSignInput struct {

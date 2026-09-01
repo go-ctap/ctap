@@ -11,6 +11,7 @@ import (
 	"github.com/cloudflare/circl/sign/ed448"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/telesma-app/ctap/fips140"
 )
 
 func TestRegistryIdentifiers(t *testing.T) {
@@ -35,6 +36,10 @@ func TestRegistryIdentifiers(t *testing.T) {
 }
 
 func TestRegistryCredentialKeysCBORRoundTrip(t *testing.T) {
+	if fips140.Required() {
+		t.Skip("registry algorithms in this test are intentionally unavailable in FIPS 140-3 mode")
+	}
+
 	secp256k1Key, err := secp256k1.GeneratePrivateKey()
 	if err != nil {
 		t.Fatalf("generate secp256k1 key: %v", err)
@@ -85,6 +90,10 @@ func TestRegistryCredentialKeysCBORRoundTrip(t *testing.T) {
 }
 
 func TestRegistryCredentialKeyAlgorithmMismatch(t *testing.T) {
+	if fips140.Required() {
+		t.Skip("blocked algorithms take precedence over mismatch validation in FIPS 140-3 mode")
+	}
+
 	p256 := generateECDSAKey(t, elliptic.P256())
 	secp256k1Key, err := secp256k1.GeneratePrivateKey()
 	if err != nil {
@@ -139,6 +148,10 @@ func TestRegistryCredentialKeyAlgorithmMismatch(t *testing.T) {
 }
 
 func TestRegistryCredentialPublicKeyValidation(t *testing.T) {
+	if fips140.Required() {
+		t.Skip("registry algorithms in this test are intentionally unavailable in FIPS 140-3 mode")
+	}
+
 	_, ed448Key, err := ed448.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("generate Ed448 key: %v", err)
@@ -194,6 +207,10 @@ func TestRegistryCredentialPublicKeyValidation(t *testing.T) {
 }
 
 func TestRegistryVerifySignatureRejectsMalformedSignatures(t *testing.T) {
+	if fips140.Required() {
+		t.Skip("blocked algorithms take precedence over signature validation in FIPS 140-3 mode")
+	}
+
 	secp256k1Key, err := secp256k1.GeneratePrivateKey()
 	if err != nil {
 		t.Fatalf("generate secp256k1 key: %v", err)

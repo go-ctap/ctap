@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	mrand "math/rand"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/telesma-app/ctap/cose"
+	ctapfips140 "github.com/telesma-app/ctap/fips140"
 	"github.com/telesma-app/ctap/protocol"
 )
 
@@ -112,6 +114,32 @@ func TestEncryptDecryptLargeBlob(t *testing.T) {
 	}
 }
 
+func TestDecryptLargeBlobLegacyWireVector(t *testing.T) {
+	// The vector was produced with cipher.NewGCM using a separately supplied
+	// nonce, matching the CTAP wire representation used before
+	// NewGCMWithRandomNonce was introduced.
+	blob := protocol.LargeBlob{
+		Nonce: mustDecodeTestHex(t, "a0a1a2a3a4a5a6a7a8a9aaab"),
+		Ciphertext: mustDecodeTestHex(t,
+			"2c513162096556cf6c148b83cf33ec943f7914da5bf8104453226cd357e0382f"+
+				"1b5945f3afc6ad084076a4c35de229533659b045f7",
+		),
+		OrigSize: 34,
+	}
+
+	got, err := DecryptLargeBlob(
+		mustDecodeTestHex(t, "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"),
+		blob,
+	)
+	if err != nil {
+		t.Fatalf("DecryptLargeBlob: %v", err)
+	}
+	want := []byte("legacy CTAP large-blob wire vector")
+	if !bytes.Equal(got, want) {
+		t.Fatalf("DecryptLargeBlob = %x, want %x", got, want)
+	}
+}
+
 func TestDecryptLargeBlobRejectsTampering(t *testing.T) {
 	encKey := deterministicBytes(t, 32, 42)
 	encryptedBlob, err := EncryptLargeBlob(encKey, origData)
@@ -209,6 +237,12 @@ func TestPinUvAuthProtocolEncapsulateAndEncryptDecrypt(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			platform, err := NewPinUvAuthProtocol(tc.protocol)
+			if ctapfips140.Required() && tc.protocol == protocol.PinUvAuthProtocolOne {
+				if !errors.Is(err, ctapfips140.ErrNotAllowed) {
+					t.Fatalf("error = %v, want errors.Is(error, %v)", err, ctapfips140.ErrNotAllowed)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -257,6 +291,20 @@ func TestPinUvAuthProtocolEncapsulateAndEncryptDecrypt(t *testing.T) {
 				t.Errorf("got %#v, want %#v", got, want)
 			}
 		})
+	}
+}
+
+func TestNewPinUvAuthProtocolFIPS140Policy(t *testing.T) {
+	if !ctapfips140.Required() {
+		t.Skip("requires Go FIPS 140-3 mode")
+	}
+
+	_, err := NewPinUvAuthProtocol(protocol.PinUvAuthProtocolOne)
+	if !errors.Is(err, ctapfips140.ErrNotAllowed) {
+		t.Fatalf("error = %v, want errors.Is(error, %v)", err, ctapfips140.ErrNotAllowed)
+	}
+	if _, err := NewPinUvAuthProtocol(protocol.PinUvAuthProtocolTwo); err != nil {
+		t.Fatalf("protocol 2 rejected: %v", err)
 	}
 }
 
@@ -319,6 +367,15 @@ func deterministicBytes(t *testing.T, n int, seed int64) []byte {
 	return b
 }
 
+func mustDecodeTestHex(t testing.TB, value string) []byte {
+	t.Helper()
+	decoded, err := hex.DecodeString(value)
+	if err != nil {
+		t.Fatalf("decode hex: %v", err)
+	}
+	return decoded
+}
+
 func cloneLargeBlob(blob protocol.LargeBlob) protocol.LargeBlob {
 	return protocol.LargeBlob{
 		Ciphertext: slices.Clone(blob.Ciphertext),
@@ -339,18 +396,18 @@ func encryptLargeBlobWithOrigSize(t *testing.T, key []byte, origData []byte, ori
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := cipher.NewGCMWithRandomNonce(block)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	nonce := deterministicBytes(t, gcm.NonceSize(), 44)
 	origSizeBin := make([]byte, 8)
 	binary.LittleEndian.PutUint64(origSizeBin, uint64(origSize))
+	sealed := gcm.Seal(nil, nil, plaintext, slices.Concat([]byte("blob"), origSizeBin))
 
 	return protocol.LargeBlob{
-		Ciphertext: gcm.Seal(nil, nonce, plaintext, slices.Concat([]byte("blob"), origSizeBin)),
-		Nonce:      nonce,
+		Ciphertext: slices.Clone(sealed[largeBlobNonceSize:]),
+		Nonce:      slices.Clone(sealed[:largeBlobNonceSize]),
 		OrigSize:   origSize,
 	}
 }

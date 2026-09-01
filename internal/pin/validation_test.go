@@ -1,9 +1,11 @@
 package pin
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	ctapfips140 "github.com/telesma-app/ctap/fips140"
 	"github.com/telesma-app/ctap/protocol"
 )
 
@@ -27,9 +29,13 @@ func TestValidateUvAuthToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateUvAuthToken(tt.protocol, make([]byte, tt.length))
-			if tt.wantErr {
+			fipsRejected := ctapfips140.Required() && tt.protocol != protocol.PinUvAuthProtocolTwo
+			if tt.wantErr || fipsRejected {
 				if err == nil {
 					t.Fatalf("expected an error")
+				}
+				if fipsRejected && !errors.Is(err, ctapfips140.ErrNotAllowed) {
+					t.Fatalf("error = %v, want errors.Is(error, %v)", err, ctapfips140.ErrNotAllowed)
 				}
 				return
 			}
@@ -38,6 +44,20 @@ func TestValidateUvAuthToken(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestValidateFIPS140UvAuthProtocol(t *testing.T) {
+	if !ctapfips140.Required() {
+		t.Skip("requires Go FIPS 140-3 mode")
+	}
+
+	err := ValidateFIPS140UvAuthProtocol(protocol.PinUvAuthProtocolOne)
+	if !errors.Is(err, ctapfips140.ErrNotAllowed) {
+		t.Fatalf("error = %v, want errors.Is(error, %v)", err, ctapfips140.ErrNotAllowed)
+	}
+	if err := ValidateFIPS140UvAuthProtocol(protocol.PinUvAuthProtocolTwo); err != nil {
+		t.Fatalf("protocol 2 rejected: %v", err)
 	}
 }
 

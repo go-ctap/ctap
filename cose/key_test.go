@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/telesma-app/ctap/fips140"
 )
 
 func TestP256PublicKeyCOSECBORRoundTrip(t *testing.T) {
@@ -61,6 +62,9 @@ func TestKeyFromP256PublicKeyRejectsUnsupportedKeys(t *testing.T) {
 	_, err := KeyFromP256PublicKey(nil)
 	if err == nil {
 		t.Fatalf("expected an error")
+	}
+	if fips140.Required() {
+		return
 	}
 
 	x25519PrivateKey, err := ecdh.X25519().NewPrivateKey(make([]byte, 32))

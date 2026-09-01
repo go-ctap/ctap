@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"crypto/ecdh"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/telesma-app/ctap/cose"
+	"github.com/telesma-app/ctap/fips140"
 )
 
 func TestDeriveP256DraftVectors(t *testing.T) {
+	skipWhenFIPS140Required(t)
+
 	tests := []struct {
 		name         string
 		input        string
@@ -116,6 +120,8 @@ func TestDeriveP256DraftVectors(t *testing.T) {
 }
 
 func TestDeriveP256AcceptsOptionalCOSEParameters(t *testing.T) {
+	skipWhenFIPS140Required(t)
+
 	seed := p256Seed(t)
 	delete(seed, cose.KeyParameterAlg)
 	delete(seed, -3)
@@ -161,6 +167,8 @@ func TestDeriveP256AcceptsOptionalCOSEParameters(t *testing.T) {
 }
 
 func TestDeriveP256RejectsInvalidPublicSeed(t *testing.T) {
+	skipWhenFIPS140Required(t)
+
 	tests := []struct {
 		name   string
 		mutate func(cose.Key)
@@ -262,6 +270,8 @@ func TestDeriveP256RejectsInvalidPublicSeed(t *testing.T) {
 }
 
 func TestDeriveP256RejectsLongContext(t *testing.T) {
+	skipWhenFIPS140Required(t)
+
 	_, _, err := DeriveP256(p256Seed(t), make([]byte, 32), make([]byte, p256ContextLimit))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -276,7 +286,35 @@ func TestDeriveP256RejectsLongContext(t *testing.T) {
 	}
 }
 
+func TestDeriveP256RejectsFIPS140Mode(t *testing.T) {
+	if !fips140.Required() {
+		t.Skip("FIPS 140-3 mode is not enabled")
+	}
+
+	derived, keyHandle, err := DeriveP256(nil, nil, nil)
+	if !errors.Is(err, fips140.ErrNotAllowed) {
+		t.Fatalf("got error %v, want %v", err, fips140.ErrNotAllowed)
+	}
+	var notAllowed *fips140.NotAllowedError
+	if !errors.As(err, &notAllowed) {
+		t.Fatalf("got error type %T, want *fips140.NotAllowedError", err)
+	}
+	if got, want := notAllowed.Operation, "ARKG-P256"; got != want {
+		t.Fatalf("got operation %q, want %q", got, want)
+	}
+	if derived != nil {
+		t.Fatalf("got derived key %#v, want nil", derived)
+	}
+	if keyHandle != nil {
+		t.Fatalf("got key handle %#v, want nil", keyHandle)
+	}
+}
+
 func FuzzDeriveP256(f *testing.F) {
+	if fips140.Required() {
+		f.Skip("FIPS 140-3 mode is enabled")
+	}
+
 	encoded, err := cbor.Marshal(p256Seed(f))
 	if err != nil {
 		f.Fatalf("unexpected error: %v", err)
@@ -291,6 +329,13 @@ func FuzzDeriveP256(f *testing.F) {
 		}
 		_, _, _ = DeriveP256(seed, inputKeyMaterial, context)
 	})
+}
+
+func skipWhenFIPS140Required(t *testing.T) {
+	t.Helper()
+	if fips140.Required() {
+		t.Skip("FIPS 140-3 mode is enabled")
+	}
 }
 
 func decodedP256Seed(t *testing.T) cose.Key {

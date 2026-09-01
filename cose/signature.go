@@ -18,6 +18,7 @@ import (
 	"github.com/cloudflare/circl/sign/ed448"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	secp256k1ecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	ctapfips140 "github.com/telesma-app/ctap/fips140"
 )
 
 var (
@@ -70,7 +71,14 @@ func (k Key) PublicKey() (crypto.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := validatePublicKeyAlgorithm(publicKey, algorithm); err != nil {
+	spec, found := signatureAlgorithms[algorithm]
+	if !found {
+		return nil, fmt.Errorf("%w: %d", ErrUnsupportedAlgorithm, algorithm)
+	}
+	if err := enforceFIPS140SignaturePolicy(publicKey, algorithm, spec); err != nil {
+		return nil, err
+	}
+	if err := validatePublicKeyAlgorithm(publicKey, spec); err != nil {
 		return nil, err
 	}
 
@@ -86,7 +94,10 @@ func VerifySignature(publicKey crypto.PublicKey, algorithm Algorithm, message, s
 	if publicKey == nil {
 		return ErrKeyAlgorithmMismatch
 	}
-	if err := validatePublicKeyAlgorithm(publicKey, algorithm); err != nil {
+	if err := enforceFIPS140SignaturePolicy(publicKey, algorithm, spec); err != nil {
+		return err
+	}
+	if err := validatePublicKeyAlgorithm(publicKey, spec); err != nil {
 		return err
 	}
 
@@ -165,12 +176,55 @@ func VerifySignature(publicKey crypto.PublicKey, algorithm Algorithm, message, s
 	}
 }
 
-func validatePublicKeyAlgorithm(publicKey crypto.PublicKey, algorithm Algorithm) error {
-	spec, found := signatureAlgorithms[algorithm]
-	if !found {
-		return fmt.Errorf("%w: %d", ErrUnsupportedAlgorithm, algorithm)
+func enforceFIPS140SignaturePolicy(
+	publicKey crypto.PublicKey,
+	algorithm Algorithm,
+	spec signatureAlgorithm,
+) error {
+	if !ctapfips140.Required() {
+		return nil
 	}
+	switch spec.fips {
+	case fips140Approved:
+	case fips140VerifyOnly:
+		if algorithm != AlgorithmEdDSA {
+			return &ctapfips140.NotAllowedError{
+				Operation: fmt.Sprintf("COSE signature algorithm %d", algorithm),
+			}
+		}
+		if _, ok := publicKey.(ed25519.PublicKey); !ok {
+			return &ctapfips140.NotAllowedError{
+				Operation: fmt.Sprintf("COSE signature algorithm %d with a non-Ed25519 key", algorithm),
+			}
+		}
+	default:
+		return &ctapfips140.NotAllowedError{
+			Operation: fmt.Sprintf("COSE signature algorithm %d", algorithm),
+		}
+	}
+	if spec.kind == signatureRSA || spec.kind == signatureRSAPSS {
+		if key, ok := publicKey.(*rsa.PublicKey); ok {
+			if key == nil || key.N == nil {
+				return &ctapfips140.NotAllowedError{
+					Operation: fmt.Sprintf("COSE RSA public key parameters for algorithm %d", algorithm),
+				}
+			}
+			bits := key.N.BitLen()
+			if key.N.Sign() <= 0 || key.N.Bit(0) != 1 || bits < 2048 || bits%2 != 0 ||
+				key.E <= 1<<16 || key.E > math.MaxInt32 || key.E&1 != 1 {
+				return &ctapfips140.NotAllowedError{
+					Operation: fmt.Sprintf("COSE RSA public key parameters for algorithm %d", algorithm),
+				}
+			}
+		}
+	}
+	return nil
+}
 
+func validatePublicKeyAlgorithm(
+	publicKey crypto.PublicKey,
+	spec signatureAlgorithm,
+) error {
 	switch spec.kind {
 	case signatureEdDSA:
 		switch key := publicKey.(type) {
@@ -215,29 +269,50 @@ const (
 	signatureRSAPSS
 )
 
+// fips140Approval classifies an algorithm under the CTAP FIPS 140-3 policy.
+// The zero value denies it, so an unclassified entry fails closed.
+type fips140Approval uint8
+
+const (
+	fips140NotApproved fips140Approval = iota
+	fips140Approved
+	// fips140VerifyOnly covers algorithms whose approved parameters are only
+	// known from a concrete public key.
+	fips140VerifyOnly
+)
+
 type signatureAlgorithm struct {
 	kind  signatureKind
 	hash  crypto.Hash
 	curve int64
+	fips  fips140Approval
 }
 
 var signatureAlgorithms = map[Algorithm]signatureAlgorithm{
-	AlgorithmES256:   {kind: signatureECDSA, hash: crypto.SHA256, curve: EllipticCurveP256},
-	AlgorithmESP256:  {kind: signatureECDSA, hash: crypto.SHA256, curve: EllipticCurveP256},
-	AlgorithmES384:   {kind: signatureECDSA, hash: crypto.SHA384, curve: EllipticCurveP384},
-	AlgorithmESP384:  {kind: signatureECDSA, hash: crypto.SHA384, curve: EllipticCurveP384},
-	AlgorithmES512:   {kind: signatureECDSA, hash: crypto.SHA512, curve: EllipticCurveP521},
-	AlgorithmESP512:  {kind: signatureECDSA, hash: crypto.SHA512, curve: EllipticCurveP521},
-	AlgorithmEdDSA:   {kind: signatureEdDSA},
-	AlgorithmEd25519: {kind: signatureEdDSA, curve: EllipticCurveEd25519},
+	AlgorithmES256:  {kind: signatureECDSA, hash: crypto.SHA256, curve: EllipticCurveP256, fips: fips140Approved},
+	AlgorithmESP256: {kind: signatureECDSA, hash: crypto.SHA256, curve: EllipticCurveP256, fips: fips140Approved},
+	AlgorithmES384:  {kind: signatureECDSA, hash: crypto.SHA384, curve: EllipticCurveP384, fips: fips140Approved},
+	AlgorithmESP384: {kind: signatureECDSA, hash: crypto.SHA384, curve: EllipticCurveP384, fips: fips140Approved},
+	AlgorithmES512:  {kind: signatureECDSA, hash: crypto.SHA512, curve: EllipticCurveP521, fips: fips140Approved},
+	AlgorithmESP512: {kind: signatureECDSA, hash: crypto.SHA512, curve: EllipticCurveP521, fips: fips140Approved},
+	// AlgorithmEdDSA does not name a curve, so creation cannot rule out Ed448.
+	AlgorithmEdDSA:   {kind: signatureEdDSA, fips: fips140VerifyOnly},
+	AlgorithmEd25519: {kind: signatureEdDSA, curve: EllipticCurveEd25519, fips: fips140Approved},
 	AlgorithmES256K:  {kind: signatureECDSASecp256k1, hash: crypto.SHA256, curve: EllipticCurveSecp256k1},
-	AlgorithmRS256:   {kind: signatureRSA, hash: crypto.SHA256},
-	AlgorithmRS384:   {kind: signatureRSA, hash: crypto.SHA384},
-	AlgorithmRS512:   {kind: signatureRSA, hash: crypto.SHA512},
+	AlgorithmRS256:   {kind: signatureRSA, hash: crypto.SHA256, fips: fips140Approved},
+	AlgorithmRS384:   {kind: signatureRSA, hash: crypto.SHA384, fips: fips140Approved},
+	AlgorithmRS512:   {kind: signatureRSA, hash: crypto.SHA512, fips: fips140Approved},
 	AlgorithmRS1:     {kind: signatureRSA, hash: crypto.SHA1},
-	AlgorithmPS256:   {kind: signatureRSAPSS, hash: crypto.SHA256},
-	AlgorithmPS384:   {kind: signatureRSAPSS, hash: crypto.SHA384},
-	AlgorithmPS512:   {kind: signatureRSAPSS, hash: crypto.SHA512},
+	AlgorithmPS256:   {kind: signatureRSAPSS, hash: crypto.SHA256, fips: fips140Approved},
+	AlgorithmPS384:   {kind: signatureRSAPSS, hash: crypto.SHA384, fips: fips140Approved},
+	AlgorithmPS512:   {kind: signatureRSAPSS, hash: crypto.SHA512, fips: fips140Approved},
+}
+
+// FIPS140Approved reports whether a may be requested for credential generation
+// under the CTAP FIPS 140-3 policy. Verification is looser: it also accepts
+// [AlgorithmEdDSA] with an Ed25519 key.
+func (a Algorithm) FIPS140Approved() bool {
+	return signatureAlgorithms[a].fips == fips140Approved
 }
 
 func (k Key) okpPublicKey() (crypto.PublicKey, error) {
@@ -258,6 +333,9 @@ func (k Key) okpPublicKey() (crypto.PublicKey, error) {
 
 		return ed25519.PublicKey(append([]byte(nil), x...)), nil
 	case EllipticCurveEd448:
+		if ctapfips140.Required() {
+			return nil, &ctapfips140.NotAllowedError{Operation: "COSE Ed448 public key"}
+		}
 		if len(x) != ed448.PublicKeySize {
 			return nil, fmt.Errorf("cose: invalid Ed448 public key length %d", len(x))
 		}
@@ -288,6 +366,9 @@ func (k Key) ec2PublicKey() (crypto.PublicKey, error) {
 	case EllipticCurveP521:
 		curve = elliptic.P521()
 	case EllipticCurveSecp256k1:
+		if ctapfips140.Required() {
+			return nil, &ctapfips140.NotAllowedError{Operation: "COSE secp256k1 public key"}
+		}
 		size = 32
 	default:
 		return nil, fmt.Errorf("%w: EC2 curve %d", ErrUnsupportedKey, curveValue)

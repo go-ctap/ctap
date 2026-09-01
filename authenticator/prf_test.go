@@ -16,6 +16,7 @@ import (
 	"github.com/telesma-app/ctap/credential"
 	ctapcrypto "github.com/telesma-app/ctap/crypto"
 	"github.com/telesma-app/ctap/crypto/protocolone"
+	"github.com/telesma-app/ctap/crypto/protocoltwo"
 	"github.com/telesma-app/ctap/extension"
 	"github.com/telesma-app/ctap/internal/testhid"
 	"github.com/telesma-app/ctap/options"
@@ -71,8 +72,8 @@ func (t *prfRoundTripTransport) CBOR(
 		}
 		encryptedResult := t.encryptResult(request.Extensions.CreateHMACSecretMCInput.HMACSecret)
 
-		authData := minimalAuthData()
-		authData[32] = byte(protocol.AuthDataFlagUserPresent |
+		authData := minimalMakeCredentialAuthData(t.t)
+		authData[32] |= byte(protocol.AuthDataFlagUserPresent |
 			protocol.AuthDataFlagUserVerified |
 			protocol.AuthDataFlagExtensionDataIncluded)
 		authData = append(authData, encodeCBOR(t.t, protocol.CreateExtensionOutputs{
@@ -121,14 +122,36 @@ func (t *prfRoundTripTransport) encryptResult(input protocol.HMACSecret) []byte 
 	if err != nil {
 		t.t.Fatalf("unexpected error: %v", err)
 	}
-	sharedSecret := protocolone.KDF(z)
-	t.salts, err = protocolone.Decrypt(sharedSecret, input.SaltEnc)
+	protocolNumber := input.PinUvAuthProtocol
+	if protocolNumber == 0 {
+		protocolNumber = protocol.PinUvAuthProtocolOne
+	}
+
+	var sharedSecret []byte
+	switch protocolNumber {
+	case protocol.PinUvAuthProtocolOne:
+		sharedSecret = protocolone.KDF(z)
+	case protocol.PinUvAuthProtocolTwo:
+		sharedSecret, err = protocoltwo.KDF(z)
+		if err != nil {
+			t.t.Fatalf("unexpected error: %v", err)
+		}
+	default:
+		t.t.Fatalf("unexpected PIN/UV auth protocol: %v", protocolNumber)
+	}
+
+	switch protocolNumber {
+	case protocol.PinUvAuthProtocolOne:
+		t.salts, err = protocolone.Decrypt(sharedSecret, input.SaltEnc)
+	case protocol.PinUvAuthProtocolTwo:
+		t.salts, err = protocoltwo.Decrypt(sharedSecret, input.SaltEnc)
+	}
 	if err != nil {
 		t.t.Fatalf("unexpected error: %v", err)
 	}
 	{
 		want, got := ctapcrypto.Authenticate(
-			protocol.PinUvAuthProtocolOne,
+			protocolNumber,
 			sharedSecret,
 			input.SaltEnc,
 		), input.SaltAuth
@@ -137,7 +160,13 @@ func (t *prfRoundTripTransport) encryptResult(input protocol.HMACSecret) []byte 
 		}
 	}
 
-	encryptedResult, err := protocolone.Encrypt(sharedSecret, t.result)
+	var encryptedResult []byte
+	switch protocolNumber {
+	case protocol.PinUvAuthProtocolOne:
+		encryptedResult, err = protocolone.Encrypt(sharedSecret, t.result)
+	case protocol.PinUvAuthProtocolTwo:
+		encryptedResult, err = protocoltwo.Encrypt(sharedSecret, t.result)
+	}
 	if err != nil {
 		t.t.Fatalf("unexpected error: %v", err)
 	}
@@ -226,7 +255,7 @@ func TestMakeCredentialPRFReportsCapabilityWithoutRequiringEvaluation(t *testing
 func TestMakeCredentialPRFWithoutHMACSecretReturnsDisabledOutput(t *testing.T) {
 	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 		Format:      attestation.AttestationStatementFormatIdentifierPacked,
-		AuthDataRaw: minimalAuthData(),
+		AuthDataRaw: minimalMakeCredentialAuthData(t),
 	})
 	fake := testhid.NewCBORDevice(t, testCID, response)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
@@ -275,7 +304,7 @@ func TestMakeCredentialPRFEvaluatesAtCreationTimeWithExplicitUserVerification(t 
 			extension.ExtensionIdentifierHMACSecret,
 			extension.ExtensionIdentifierHMACSecretMC,
 		},
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options: map[protocol.Option]bool{
 			protocol.OptionUserVerification:            true,
 			protocol.OptionMakeCredentialUvNotRequired: true,
@@ -345,7 +374,7 @@ func TestMakeCredentialRawHMACSecretMCReturnsRawOutput(t *testing.T) {
 			extension.ExtensionIdentifierHMACSecret,
 			extension.ExtensionIdentifierHMACSecretMC,
 		},
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options: map[protocol.Option]bool{
 			protocol.OptionMakeCredentialUvNotRequired: true,
 		},
@@ -392,7 +421,7 @@ func TestMakeCredentialPRFEvaluatesAtCreationTimeWithAlwaysUV(t *testing.T) {
 			extension.ExtensionIdentifierHMACSecret,
 			extension.ExtensionIdentifierHMACSecretMC,
 		},
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options: map[protocol.Option]bool{
 			protocol.OptionUserVerification: true,
 			protocol.OptionAlwaysUv:         true,
@@ -525,7 +554,7 @@ func TestMakeCredentialPRFRejectsResultsWhenHMACSecretWasNotEnabled(t *testing.T
 			extension.ExtensionIdentifierHMACSecret,
 			extension.ExtensionIdentifierHMACSecretMC,
 		},
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options: map[protocol.Option]bool{
 			protocol.OptionUserVerification:            true,
 			protocol.OptionMakeCredentialUvNotRequired: true,
@@ -617,7 +646,7 @@ func TestGetAssertionPRFEvaluatesAndReturnsDecryptedResult(t *testing.T) {
 	transport := newPRFRoundTripTransport(t, result)
 	d := newPRFRoundTripDevice(t, transport, protocol.AuthenticatorGetInfoResponse{
 		Extensions:         []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options: map[protocol.Option]bool{
 			protocol.OptionUserVerification: true,
 		},
@@ -667,7 +696,7 @@ func TestGetAssertionPRFEvaluatesWithAlwaysUV(t *testing.T) {
 	d := newPRFRoundTripDevice(t, transport, protocol.AuthenticatorGetInfoResponse{
 		Versions:           protocol.Versions{protocol.FIDO_2_1},
 		Extensions:         []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options: map[protocol.Option]bool{
 			protocol.OptionUserVerification: true,
 			protocol.OptionAlwaysUv:         true,
@@ -733,7 +762,7 @@ func TestGetAssertionPRFRejectsResultCountMismatch(t *testing.T) {
 	transport := newPRFRoundTripTransport(t, bytes.Repeat([]byte{0x5a}, 64))
 	d := newPRFRoundTripDevice(t, transport, protocol.AuthenticatorGetInfoResponse{
 		Extensions:         []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options: map[protocol.Option]bool{
 			protocol.OptionUserVerification: true,
 		},
@@ -812,7 +841,7 @@ func TestPRFResultsRequireUserVerification(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, assertion)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
 		Extensions:         []extension.ExtensionIdentifier{extension.ExtensionIdentifierHMACSecret},
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options: map[protocol.Option]bool{
 			protocol.OptionUserVerification: true,
 		},

@@ -135,6 +135,14 @@ func TestDecryptGetInfoMembersValidateInput(t *testing.T) {
 		t.Errorf("value does not contain %#v", element)
 	}
 
+	_, err = DecryptDeviceIdentifier(make([]byte, 15), make([]byte, 32))
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+	if container, element := err.Error(), "persistentPinUvAuthToken must be a positive multiple of 16 bytes"; !strings.Contains(container, element) {
+		t.Errorf("value does not contain %#v", element)
+	}
+
 	_, err = DecryptDeviceIdentifier(make([]byte, 32), make([]byte, 31))
 	if err == nil {
 		t.Fatalf("expected an error")

@@ -13,6 +13,10 @@ import (
 )
 
 func KDF(z []byte) ([]byte, error) {
+	if len(z) != 32 {
+		return nil, fmt.Errorf("invalid P-256 shared secret length: got %d, want 32", len(z))
+	}
+
 	// Zero bytes for salt
 	salt := make([]byte, 32)
 
@@ -99,6 +103,9 @@ func Decrypt(sharedSecret []byte, demCiphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
+// Authenticate calculates a protocol-two authentication parameter.
+// sharedSecret must contain at least the 32-byte HMAC key produced by the
+// protocol-two KDF, or be a 32-byte pinUvAuthToken.
 func Authenticate(sharedSecret []byte, message []byte) []byte {
 	// If the key is longer than 32 bytes, discard the excess.
 	// (This selects the HMAC-key portion of the shared secret.

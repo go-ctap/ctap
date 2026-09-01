@@ -10,6 +10,7 @@ import (
 	"github.com/telesma-app/ctap/attestation"
 	"github.com/telesma-app/ctap/credential"
 	"github.com/telesma-app/ctap/extension"
+	"github.com/telesma-app/ctap/internal/fips140policy"
 	"github.com/telesma-app/ctap/protocol"
 	"github.com/telesma-app/ctap/webauthn"
 )
@@ -32,6 +33,10 @@ func validateCreatePreviewSign(
 	if len(inputs.PreviewSign.GenerateKey.Algorithms) == 0 {
 		return nil, newErrorMessage(SyntaxError, "previewSign generateKey.algorithms must not be empty")
 	}
+	algorithms, err := fips140policy.FilterPreviewSignAlgorithms(inputs.PreviewSign.GenerateKey.Algorithms)
+	if err != nil {
+		return nil, err
+	}
 	if !slices.Contains(info.Extensions, extension.ExtensionIdentifierPreviewSign) {
 		return nil, newErrorMessage(ErrNotSupported, "device doesn't support previewSign extension")
 	}
@@ -46,7 +51,7 @@ func validateCreatePreviewSign(
 	}
 
 	return &protocol.PreviewSignGenerateKeyInput{
-		Algorithms: slices.Clone(inputs.PreviewSign.GenerateKey.Algorithms),
+		Algorithms: slices.Clone(algorithms),
 		Flags:      &flags,
 	}, nil
 }

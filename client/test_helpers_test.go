@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdh"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"slices"
 	"testing"
 
@@ -59,6 +61,37 @@ func encodeCBOR(t testing.TB, v any) []byte {
 
 func minimalAuthData() []byte {
 	return make([]byte, 37)
+}
+
+func minimalMakeCredentialAuthData(t testing.TB) []byte {
+	t.Helper()
+	return makeCredentialAuthData(t, testP256CredentialKey(cose.AlgorithmES256))
+}
+
+func makeCredentialAuthData(t testing.TB, key cose.Key) []byte {
+	t.Helper()
+
+	data := make([]byte, 37)
+	data[32] = byte(protocol.AuthDataFlagAttestedCredentialDataIncluded)
+	data = append(data, make([]byte, 16)...)
+	credentialID := []byte("credential-id")
+	length := make([]byte, 2)
+	binary.BigEndian.PutUint16(length, uint16(len(credentialID)))
+	data = append(data, length...)
+	data = append(data, credentialID...)
+	data = append(data, encodeCBOR(t, key)...)
+	return data
+}
+
+func testP256CredentialKey(algorithm cose.Algorithm) cose.Key {
+	curve := elliptic.P256().Params()
+	return cose.Key{
+		cose.KeyParameterKty:    cose.KeyTypeEC2,
+		cose.KeyParameterAlg:    algorithm,
+		cose.EC2KeyParameterCrv: cose.EllipticCurveP256,
+		cose.EC2KeyParameterX:   curve.Gx.FillBytes(make([]byte, 32)),
+		cose.EC2KeyParameterY:   curve.Gy.FillBytes(make([]byte, 32)),
+	}
 }
 
 func assertRequestKeys(t testing.TB, request map[uint64]any, keys ...uint64) {

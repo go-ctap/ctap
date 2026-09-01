@@ -37,6 +37,12 @@ func decryptGetInfoMember(
 	if len(persistentPinUvAuthToken) == 0 {
 		return plaintext, fmt.Errorf("persistentPinUvAuthToken must not be empty")
 	}
+	if len(persistentPinUvAuthToken)%aes.BlockSize != 0 {
+		return plaintext, fmt.Errorf(
+			"persistentPinUvAuthToken must be a positive multiple of %d bytes",
+			aes.BlockSize,
+		)
+	}
 	if len(encrypted) != 2*getInfoEncryptedMemberPlaintextSize {
 		return plaintext, fmt.Errorf(
 			"%s must be exactly %d bytes",

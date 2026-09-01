@@ -59,6 +59,9 @@ func Decrypt(sharedSecret []byte, demCiphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
+// Authenticate calculates a protocol-one authentication parameter.
+// sharedSecret must be a CTAP-valid protocol-one shared secret or token: a
+// positive multiple of 16 bytes.
 func Authenticate(sharedSecret []byte, message []byte) []byte {
 	hasher := hmac.New(sha256.New, sharedSecret)
 	hasher.Write(message)

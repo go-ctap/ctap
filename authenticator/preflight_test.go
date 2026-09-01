@@ -132,6 +132,8 @@ func TestProtectedSubcommandsRejectMissingOrMalformedTokenBeforeCommand(t *testi
 }
 
 func TestPinUvAuthTokenLengthUsesCTAPVersion(t *testing.T) {
+	skipAuthenticatorFIPS140(t)
+
 	t.Run("FIDO 2.0 accepts a longer protocol 1 token", func(t *testing.T) {
 		d := newTestDevice(t, testhid.NewCBORDevice(t, testCID), protocol.AuthenticatorGetInfoResponse{
 			Versions:           protocol.Versions{protocol.FIDO_2_0},
@@ -960,7 +962,7 @@ func TestRetryQueriesWorkBeforePINOrUVConfiguration(t *testing.T) {
 			PinRetries: new(uint(8)),
 		}))
 		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
-			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 			Options: map[protocol.Option]bool{
 				protocol.OptionClientPIN: false,
 			},
@@ -980,8 +982,8 @@ func TestRetryQueriesWorkBeforePINOrUVConfiguration(t *testing.T) {
 			UvRetries: new(uint(5)),
 		}))
 		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
-			Versions:           protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1_PRE},
-			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+			Versions:           protocol.Versions{protocol.FIDO_2_1},
+			PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 			Options: map[protocol.Option]bool{
 				protocol.OptionUserVerification: false,
 			},
@@ -1000,7 +1002,7 @@ func TestRetryQueriesWorkBeforePINOrUVConfiguration(t *testing.T) {
 			t.Errorf("got %#v, want %#v", got, want)
 		}
 		{
-			want, got := uint64(protocol.PinUvAuthProtocolOne), request[uint64(1)]
+			want, got := uint64(protocol.PinUvAuthProtocolTwo), request[uint64(1)]
 			gotValue, ok := got.(uint64)
 
 			if !ok || gotValue != want {

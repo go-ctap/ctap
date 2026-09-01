@@ -33,3 +33,16 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+
+    - name: Test certified FIPS 140 policy
+      if: matrix.os == 'ubuntu-latest'
+      env:
+        GOFIPS140: certified
+      run: go test -v ./...
+
+    - name: Test certified FIPS 140-only policy
+      if: matrix.os == 'ubuntu-latest'
+      env:
+        GODEBUG: fips140=only
+        GOFIPS140: certified
+      run: go test -v ./...

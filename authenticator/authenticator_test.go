@@ -105,11 +105,11 @@ func TestGetInfoAlwaysRequestsCurrentDeviceInfo(t *testing.T) {
 	}
 	second := protocol.AuthenticatorGetInfoResponse{
 		Versions:           protocol.Versions{protocol.FIDO_2_3},
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 	}
 	fake := testhid.NewCBORDevice(t, testCID, encodeCBOR(t, first), encodeCBOR(t, second))
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 	})
 
 	got, err := d.GetInfo(testContext)
@@ -131,7 +131,7 @@ func TestGetInfoAlwaysRequestsCurrentDeviceInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got, want := selected, protocol.PinUvAuthProtocolOne; got != want {
+	if got, want := selected, protocol.PinUvAuthProtocolTwo; got != want {
 		t.Errorf("got %#v, want %#v", got, want)
 	}
 
@@ -258,6 +258,9 @@ func TestRequirePinUvAuthProtocolSelectsFirstSupported(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "preserves authenticator preference" {
+				skipAuthenticatorFIPS140(t)
+			}
 			d := &Device{info: protocol.AuthenticatorGetInfoResponse{PinUvAuthProtocols: tt.advertised}}
 			got, err := d.requirePinUvAuthProtocol()
 			if tt.want == 0 {

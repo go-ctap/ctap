@@ -17,6 +17,8 @@ import (
 	"github.com/telesma-app/ctap/credential"
 	"github.com/telesma-app/ctap/crypto"
 	"github.com/telesma-app/ctap/extension"
+	"github.com/telesma-app/ctap/internal/fips140policy"
+	pinvalidation "github.com/telesma-app/ctap/internal/pin"
 	"github.com/telesma-app/ctap/options"
 	"github.com/telesma-app/ctap/protocol"
 	ctaptransport "github.com/telesma-app/ctap/transport"
@@ -66,17 +68,28 @@ type locker interface {
 }
 
 func (d *Device) requirePinUvAuthProtocol() (protocol.PinUvAuthProtocol, error) {
+	var policyErr error
 	for _, candidate := range d.info.PinUvAuthProtocols {
 		switch candidate {
 		case protocol.PinUvAuthProtocolOne, protocol.PinUvAuthProtocolTwo:
+			if err := pinvalidation.ValidateFIPS140UvAuthProtocol(candidate); err != nil {
+				policyErr = err
+				continue
+			}
 			return candidate, nil
 		}
+	}
+	if policyErr != nil {
+		return 0, policyErr
 	}
 
 	// FIDO_2_1_PRE RD 2019 makes pinUvAuthProtocols optional and defines
 	// protocol 1 as the only valid protocol for the uvToken flow.
 	if len(d.info.PinUvAuthProtocols) == 0 &&
 		d.info.Versions.IsPreviewOnly() && d.info.Options[protocol.OptionUvToken] {
+		if err := pinvalidation.ValidateFIPS140UvAuthProtocol(protocol.PinUvAuthProtocolOne); err != nil {
+			return 0, err
+		}
 		return protocol.PinUvAuthProtocolOne, nil
 	}
 
@@ -236,6 +249,10 @@ func (d *Device) MakeCredential(
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	pubKeyCredParams, err := fips140policy.FilterCredentialParameters(pubKeyCredParams)
+	if err != nil {
+		return protocol.AuthenticatorMakeCredentialResponse{}, err
+	}
 	if err := d.ensureInfoLocked(ctx); err != nil {
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
@@ -1106,9 +1123,15 @@ func (d *Device) GetUVRetries(ctx context.Context) (uint, error) {
 		return 0, newErrorMessage(ErrNotSupported, "device doesn't support user verification")
 	}
 
-	var pinUvAuthProtocol protocol.PinUvAuthProtocol
+	var (
+		pinUvAuthProtocol protocol.PinUvAuthProtocol
+		err               error
+	)
 	if len(d.info.PinUvAuthProtocols) > 0 {
-		pinUvAuthProtocol = d.info.PinUvAuthProtocols[0]
+		pinUvAuthProtocol, err = d.requirePinUvAuthProtocol()
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	return d.ctapClient.GetUVRetries(ctx, pinUvAuthProtocol)

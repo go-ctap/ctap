@@ -4,16 +4,36 @@ import (
 	"fmt"
 	"unicode/utf8"
 
+	ctapfips140 "github.com/telesma-app/ctap/fips140"
 	"github.com/telesma-app/ctap/protocol"
 	"golang.org/x/text/unicode/norm"
 )
 
 const maxUTF8Bytes = 63
 
+// ValidateFIPS140UvAuthProtocol rejects PIN/UV auth protocols outside the
+// CTAP FIPS 140-3 policy. The rule covers the platform's own cryptography, not
+// the authenticator's: protocol 1 derives its shared secret with a bare
+// SHA-256 rather than an approved KDF, and encrypts with unauthenticated
+// AES-CBC under a fixed zero IV. Protocol 2 replaces both.
+func ValidateFIPS140UvAuthProtocol(pinUvAuthProtocol protocol.PinUvAuthProtocol) error {
+	if !ctapfips140.Required() || pinUvAuthProtocol == protocol.PinUvAuthProtocolTwo {
+		return nil
+	}
+
+	return &ctapfips140.NotAllowedError{
+		Operation: fmt.Sprintf("PIN/UV auth protocol %d", pinUvAuthProtocol),
+	}
+}
+
 // ValidateUvAuthToken validates the token length accepted by the selected
 // PIN/UV auth protocol. Callers with authenticator version information may
 // apply stricter version-specific requirements.
 func ValidateUvAuthToken(pinUvAuthProtocol protocol.PinUvAuthProtocol, pinUvAuthToken []byte) error {
+	if err := ValidateFIPS140UvAuthProtocol(pinUvAuthProtocol); err != nil {
+		return err
+	}
+
 	switch pinUvAuthProtocol {
 	case protocol.PinUvAuthProtocolOne:
 		// CTAP 2.0 allowed any positive multiple of the AES block size. CTAP

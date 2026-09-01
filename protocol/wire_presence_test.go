@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -224,4 +225,126 @@ func TestPresenceSensitiveZeroResponseMembersAreEncoded(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	requireRawField(t, extensionFields, "credBlob", cbor.RawMessage{0x40})
+}
+
+func cborStringFields(t *testing.T, value any) map[string]cbor.RawMessage {
+	t.Helper()
+
+	raw, err := cbor.Marshal(value)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var fields map[string]cbor.RawMessage
+	if err := cbor.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return fields
+}
+
+// nonZeroFieldValue builds a value any IsZero implementation must treat as set.
+func nonZeroFieldValue(t *testing.T, fieldType reflect.Type) reflect.Value {
+	t.Helper()
+
+	switch fieldType.Kind() {
+	case reflect.Slice:
+		return reflect.MakeSlice(fieldType, 1, 1)
+	case reflect.Map:
+		return reflect.MakeMap(fieldType)
+	case reflect.Pointer:
+		return reflect.New(fieldType.Elem())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		value := reflect.New(fieldType).Elem()
+		value.SetInt(1)
+		return value
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		value := reflect.New(fieldType).Elem()
+		value.SetUint(1)
+		return value
+	case reflect.Bool:
+		value := reflect.New(fieldType).Elem()
+		value.SetBool(true)
+		return value
+	default:
+		t.Fatalf("unhandled field kind %v; extend nonZeroFieldValue", fieldType.Kind())
+		return reflect.Value{}
+	}
+}
+
+// TestExtensionIsZeroMatchesWirePresence checks that anything reaching the wire
+// reports IsZero false. Reflection over the fields covers ones added later.
+func TestExtensionIsZeroMatchesWirePresence(t *testing.T) {
+	tests := []struct {
+		name  string
+		inner reflect.Type
+		// wrap puts inner into the struct carrying the omitzero tag.
+		wrap      func(reflect.Value) any
+		memberKey string
+	}{
+		{
+			name:  "CreatePreviewSignInput",
+			inner: reflect.TypeFor[PreviewSignGenerateKeyInput](),
+			wrap: func(value reflect.Value) any {
+				return CreatePreviewSignInput{PreviewSign: value.Interface().(PreviewSignGenerateKeyInput)}
+			},
+			memberKey: "previewSign",
+		},
+		{
+			name:  "GetPreviewSignInput",
+			inner: reflect.TypeFor[PreviewSignSignInput](),
+			wrap: func(value reflect.Value) any {
+				return GetPreviewSignInput{PreviewSign: value.Interface().(PreviewSignSignInput)}
+			},
+			memberKey: "previewSign",
+		},
+		{
+			name:  "GetHMACSecretInput",
+			inner: reflect.TypeFor[HMACSecret](),
+			wrap: func(value reflect.Value) any {
+				return GetHMACSecretInput{HMACSecret: value.Interface().(HMACSecret)}
+			},
+			memberKey: "hmac-secret",
+		},
+		{
+			name:  "CreateHMACSecretMCInput",
+			inner: reflect.TypeFor[HMACSecret](),
+			wrap: func(value reflect.Value) any {
+				return CreateHMACSecretMCInput{HMACSecret: value.Interface().(HMACSecret)}
+			},
+			memberKey: "hmac-secret-mc",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			zero := reflect.New(test.inner).Elem()
+			if !zero.Interface().(interface{ IsZero() bool }).IsZero() {
+				t.Fatalf("zero %s reports IsZero false", test.inner)
+			}
+			if _, present := cborStringFields(t, test.wrap(zero))[test.memberKey]; present {
+				t.Fatalf("zero %s encoded member %q", test.inner, test.memberKey)
+			}
+
+			for i := range test.inner.NumField() {
+				field := test.inner.Field(i)
+				t.Run(field.Name, func(t *testing.T) {
+					value := reflect.New(test.inner).Elem()
+					value.Field(i).Set(nonZeroFieldValue(t, field.Type))
+
+					if value.Interface().(interface{ IsZero() bool }).IsZero() {
+						t.Errorf(
+							"IsZero reports true with %s set; update %s.IsZero",
+							field.Name, test.inner,
+						)
+					}
+					if _, present := cborStringFields(t, test.wrap(value))[test.memberKey]; !present {
+						t.Errorf(
+							"member %q is omitted with %s set; IsZero and the wire representation disagree",
+							test.memberKey, field.Name,
+						)
+					}
+				})
+			}
+		})
+	}
 }

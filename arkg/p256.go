@@ -14,6 +14,7 @@ import (
 	"filippo.io/nistec"
 	"github.com/cloudflare/circl/expander"
 	"github.com/telesma-app/ctap/cose"
+	"github.com/telesma-app/ctap/fips140"
 )
 
 const p256ContextLimit = 64
@@ -27,7 +28,13 @@ var p256ScalarOrder = new(big.Int).SetBytes([]byte{
 
 // DeriveP256 derives a P-256 public key and its key handle from an ARKG-P256
 // public seed. inputKeyMaterial should contain at least 256 bits of entropy.
+// It returns [fips140.ErrNotAllowed] when FIPS 140-3 mode is required because
+// the implementation uses cryptography outside the Go Cryptographic Module.
 func DeriveP256(publicSeed cose.Key, inputKeyMaterial, context []byte) (cose.Key, []byte, error) {
+	if fips140.Required() {
+		return nil, nil, &fips140.NotAllowedError{Operation: "ARKG-P256"}
+	}
+
 	// Validate the ARKG-P256 inputs and COSE binding.
 	if len(context) > p256ContextLimit {
 		return nil, nil, fmt.Errorf("arkg: P-256 context is %d bytes, maximum is %d", len(context), p256ContextLimit)

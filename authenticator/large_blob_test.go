@@ -25,7 +25,7 @@ import (
 func TestDirectLargeBlobMakeCredential(t *testing.T) {
 	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 		Format:      attestation.AttestationStatementFormatIdentifierPacked,
-		AuthDataRaw: minimalAuthData(),
+		AuthDataRaw: minimalMakeCredentialAuthData(t),
 		UnsignedExtensionOutputs: map[extension.ExtensionIdentifier]any{
 			extension.ExtensionIdentifierLargeBlob: protocol.CreateLargeBlobOutput{Supported: true},
 		},
@@ -74,7 +74,7 @@ func TestLegacyLargeBlobMakeCredential(t *testing.T) {
 	key := make([]byte, 32)
 	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 		Format:       attestation.AttestationStatementFormatIdentifierPacked,
-		AuthDataRaw:  minimalAuthData(),
+		AuthDataRaw:  minimalMakeCredentialAuthData(t),
 		LargeBlobKey: key,
 	})
 	info := legacyLargeBlobInfo()
@@ -119,7 +119,7 @@ func TestLegacyLargeBlobMakeCredentialValidatesKeyRequestCorrelation(t *testing.
 	t.Run("requested preferred key is required in response", func(t *testing.T) {
 		response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 			Format:      attestation.AttestationStatementFormatIdentifierPacked,
-			AuthDataRaw: minimalAuthData(),
+			AuthDataRaw: minimalMakeCredentialAuthData(t),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
 		d := newTestDevice(t, fake, legacyLargeBlobInfo())
@@ -149,7 +149,7 @@ func TestLegacyLargeBlobMakeCredentialValidatesKeyRequestCorrelation(t *testing.
 	t.Run("key without CTAP extension input is unsolicited", func(t *testing.T) {
 		response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 			Format:       attestation.AttestationStatementFormatIdentifierPacked,
-			AuthDataRaw:  minimalAuthData(),
+			AuthDataRaw:  minimalMakeCredentialAuthData(t),
 			LargeBlobKey: make([]byte, 32),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
@@ -182,7 +182,7 @@ func TestMakeCredentialRejectsUnsolicitedLargeBlobResponseWithoutClientInput(t *
 	t.Run("legacy key", func(t *testing.T) {
 		response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 			Format:       attestation.AttestationStatementFormatIdentifierPacked,
-			AuthDataRaw:  minimalAuthData(),
+			AuthDataRaw:  minimalMakeCredentialAuthData(t),
 			LargeBlobKey: make([]byte, 32),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
@@ -197,7 +197,7 @@ func TestMakeCredentialRejectsUnsolicitedLargeBlobResponseWithoutClientInput(t *
 	t.Run("direct output", func(t *testing.T) {
 		response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 			Format:      attestation.AttestationStatementFormatIdentifierPacked,
-			AuthDataRaw: minimalAuthData(),
+			AuthDataRaw: minimalMakeCredentialAuthData(t),
 			UnsignedExtensionOutputs: map[extension.ExtensionIdentifier]any{
 				extension.ExtensionIdentifierLargeBlob: protocol.CreateLargeBlobOutput{Supported: true},
 			},
@@ -731,24 +731,24 @@ func encodeLargeBlobConfig(t *testing.T, blobs []protocol.LargeBlob) []byte {
 
 func encryptRawLargeBlob(t *testing.T, key, plaintext []byte, originalSize uint) protocol.LargeBlob {
 	t.Helper()
+	const nonceSize = 12
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := cipher.NewGCMWithRandomNonce(block)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	nonce := make([]byte, gcm.NonceSize())
-	nonce[0] = 1
 	additionalData := make([]byte, 12)
 	copy(additionalData, "blob")
 	binary.LittleEndian.PutUint64(additionalData[4:], uint64(originalSize))
+	sealed := gcm.Seal(nil, nil, plaintext, additionalData)
 
 	return protocol.LargeBlob{
-		Ciphertext: gcm.Seal(nil, nonce, plaintext, additionalData),
-		Nonce:      nonce,
+		Ciphertext: slices.Clone(sealed[nonceSize:]),
+		Nonce:      slices.Clone(sealed[:nonceSize]),
 		OrigSize:   originalSize,
 	}
 }
@@ -929,7 +929,7 @@ func TestLargeBlobsReturnsInvalidArrayError(t *testing.T) {
 func TestSetLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols:          []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols:          []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		MaxSerializedLargeBlobArray: 2048,
 		Options: map[protocol.Option]bool{
 			protocol.OptionLargeBlobs: true,
@@ -973,7 +973,7 @@ func TestSetLargeBlobsUsesDefaultMaxMsgSizeWhenMissing(t *testing.T) {
 func TestSetLargeBlobsRequiresReportedMaxSerializedLargeBlobArray(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options: map[protocol.Option]bool{
 			protocol.OptionLargeBlobs: true,
 		},

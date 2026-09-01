@@ -15,6 +15,7 @@ import (
 	"github.com/cloudflare/circl/sign/ed448"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	secp256k1ecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"github.com/telesma-app/ctap/fips140"
 )
 
 func TestCredentialKeyAndSignatureAlgorithms(t *testing.T) {
@@ -29,19 +30,26 @@ func TestCredentialKeyAndSignatureAlgorithms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate Ed25519 key: %v", err)
 	}
-	_, ed448Key, err := ed448.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate Ed448 key: %v", err)
-	}
-	secp256k1Key, err := secp256k1.GeneratePrivateKey()
-	if err != nil {
-		t.Fatalf("generate secp256k1 key: %v", err)
+	var (
+		ed448Key     ed448.PrivateKey
+		secp256k1Key *secp256k1.PrivateKey
+	)
+	if !fips140.Required() {
+		_, ed448Key, err = ed448.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("generate Ed448 key: %v", err)
+		}
+		secp256k1Key, err = secp256k1.GeneratePrivateKey()
+		if err != nil {
+			t.Fatalf("generate secp256k1 key: %v", err)
+		}
 	}
 
 	tests := []struct {
 		name      string
 		algorithm Algorithm
 		key       any
+		fipsBlock bool
 	}{
 		{name: "ES256", algorithm: AlgorithmES256, key: p256},
 		{name: "ESP256", algorithm: AlgorithmESP256, key: p256},
@@ -50,13 +58,13 @@ func TestCredentialKeyAndSignatureAlgorithms(t *testing.T) {
 		{name: "ES512", algorithm: AlgorithmES512, key: p521},
 		{name: "ESP512", algorithm: AlgorithmESP512, key: p521},
 		{name: "EdDSA", algorithm: AlgorithmEdDSA, key: ed25519Key},
-		{name: "EdDSA Ed448", algorithm: AlgorithmEdDSA, key: ed448Key},
+		{name: "EdDSA Ed448", algorithm: AlgorithmEdDSA, key: ed448Key, fipsBlock: true},
 		{name: "Ed25519", algorithm: AlgorithmEd25519, key: ed25519Key},
-		{name: "ES256K", algorithm: AlgorithmES256K, key: secp256k1Key},
+		{name: "ES256K", algorithm: AlgorithmES256K, key: secp256k1Key, fipsBlock: true},
 		{name: "RS256", algorithm: AlgorithmRS256, key: rsaKey},
 		{name: "RS384", algorithm: AlgorithmRS384, key: rsaKey},
 		{name: "RS512", algorithm: AlgorithmRS512, key: rsaKey},
-		{name: "RS1", algorithm: AlgorithmRS1, key: rsaKey},
+		{name: "RS1", algorithm: AlgorithmRS1, key: rsaKey, fipsBlock: true},
 		{name: "PS256", algorithm: AlgorithmPS256, key: rsaKey},
 		{name: "PS384", algorithm: AlgorithmPS384, key: rsaKey},
 		{name: "PS512", algorithm: AlgorithmPS512, key: rsaKey},
@@ -64,6 +72,9 @@ func TestCredentialKeyAndSignatureAlgorithms(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			if fips140.Required() && test.fipsBlock {
+				t.Skip("algorithm is intentionally unavailable in FIPS 140-3 mode")
+			}
 			message := []byte("credential signature message")
 			key := credentialKey(test.key, test.algorithm)
 			key[2] = []byte("optional key ID")

@@ -15,7 +15,7 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 	t.Run("MakeCredential", func(t *testing.T) {
 		response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 			Format:      attestation.AttestationStatementFormatIdentifierPacked,
-			AuthDataRaw: minimalAuthData(),
+			AuthDataRaw: minimalMakeCredentialAuthData(t),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
 		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
@@ -114,7 +114,7 @@ func TestCredentialStoreMutationsDoNotRequestGetInfo(t *testing.T) {
 func TestMakeCredentialDoesNotRequestGetInfoAfterSuccess(t *testing.T) {
 	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 		Format:      attestation.AttestationStatementFormatIdentifierPacked,
-		AuthDataRaw: minimalAuthData(),
+		AuthDataRaw: minimalMakeCredentialAuthData(t),
 	})
 	fake := testhid.NewCBORDevice(t, testCID, response)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
@@ -206,6 +206,8 @@ func TestCredentialManagementUnsupportedIteratorsReturnBeforeCommand(t *testing.
 }
 
 func TestUpdateUserInformationUsesPreviewCommandForPreviewOnlyDevice(t *testing.T) {
+	skipAuthenticatorFIPS140(t)
+
 	info := protocol.AuthenticatorGetInfoResponse{
 		Versions:           protocol.Versions{protocol.FIDO_2_0, protocol.FIDO_2_1_PRE},
 		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},

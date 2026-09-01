@@ -67,6 +67,8 @@ func TestGetPinUvAuthTokenUsingPINRequiresPINChangeBeforeCommand(t *testing.T) {
 }
 
 func TestGetPinUvAuthTokenUsingUVUsesPreviewRequestShape(t *testing.T) {
+	skipAuthenticatorFIPS140(t)
+
 	keyAgreement := encodeCBOR(t, protocol.AuthenticatorClientPINResponse{
 		KeyAgreement: testKeyAgreement(t),
 	})
@@ -245,7 +247,7 @@ func TestSetPINAddsPINPolicyURLToAuthenticatorError(t *testing.T) {
 		testhid.CBORStatus(testCID, ctaptransport.CTAP2_ERR_PIN_POLICY_VIOLATION),
 	)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols:     []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols:     []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		PinComplexityPolicyURL: []byte("https://example.com/pin-policy"),
 		Options:                map[protocol.Option]bool{protocol.OptionClientPIN: false},
 	})
@@ -272,7 +274,7 @@ func TestSetPINDoesNotRequestGetInfo(t *testing.T) {
 	})
 	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
 	})
 
@@ -301,12 +303,12 @@ func TestSetPINInvalidatesInfoAndChangePINRefreshesIt(t *testing.T) {
 		KeyAgreement: testKeyAgreement(t),
 	})
 	currentInfo := encodeCBOR(t, protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
 	})
 	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil, currentInfo, keyAgreement, nil)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: false},
 	})
 
@@ -343,7 +345,7 @@ func TestSetPINInvalidatesInfoAndChangePINRefreshesIt(t *testing.T) {
 func TestChangePINValidatesNewPINBeforeCommand(t *testing.T) {
 	fake := testhid.NewCBORDevice(t, testCID)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		MinPINLength:       8,
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
 	})
@@ -364,7 +366,7 @@ func TestChangePINRemainsAvailableWhenPINChangeIsRequired(t *testing.T) {
 	})
 	fake := testhid.NewCBORDevice(t, testCID, keyAgreement, nil)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
-		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolOne},
+		PinUvAuthProtocols: []protocol.PinUvAuthProtocol{protocol.PinUvAuthProtocolTwo},
 		ForcePINChange:     true,
 		Options:            map[protocol.Option]bool{protocol.OptionClientPIN: true},
 	})

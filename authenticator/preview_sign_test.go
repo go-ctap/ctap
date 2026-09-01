@@ -14,6 +14,7 @@ import (
 	"github.com/telesma-app/ctap/cose"
 	"github.com/telesma-app/ctap/credential"
 	"github.com/telesma-app/ctap/extension"
+	"github.com/telesma-app/ctap/fips140"
 	"github.com/telesma-app/ctap/internal/testhid"
 	"github.com/telesma-app/ctap/protocol"
 	"github.com/telesma-app/ctap/webauthn"
@@ -71,6 +72,15 @@ func previewSignAuthDataWithSignCount(
 
 func TestMakeCredentialPreviewSign(t *testing.T) {
 	algorithm := cose.AlgorithmESP256SplitARKGPlaceholder
+	requestedAlgorithms := []cose.Algorithm{algorithm}
+	if fips140.Required() {
+		algorithm = cose.AlgorithmES256
+		requestedAlgorithms = []cose.Algorithm{
+			cose.AlgorithmES256K,
+			algorithm,
+			cose.AlgorithmRS1,
+		}
+	}
 	flags := protocol.AuthDataFlagUserPresent
 	aaguid := uuid.MustParse("00112233-4455-6677-8899-aabbccddeeff")
 	authDataFlags := protocol.AuthDataFlagUserPresent |
@@ -129,7 +139,7 @@ func TestMakeCredentialPreviewSign(t *testing.T) {
 		PreviewSignInputs: &webauthn.PreviewSignInputs{
 			PreviewSign: webauthn.AuthenticationExtensionsPreviewSignInputs{
 				GenerateKey: &webauthn.PreviewSignGenerateKeyInputs{
-					Algorithms: []cose.Algorithm{algorithm},
+					Algorithms: requestedAlgorithms,
 				},
 			},
 		},
@@ -284,6 +294,10 @@ func TestGetAssertionPreviewSign(t *testing.T) {
 
 func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 	t.Run("MakeCredential maps user verification to signing flags", func(t *testing.T) {
+		algorithm := cose.AlgorithmESP256SplitARKGPlaceholder
+		if fips140.Required() {
+			algorithm = cose.AlgorithmES256
+		}
 		input, err := validateCreatePreviewSign(
 			protocol.AuthenticatorGetInfoResponse{
 				Extensions: []extension.ExtensionIdentifier{extension.ExtensionIdentifierPreviewSign},
@@ -292,7 +306,7 @@ func TestPreviewSignValidatesClientInputsBeforeAuthenticatorIO(t *testing.T) {
 			&webauthn.PreviewSignInputs{
 				PreviewSign: webauthn.AuthenticationExtensionsPreviewSignInputs{
 					GenerateKey: &webauthn.PreviewSignGenerateKeyInputs{
-						Algorithms: []cose.Algorithm{cose.AlgorithmESP256SplitARKGPlaceholder},
+						Algorithms: []cose.Algorithm{algorithm},
 					},
 				},
 			},

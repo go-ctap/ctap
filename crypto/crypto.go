@@ -12,8 +12,11 @@ import (
 	"github.com/telesma-app/ctap/cose"
 	"github.com/telesma-app/ctap/crypto/protocolone"
 	"github.com/telesma-app/ctap/crypto/protocoltwo"
+	pinvalidation "github.com/telesma-app/ctap/internal/pin"
 	"github.com/telesma-app/ctap/protocol"
 )
+
+const largeBlobNonceSize = 12
 
 type PinUvAuthProtocol struct {
 	Number             protocol.PinUvAuthProtocol
@@ -22,6 +25,10 @@ type PinUvAuthProtocol struct {
 }
 
 func NewPinUvAuthProtocol(number protocol.PinUvAuthProtocol) (*PinUvAuthProtocol, error) {
+	if err := pinvalidation.ValidateFIPS140UvAuthProtocol(number); err != nil {
+		return nil, err
+	}
+
 	platformPrivkey, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("cannot generate platform P-256 keypair: %w", err)
@@ -98,6 +105,12 @@ func (p *PinUvAuthProtocol) Encapsulate(peerCoseKey cose.Key) (cose.Key, []byte,
 	return p.platformCoseKey, sharedSecret, nil
 }
 
+// Authenticate calculates a PIN/UV authentication parameter. sharedSecret
+// must already satisfy the selected CTAP protocol's shared-secret or token
+// length rules.
+//
+// It applies no FIPS 140-3 policy and panics on an unknown protocol. Callers
+// that need the policy go through [NewPinUvAuthProtocol].
 func Authenticate(number protocol.PinUvAuthProtocol, sharedSecret []byte, message []byte) []byte {
 	switch number {
 	case protocol.PinUvAuthProtocolOne:
@@ -131,18 +144,19 @@ func OpenLargeBlob(key []byte, blob protocol.LargeBlob) ([]byte, error) {
 		return nil, err
 	}
 
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := cipher.NewGCMWithRandomNonce(block)
 	if err != nil {
 		return nil, err
 	}
-	if len(blob.Nonce) != gcm.NonceSize() {
-		return nil, fmt.Errorf("invalid large blob nonce length: got %d, want %d", len(blob.Nonce), gcm.NonceSize())
+	if len(blob.Nonce) != largeBlobNonceSize {
+		return nil, fmt.Errorf("invalid large blob nonce length: got %d, want %d", len(blob.Nonce), largeBlobNonceSize)
 	}
 
 	origSizeBin := make([]byte, 8)
 	binary.LittleEndian.PutUint64(origSizeBin, uint64(blob.OrigSize))
 
-	return gcm.Open(nil, blob.Nonce, blob.Ciphertext, slices.Concat([]byte("blob"), origSizeBin))
+	sealed := slices.Concat(blob.Nonce, blob.Ciphertext)
+	return gcm.Open(nil, nil, sealed, slices.Concat([]byte("blob"), origSizeBin))
 }
 
 func EncryptLargeBlob(key []byte, origData []byte) (protocol.LargeBlob, error) {
@@ -160,13 +174,8 @@ func EncryptLargeBlob(key []byte, origData []byte) (protocol.LargeBlob, error) {
 		return protocol.LargeBlob{}, err
 	}
 
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := cipher.NewGCMWithRandomNonce(block)
 	if err != nil {
-		return protocol.LargeBlob{}, err
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
 		return protocol.LargeBlob{}, err
 	}
 
@@ -174,10 +183,10 @@ func EncryptLargeBlob(key []byte, origData []byte) (protocol.LargeBlob, error) {
 	origSizeBin := make([]byte, 8)
 	binary.LittleEndian.PutUint64(origSizeBin, uint64(origSize))
 
-	ciphertext := gcm.Seal(nil, nonce, plaintext, slices.Concat([]byte("blob"), origSizeBin))
+	sealed := gcm.Seal(nil, nil, plaintext, slices.Concat([]byte("blob"), origSizeBin))
 	return protocol.LargeBlob{
-		Ciphertext: ciphertext,
-		Nonce:      nonce,
+		Ciphertext: sealed[largeBlobNonceSize:len(sealed):len(sealed)],
+		Nonce:      sealed[:largeBlobNonceSize:largeBlobNonceSize],
 		OrigSize:   uint(origSize),
 	}, nil
 }

@@ -15,6 +15,8 @@ import (
 	"github.com/telesma-app/ctap/credential"
 	"github.com/telesma-app/ctap/crypto"
 	"github.com/telesma-app/ctap/diagnostic"
+	ctapfips140 "github.com/telesma-app/ctap/fips140"
+	"github.com/telesma-app/ctap/internal/fips140policy"
 	pinvalidation "github.com/telesma-app/ctap/internal/pin"
 	"github.com/telesma-app/ctap/options"
 	"github.com/telesma-app/ctap/protocol"
@@ -70,10 +72,25 @@ func (cl *Client) MakeCredential(
 	if err := validateClientDataHash(clientDataHash); err != nil {
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
-
+	pubKeyCredParams, err := fips140policy.FilterCredentialParameters(pubKeyCredParams)
+	if err != nil {
+		return protocol.AuthenticatorMakeCredentialResponse{}, err
+	}
 	var requestExtensions protocol.CreateExtensionInputs
 	if extensions != nil {
 		requestExtensions = *extensions
+	}
+	previewSignAlgorithms, err := fips140policy.FilterPreviewSignAlgorithms(
+		requestExtensions.CreatePreviewSignInput.PreviewSign.Algorithms,
+	)
+	if err != nil {
+		return protocol.AuthenticatorMakeCredentialResponse{}, err
+	}
+	requestExtensions.CreatePreviewSignInput.PreviewSign.Algorithms = previewSignAlgorithms
+	if ctapfips140.Required() {
+		if err := validateFIPS140HMACSecret(requestExtensions.CreateHMACSecretMCInput.HMACSecret); err != nil {
+			return protocol.AuthenticatorMakeCredentialResponse{}, err
+		}
 	}
 
 	req := &protocol.AuthenticatorMakeCredentialRequest{
@@ -121,6 +138,11 @@ func (cl *Client) MakeCredential(
 	if err != nil {
 		return protocol.AuthenticatorMakeCredentialResponse{}, err
 	}
+	if authData.AttestedCredentialData != nil {
+		if err := fips140policy.ValidateCredentialKey(authData.AttestedCredentialData.CredentialPublicKey); err != nil {
+			return protocol.AuthenticatorMakeCredentialResponse{}, err
+		}
+	}
 	resp.AuthData = &authData
 
 	return resp, nil
@@ -140,6 +162,12 @@ func (cl *Client) GetAssertion(
 		if err := validateClientDataHash(clientDataHash); err != nil {
 			yield(protocol.AuthenticatorGetAssertionResponse{}, err)
 			return
+		}
+		if ctapfips140.Required() && extensions != nil {
+			if err := validateFIPS140HMACSecret(extensions.GetHMACSecretInput.HMACSecret); err != nil {
+				yield(protocol.AuthenticatorGetAssertionResponse{}, err)
+				return
+			}
 		}
 
 		var requestExtensions protocol.GetExtensionInputs
@@ -247,6 +275,12 @@ func (cl *Client) GetPINRetries(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 ) (uint, *bool, error) {
+	if pinUvAuthProtocol != 0 {
+		if err := pinvalidation.ValidateFIPS140UvAuthProtocol(pinUvAuthProtocol); err != nil {
+			return 0, nil, err
+		}
+	}
+
 	req := &protocol.AuthenticatorClientPINRequest{
 		// While this parameter is unnecessary, SoloKeys Solo 2 requires it for some reason.
 		PinUvAuthProtocol: pinUvAuthProtocol,
@@ -281,6 +315,12 @@ func (cl *Client) GetUVRetries(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 ) (uint, error) {
+	if pinUvAuthProtocol != 0 {
+		if err := pinvalidation.ValidateFIPS140UvAuthProtocol(pinUvAuthProtocol); err != nil {
+			return 0, err
+		}
+	}
+
 	req := &protocol.AuthenticatorClientPINRequest{
 		PinUvAuthProtocol: pinUvAuthProtocol,
 		SubCommand:        protocol.ClientPINSubCommandGetUVRetries,
@@ -312,6 +352,10 @@ func (cl *Client) GetKeyAgreement(
 	ctx context.Context,
 	pinUvAuthProtocol protocol.PinUvAuthProtocol,
 ) (cose.Key, error) {
+	if err := pinvalidation.ValidateFIPS140UvAuthProtocol(pinUvAuthProtocol); err != nil {
+		return nil, err
+	}
+
 	req := &protocol.AuthenticatorClientPINRequest{
 		PinUvAuthProtocol: pinUvAuthProtocol,
 		SubCommand:        protocol.ClientPINSubCommandGetKeyAgreement,

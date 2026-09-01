@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/telesma-app/ctap/cose"
+	ctapfips140 "github.com/telesma-app/ctap/fips140"
 )
 
 var (
@@ -143,8 +144,10 @@ func verifySignature(
 	signature []byte,
 ) (*bool, error) {
 	err := cose.VerifySignature(publicKey, algorithm, message, signature)
-	if errors.Is(err, cose.ErrUnsupportedAlgorithm) || errors.Is(err, cose.ErrUnsupportedKey) {
-		return nil, fmt.Errorf("%w: %v", ErrAlgorithmUnsupported, err)
+	if errors.Is(err, cose.ErrUnsupportedAlgorithm) ||
+		errors.Is(err, cose.ErrUnsupportedKey) ||
+		errors.Is(err, ctapfips140.ErrNotAllowed) {
+		return nil, fmt.Errorf("%w: %w", ErrAlgorithmUnsupported, err)
 	}
 
 	valid := err == nil

@@ -51,7 +51,10 @@ func authDataWithExtensionOutputs(t *testing.T, outputs any) []byte {
 	t.Helper()
 
 	authData := minimalAuthData()
-	authData[32] = byte(protocol.AuthDataFlagExtensionDataIncluded)
+	if _, ok := outputs.(protocol.CreateExtensionOutputs); ok {
+		authData = minimalMakeCredentialAuthData(t)
+	}
+	authData[32] |= byte(protocol.AuthDataFlagExtensionDataIncluded)
 	return append(authData, encodeCBOR(t, outputs)...)
 }
 
@@ -68,7 +71,7 @@ func TestMakeCredentialVerifiesEnforcedCredentialProtectionOutput(t *testing.T) 
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			authData := minimalAuthData()
+			authData := minimalMakeCredentialAuthData(t)
 			if tt.output != nil {
 				authData = authDataWithExtensionOutputs(t, protocol.CreateExtensionOutputs{
 					CreateCredProtectOutput: protocol.CreateCredProtectOutput{CredProtect: *tt.output},
@@ -111,7 +114,7 @@ func TestMakeCredentialVerifiesEnforcedCredentialProtectionOutput(t *testing.T) 
 func TestMakeCredentialIgnoresOversizedCredentialBlob(t *testing.T) {
 	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 		Format:      attestation.AttestationStatementFormatIdentifierPacked,
-		AuthDataRaw: minimalAuthData(),
+		AuthDataRaw: minimalMakeCredentialAuthData(t),
 	})
 	fake := testhid.NewCBORDevice(t, testCID, response)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
@@ -151,7 +154,7 @@ func TestFalseBooleanExtensionInputsAreNotProcessed(t *testing.T) {
 	t.Run("MakeCredential", func(t *testing.T) {
 		response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 			Format:      attestation.AttestationStatementFormatIdentifierPacked,
-			AuthDataRaw: minimalAuthData(),
+			AuthDataRaw: minimalMakeCredentialAuthData(t),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
 		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
@@ -241,7 +244,7 @@ func TestThirdPartyPaymentExtension(t *testing.T) {
 	t.Run("MakeCredential", func(t *testing.T) {
 		response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 			Format:      attestation.AttestationStatementFormatIdentifierPacked,
-			AuthDataRaw: minimalAuthData(),
+			AuthDataRaw: minimalMakeCredentialAuthData(t),
 		})
 		fake := testhid.NewCBORDevice(t, testCID, response)
 		d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
@@ -630,7 +633,7 @@ func TestMakeCredentialValidatesHMACSecretMCSalts(t *testing.T) {
 func TestMakeCredentialAllowsFIDO20BuiltInUV(t *testing.T) {
 	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 		Format:      attestation.AttestationStatementFormatIdentifierPacked,
-		AuthDataRaw: minimalAuthData(),
+		AuthDataRaw: minimalMakeCredentialAuthData(t),
 	})
 	fake := testhid.NewCBORDevice(t, testCID, response)
 	d := newTestDevice(t, fake, protocol.AuthenticatorGetInfoResponse{
@@ -667,7 +670,7 @@ func TestMakeCredentialAllowsFIDO20BuiltInUV(t *testing.T) {
 func TestMakeCredentialCredPropsOutputDependsOnCredPropsInput(t *testing.T) {
 	response := encodeCBOR(t, &protocol.AuthenticatorMakeCredentialResponse{
 		Format:      attestation.AttestationStatementFormatIdentifierPacked,
-		AuthDataRaw: minimalAuthData(),
+		AuthDataRaw: minimalMakeCredentialAuthData(t),
 	})
 	info := protocol.AuthenticatorGetInfoResponse{
 		Options: map[protocol.Option]bool{
